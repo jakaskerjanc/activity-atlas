@@ -5,5 +5,6 @@ import react from "@vitejs/plugin-react";
 // (e.g. https://<user>.github.io/strava-on-maps/).
 export default defineConfig({
   base: "./",
+  envDir: "..",
   plugins: [react()],
 });
