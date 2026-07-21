@@ -59,9 +59,15 @@ function toCached(a: RawActivity): CachedActivity {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export class StravaHttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
 /**
  * GET a Strava API path with bearer auth, honoring 429 Retry-After (default 60s)
- * by waiting and retrying the same request. Throws on any other non-2xx.
+ * by waiting and retrying the same request. Throws StravaHttpError on any other non-2xx.
  */
 async function stravaGet(url: string, token: string): Promise<unknown> {
   while (true) {
@@ -76,7 +82,7 @@ async function stravaGet(url: string, token: string): Promise<unknown> {
       continue; // retry same request
     }
     if (!res.ok) {
-      throw new Error(`Strava GET failed: ${res.status} ${await res.text()} (${url})`);
+      throw new StravaHttpError(res.status, `Strava GET failed: ${res.status} ${await res.text()} (${url})`);
     }
     return res.json();
   }
@@ -112,8 +118,16 @@ export async function fetchActivitiesAfter(
  * Returns "" when the activity has no map (indoor / manual).
  */
 export async function fetchActivityDetail(token: string, id: number): Promise<string> {
-  const detail = (await stravaGet(`${STRAVA_API}/activities/${id}`, token)) as {
-    map?: { polyline?: string | null };
-  };
-  return detail.map?.polyline ?? "";
+  try {
+    const detail = (await stravaGet(`${STRAVA_API}/activities/${id}`, token)) as {
+      map?: { polyline?: string | null };
+    };
+    return detail.map?.polyline ?? "";
+  } catch (err) {
+    if (err instanceof StravaHttpError && err.status === 404) {
+      console.warn(`Activity ${id} not found on Strava (404); skipping.`);
+      return "";
+    }
+    throw err;
+  }
 }
