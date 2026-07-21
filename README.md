@@ -6,30 +6,39 @@ file, and deploys a static site to GitHub Pages.
 
 ## How it works
 
+Two scripts turn Strava data into the map, run in sequence:
+
 ```
-Strava API ─(sync.ts)─▶ data/activities.json ─(build-geojson.ts)─▶ activities.geojson ─▶ site
+Strava API ──▶ sync.ts ──▶ data/activities.json ──▶ build-geojson.ts ──▶ activities.geojson ──▶ site
 ```
 
-- Incremental: cache is committed, so each run only fetches new activities.
-- Cheap: activity list uses `summary_polyline` (~1 API call / 200 activities).
-- Detail: each run also backfills `detail_polyline` (capped at `DETAIL_LIMIT`,
-  default 190/run, to stay under Strava's 200 req/15 min limit), simplified
-  with Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default 5 m).
+**`sync.ts`** talks to the Strava API and updates the local cache,
+`data/activities.json`:
+
+1. It fetches the activity list, but only activities created since the
+   previous run — the cache is committed, so nothing is re-fetched. The list
+   endpoint is cheap: it returns a `summary_polyline` for every activity at
+   roughly 1 API call per 200 activities.
+2. It also backfills a higher-resolution `detail_polyline` for activities
+   that don't have one yet, one API call each. This is throttled to
+   `DETAIL_LIMIT` per run (default 190) to stay under Strava's
+   200-requests-per-15-minutes rate limit — a large backlog backfills over
+   several runs rather than in one.
+
+**`build-geojson.ts`** then reads that cache and writes
+`app/public/activities.geojson`, simplifying each route with
+Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default 5 m) to keep the file small.
+The frontend loads this static file — no Strava API calls happen in the
+browser.
 
 ## Config
 
-All secrets live in one root `.env`:
+Add these to a root `.env` (see `.example.env`):
 
-| Key                     | Where it's used                          |
-| ------------------------ | ----------------------------------------- |
-| `STRAVA_CLIENT_ID`       | root scripts (`sync`, `auth`)            |
-| `STRAVA_CLIENT_SECRET`   | root scripts (`sync`, `auth`)            |
-| `STRAVA_REFRESH_TOKEN`   | root scripts (`sync`)                    |
-| `VITE_MAPBOX_TOKEN`      | `app` (Vite/browser)                     |
-
-Root scripts (`sync`, `auth`, `build:geojson`) load `.env` automatically via
-`tsx`. The `app` workspace (Vite) reads the same file, via `envDir: ".."` in
-`app/vite.config.ts`.
+- `STRAVA_CLIENT_ID`
+- `STRAVA_CLIENT_SECRET`
+- `STRAVA_REFRESH_TOKEN`
+- `VITE_MAPBOX_TOKEN`
 
 ## Setting up your own copy
 
