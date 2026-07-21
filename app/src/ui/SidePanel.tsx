@@ -1,7 +1,10 @@
-// Left panel: filter controls only. Activity/aggregate stats live in InfoPanel.
+// Left panel: filter controls + color-mode selector. Activity/aggregate stats
+// live in InfoPanel.
 
 import { PANEL_STYLE } from "./theme";
 import { FilterSection } from "./FilterSection";
+import { ColorSection } from "./ColorSection";
+import type { ColorMode, ColorDomain } from "../colors";
 
 interface Props {
   availableTypes: string[];
@@ -14,6 +17,9 @@ interface Props {
   to: number;
   onFromChange: (ts: number) => void;
   onToChange: (ts: number) => void;
+  colorMode: ColorMode;
+  colorDomain: ColorDomain;
+  onColorModeChange: (mode: ColorMode) => void;
 }
 
 export function SidePanel(p: Props) {
@@ -30,6 +36,12 @@ export function SidePanel(p: Props) {
         to={p.to}
         onFromChange={p.onFromChange}
         onToChange={p.onToChange}
+      />
+      <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "13px 0" }} />
+      <ColorSection
+        mode={p.colorMode}
+        domain={p.colorDomain}
+        onChange={p.onColorModeChange}
       />
     </aside>
   );
