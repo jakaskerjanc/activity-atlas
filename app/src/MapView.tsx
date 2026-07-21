@@ -30,16 +30,9 @@ interface Props {
 /** Padding that keeps a fitted track centered in the strip between the panels. */
 const FIT_PADDING = { top: 90, bottom: 80, left: 330, right: 360 };
 
-/** Fit the map viewport to the bounding box of all route coordinates. */
-function fitToData(map: mapboxgl.Map, data: ActivityFeatureCollection) {
-  const bounds = new mapboxgl.LngLatBounds();
-  for (const f of data.features) {
-    for (const c of f.geometry.coordinates) {
-      bounds.extend(c as [number, number]);
-    }
-  }
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 0 });
-}
+/** Home view on initial load: Slovenia, centered on Ljubljana. */
+const SLOVENIA_CENTER: [number, number] = [14.5058, 46.0569];
+const SLOVENIA_ZOOM = 7.6;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -110,8 +103,8 @@ export function MapView(props: Props) {
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/dark-v11",
-      center: [0, 20],
-      zoom: 1.5,
+      center: SLOVENIA_CENTER,
+      zoom: SLOVENIA_ZOOM,
     });
     mapRef.current = map;
 
@@ -146,7 +139,7 @@ export function MapView(props: Props) {
       const d = propsRef.current.data;
       if (d) {
         (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
-        fitToData(map, d);
+        map.jumpTo({ center: SLOVENIA_CENTER, zoom: SLOVENIA_ZOOM });
         startFade();
       }
     });
@@ -183,7 +176,7 @@ export function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !data) return;
     (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(data);
-    fitToData(map, data);
+    map.jumpTo({ center: SLOVENIA_CENTER, zoom: SLOVENIA_ZOOM });
     startFade();
   }, [data]);
 

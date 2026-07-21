@@ -8,7 +8,7 @@ body,
 body {
   background: #0e0f13;
   color: #e7e8ec;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -59,6 +59,12 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 50%;
   background: #ff6b3d;
   cursor: pointer;
+}
+
+@media (max-width: 680px) {
+  .side-panel {
+    display: none !important;
+  }
 }
 
 @keyframes fadeUp {

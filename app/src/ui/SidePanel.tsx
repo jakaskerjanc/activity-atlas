@@ -1,18 +1,9 @@
-// The single merged panel: activity stats on top, filter controls below.
+// Left panel: filter controls only. Activity/aggregate stats live in InfoPanel.
 
-import { PANEL_STYLE, divider } from "./theme";
-import { StatsSection } from "./StatsSection";
+import { PANEL_STYLE } from "./theme";
 import { FilterSection } from "./FilterSection";
-import type { StatCard } from "../stats";
 
 interface Props {
-  // stats
-  title: string;
-  subtitle: string;
-  cards: StatCard[];
-  selected: boolean;
-  onClearSelection: () => void;
-  // filters
   availableTypes: string[];
   typeCounts: Record<string, number>;
   enabledTypes: Set<string>;
@@ -27,15 +18,7 @@ interface Props {
 
 export function SidePanel(p: Props) {
   return (
-    <aside style={PANEL_STYLE}>
-      <StatsSection
-        title={p.title}
-        subtitle={p.subtitle}
-        cards={p.cards}
-        selected={p.selected}
-        onClearSelection={p.onClearSelection}
-      />
-      <div style={divider} />
+    <aside className="side-panel" style={PANEL_STYLE}>
       <FilterSection
         availableTypes={p.availableTypes}
         typeCounts={p.typeCounts}

@@ -32,6 +32,16 @@ export const PANEL_STYLE: CSSProperties = {
   overflowX: "hidden",
 };
 
+/** Activity info panel, floating bottom-center. */
+export const INFO_PANEL_STYLE: CSSProperties = {
+  ...panelBase,
+  bottom: 24,
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: 420,
+  maxWidth: "calc(100% - 48px)",
+};
+
 /** Thin horizontal divider between panel sections. */
 export const divider: CSSProperties = {
   height: 1,

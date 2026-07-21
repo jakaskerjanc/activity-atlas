@@ -9,53 +9,39 @@ interface Props {
   title: string;
   subtitle: string;
   cards: StatCard[];
-  selected: boolean;
-  onClearSelection: () => void;
+  stravaUrl?: string | null;
 }
 
-export function StatsSection({
-  title,
-  subtitle,
-  cards,
-  selected,
-  onClearSelection,
-}: Props) {
+export function StatsSection({ title, subtitle, cards, stravaUrl }: Props) {
   return (
     <>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              display: "block",
-              fontSize: 15,
-              fontWeight: 700,
-              color: "#eceef2",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
+      <div style={{ marginBottom: 12 }}>
+        {stravaUrl ? (
+          <a
+            href={stravaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="View on Strava"
+            style={titleLink}
           >
             {title}
-          </span>
-          <span
-            style={{
-              display: "block",
-              fontSize: 10,
-              letterSpacing: ".14em",
-              color: "#8b8f99",
-              textTransform: "uppercase",
-              fontFamily: MONO,
-              marginTop: 4,
-            }}
-          >
-            {subtitle}
-          </span>
-        </span>
-        {selected && (
-          <button onClick={onClearSelection} style={clearBtn}>
-            ✕ ALL
-          </button>
+          </a>
+        ) : (
+          <span style={titleText}>{title}</span>
         )}
+        <span
+          style={{
+            display: "block",
+            fontSize: 10,
+            letterSpacing: ".14em",
+            color: "#8b8f99",
+            textTransform: "uppercase",
+            fontFamily: MONO,
+            marginTop: 4,
+          }}
+        >
+          {subtitle}
+        </span>
       </div>
 
       <div
@@ -97,16 +83,18 @@ const bigVal: CSSProperties = {
 };
 const accentVal: CSSProperties = { ...bigVal, color: ACCENT };
 
-const clearBtn: CSSProperties = {
-  appearance: "none",
-  border: "1px solid rgba(255,255,255,.14)",
-  background: "rgba(255,255,255,.04)",
-  color: "#b7bac2",
-  fontSize: 11,
-  fontWeight: 600,
-  padding: "6px 11px",
-  borderRadius: 8,
-  cursor: "pointer",
-  fontFamily: MONO,
+const titleText: CSSProperties = {
+  display: "block",
+  fontSize: 15,
+  fontWeight: 700,
+  color: "#eceef2",
   whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const titleLink: CSSProperties = {
+  ...titleText,
+  textDecoration: "none",
+  cursor: "pointer",
 };

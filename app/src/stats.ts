@@ -43,7 +43,7 @@ export function totalCards(features: ActivityFeature[]): StatCard[] {
   return [
     { value: String(t.count), label: "Activities" },
     { value: formatKm(t.totalDistanceM, 0), label: "Total km", accent: true },
-    { value: t.totalElevationM.toLocaleString(), label: "Elevation m" },
+    { value: Math.round(t.totalElevationM).toLocaleString(), label: "Elevation m" },
     { value: formatDuration(t.totalMovingSec), label: "Moving" },
   ];
 }
@@ -55,7 +55,7 @@ export function activityCards(feature: ActivityFeature): StatCard[] {
   return [
     { value: formatKm(p.distance), label: "Distance km", accent: true },
     { value: formatDuration(p.moving_time), label: "Moving" },
-    { value: p.elevation_gain.toLocaleString(), label: "Elevation m" },
+    { value: Math.round(p.elevation_gain).toLocaleString(), label: "Elevation m" },
     foot
       ? { value: pacePerKm(p.distance, p.moving_time), label: "Pace /km" }
       : { value: speedKmh(p.distance, p.moving_time), label: "Speed km/h" },
