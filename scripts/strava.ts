@@ -60,8 +60,30 @@ function toCached(a: RawActivity): CachedActivity {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * GET a Strava API path with bearer auth, honoring 429 Retry-After (default 60s)
+ * by waiting and retrying the same request. Throws on any other non-2xx.
+ */
+async function stravaGet(url: string, token: string): Promise<unknown> {
+  while (true) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.status === 429) {
+      const retry = Number(res.headers.get("retry-after")) || 60;
+      console.warn(`Rate limited; waiting ${retry}s...`);
+      await sleep(retry * 1000);
+      continue; // retry same request
+    }
+    if (!res.ok) {
+      throw new Error(`Strava GET failed: ${res.status} ${await res.text()} (${url})`);
+    }
+    return res.json();
+  }
+}
+
+/**
  * Fetch all activities started after `afterEpochSeconds`, ascending, paginated.
- * Handles 429 rate limits by honoring Retry-After (default 60s).
  */
 export async function fetchActivitiesAfter(
   token: string,
@@ -75,21 +97,7 @@ export async function fetchActivitiesAfter(
     const url =
       `${STRAVA_API}/athlete/activities` +
       `?after=${afterEpochSeconds}&per_page=${perPage}&page=${page}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (res.status === 429) {
-      const retry = Number(res.headers.get("retry-after")) || 60;
-      console.warn(`Rate limited; waiting ${retry}s...`);
-      await sleep(retry * 1000);
-      continue; // retry same page
-    }
-    if (!res.ok) {
-      throw new Error(`Activity fetch failed: ${res.status} ${await res.text()}`);
-    }
-
-    const batch = (await res.json()) as RawActivity[];
+    const batch = (await stravaGet(url, token)) as RawActivity[];
     if (batch.length === 0) break;
     out.push(...batch.map(toCached));
     if (batch.length < perPage) break; // last page
@@ -97,4 +105,15 @@ export async function fetchActivitiesAfter(
   }
 
   return out;
+}
+
+/**
+ * Fetch one activity's full-resolution route polyline via the detail endpoint.
+ * Returns "" when the activity has no map (indoor / manual).
+ */
+export async function fetchActivityDetail(token: string, id: number): Promise<string> {
+  const detail = (await stravaGet(`${STRAVA_API}/activities/${id}`, token)) as {
+    map?: { polyline?: string | null };
+  };
+  return detail.map?.polyline ?? "";
 }

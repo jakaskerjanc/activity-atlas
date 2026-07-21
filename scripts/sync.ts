@@ -7,7 +7,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAccessToken, fetchActivitiesAfter } from "./strava.ts";
+import { getAccessToken, fetchActivitiesAfter, fetchActivityDetail } from "./strava.ts";
 import type { CachedActivity } from "./types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +15,12 @@ const CACHE_PATH = resolve(__dirname, "../data/activities.json");
 
 /** Re-fetch a window before the high-water mark so recent edits aren't missed. */
 const OVERLAP_SECONDS = 24 * 60 * 60; // 1 day
+
+/**
+ * Max detail-endpoint requests per run. Default keeps a single run under the
+ * 200 req / 15 min read limit; the initial backfill just runs a few times.
+ */
+const DETAIL_LIMIT = Number(process.env.DETAIL_LIMIT) || 190;
 
 async function loadCache(): Promise<CachedActivity[]> {
   try {
@@ -56,6 +62,21 @@ async function main() {
   const merged = [...byId.values()].sort(
     (a, b) => Date.parse(a.start_date) - Date.parse(b.start_date),
   );
+
+  // Detail pass: backfill full-resolution polylines for activities that have a
+  // route but no detail yet, newest first, capped per run. Incremental — steady
+  // state only touches the handful of new activities.
+  const pending = merged
+    .filter((a) => a.summary_polyline && a.detail_polyline === undefined)
+    .reverse();
+  const toDetail = pending.slice(0, DETAIL_LIMIT);
+  if (pending.length > 0) {
+    console.log(`Detailing ${toDetail.length} of ${pending.length} pending...`);
+    for (const a of toDetail) {
+      a.detail_polyline = await fetchActivityDetail(token, a.id);
+    }
+    console.log(`Detailed ${toDetail.length} (${pending.length - toDetail.length} remaining).`);
+  }
 
   await mkdir(dirname(CACHE_PATH), { recursive: true });
   await writeFile(CACHE_PATH, JSON.stringify(merged, null, 2) + "\n");

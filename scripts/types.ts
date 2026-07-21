@@ -16,6 +16,11 @@ export interface CachedActivity {
   total_elevation_gain: number;
   /** Google encoded polyline of the route overview; "" for indoor/manual. */
   summary_polyline: string;
+  /**
+   * Full-resolution encoded polyline from the activity detail endpoint.
+   * Absent until backfilled; preferred over summary_polyline when present.
+   */
+  detail_polyline?: string;
 }
 
 /**

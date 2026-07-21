@@ -19,8 +19,26 @@ Strava API ──(scripts/sync.ts, incremental)──▶ data/activities.json   
 
 - **Incremental fetch:** the cache is committed to the repo, so each run only
   fetches activities newer than the last sync (first run backfills everything).
-- **Cheap:** uses Strava's `summary_polyline` — roughly one API call per 200
-  activities, well within rate limits.
+- **Cheap:** the activity list uses Strava's `summary_polyline` — roughly one API
+  call per 200 activities.
+- **Detailed tracks:** each run also backfills a full-resolution `detail_polyline`
+  (one detail call per activity, capped at `DETAIL_LIMIT`, default 190/run to stay
+  under the 200 req/15 min read limit). `build-geojson.ts` prefers the detail line,
+  simplified with Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default 5 m), and falls
+  back to the summary for not-yet-detailed activities. The full detail stays on
+  disk, so the tolerance can be re-tuned without re-fetching.
+
+### Initial detail backfill
+
+The first `detail_polyline` backfill is a one-time job; do it locally so it
+doesn't spread over several daily CI runs:
+
+```bash
+# Repeat every ~15 min until it reports "0 remaining" (≈ N/190 runs).
+STRAVA_CLIENT_ID=xxx STRAVA_CLIENT_SECRET=yyy STRAVA_REFRESH_TOKEN=zzz npm run sync
+```
+
+The refresh token needs `activity:read_all` scope (what `npm run auth` requests).
 
 ## One-time setup
 
@@ -69,8 +87,9 @@ VITE_MAPBOX_TOKEN=pk.xxx npm --workspace app run dev
 
 | Path | Purpose |
 |------|---------|
-| `scripts/sync.ts` | Incremental Strava fetch → `data/activities.json` |
-| `scripts/build-geojson.ts` | Decode polylines → `app/public/activities.geojson` |
+| `scripts/sync.ts` | Incremental Strava fetch (summary + detail) → `data/activities.json` |
+| `scripts/build-geojson.ts` | Decode + simplify polylines → `app/public/activities.geojson` |
+| `scripts/simplify.ts` | Douglas–Peucker line simplification (unit-tested) |
 | `scripts/get-refresh-token.ts` | One-time OAuth helper (`npm run auth`) |
 | `scripts/types.ts` | Shared cache + GeoJSON-property types (data contract) |
 | `app/src/MapView.tsx` | Owns the Mapbox map, route layer, and filter application |
