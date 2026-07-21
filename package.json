@@ -1,0 +1,24 @@
+{
+  "name": "strava-on-maps",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["app"],
+  "scripts": {
+    "auth": "tsx scripts/get-refresh-token.ts",
+    "mock": "tsx scripts/mock-data.ts",
+    "sync": "tsx scripts/sync.ts",
+    "build:geojson": "tsx scripts/build-geojson.ts",
+    "build": "npm run build:geojson && npm --workspace app run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mapbox/polyline": "^1.2.1"
+  },
+  "devDependencies": {
+    "@types/mapbox__polyline": "^1.0.5",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.local
+
+# Generated build artifact — rebuilt from data/activities.json each build
+app/public/activities.geojson

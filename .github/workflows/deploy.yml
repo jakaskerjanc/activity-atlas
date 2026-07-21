@@ -1,0 +1,65 @@
+name: Sync & Deploy
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # daily at 04:00 UTC
+  workflow_dispatch: {}
+
+# One deploy at a time; let a newer run supersede an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: write # commit the refreshed activity cache
+  pages: write # deploy to GitHub Pages
+  id-token: write # OIDC for deploy-pages
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Sync activities from Strava
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
+        run: npm run sync
+
+      - name: Commit refreshed cache
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- data/activities.json; then
+            git add data/activities.json
+            git commit -m "chore: sync Strava activities"
+            git push
+          else
+            echo "No new activities."
+          fi
+
+      - name: Build site
+        env:
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
