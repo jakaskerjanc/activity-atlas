@@ -2,7 +2,7 @@ name: Sync & Deploy
 
 on:
   schedule:
-    - cron: "0 4 * * *" # daily at 04:00 UTC
+    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC
   workflow_dispatch: {}
 
 # One deploy at a time; let a newer run supersede an in-progress one.
