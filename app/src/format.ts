@@ -39,6 +39,16 @@ export function formatDate(ts: number): string {
   });
 }
 
+/** epoch seconds -> "Aug 18, 2024" (UTC, deterministic). */
+export function formatDateYear(ts: number): string {
+  return new Date(ts * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** Whether a Strava sport_type is measured by pace (foot) vs speed (wheel/water). */
 export function isFootBased(type: string): boolean {
   return /run|walk|hike/i.test(type);

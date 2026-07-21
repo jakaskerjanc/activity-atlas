@@ -5,6 +5,7 @@ import {
   pacePerKm,
   speedKmh,
   formatDate,
+  formatDateYear,
   isFootBased,
 } from "./format";
 
@@ -63,6 +64,13 @@ describe("formatDate", () => {
   test("formats epoch seconds as short month + day (UTC)", () => {
     // 2024-08-18T09:58:55Z
     expect(formatDate(1723975135)).toBe("Aug 18");
+  });
+});
+
+describe("formatDateYear", () => {
+  test("formats epoch seconds as short month + day + year (UTC)", () => {
+    // 2024-08-18T09:58:55Z
+    expect(formatDateYear(1723975135)).toBe("Aug 18, 2024");
   });
 });
 
