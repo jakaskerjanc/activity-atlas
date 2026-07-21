@@ -57,13 +57,26 @@ describe("computeDomain", () => {
     expect(d.speedMax).toBeCloseTo(10);
   });
 
-  test("elevation percentiles resist a single outlier", () => {
-    const feats = [
-      ...Array.from({ length: 20 }, () => feature({ elevation_gain: 100 })),
-      feature({ elevation_gain: 100000 }), // monster climb outlier
+  test("elevation bounds are the true min and max of the set", () => {
+    const d = computeDomain([
+      feature({ elevation_gain: 100 }),
+      feature({ elevation_gain: 900 }),
+      feature({ elevation_gain: 300 }),
+    ]);
+    expect(d.elevMin).toBe(100);
+    expect(d.elevMax).toBe(900);
+  });
+
+  test("narrowing the set never raises the max (monotonic under subsetting)", () => {
+    const all = [
+      feature({ elevation_gain: 100, ts: 1 }),
+      feature({ elevation_gain: 500, ts: 2 }),
+      feature({ elevation_gain: 900, ts: 3 }),
     ];
-    const d = computeDomain(feats);
-    expect(d.elevMax).toBeLessThan(100000);
+    const full = computeDomain(all);
+    // A date-window subset that drops the highest-gain activity.
+    const subset = computeDomain(all.filter((f) => f.properties.ts <= 2));
+    expect(subset.elevMax).toBeLessThanOrEqual(full.elevMax);
   });
 
   test("empty input is all zeros with no types", () => {

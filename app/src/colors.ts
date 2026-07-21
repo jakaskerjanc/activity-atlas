@@ -53,10 +53,10 @@ const TYPE_PALETTE = [
 export interface ColorDomain {
   tsMin: number;
   tsMax: number;
-  /** meters of elevation gain (5th/95th percentile — outlier-resistant) */
+  /** meters of elevation gain (true min/max of the set) */
   elevMin: number;
   elevMax: number;
-  /** km/h (5th/95th percentile) */
+  /** km/h (true min/max of the set) */
   speedMin: number;
   speedMax: number;
   /** distinct activity types, sorted (matches availableTypes order) */
@@ -68,42 +68,43 @@ function speedKmh(f: ActivityFeature): number {
   return (f.properties.distance * 3.6) / Math.max(f.properties.moving_time, 1);
 }
 
-/** Linear-interpolated percentile of a pre-sorted ascending array. */
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
-
 /**
  * Derive the value domain used by the ramp modes from the given features —
  * callers pass the currently-visible set so the recency/elevation/speed ramps
- * span what's on screen. Elevation and speed use 5th/95th percentiles so a
- * single monster climb / GPS-glitch speed doesn't wash out the whole ramp.
+ * span what's on screen. Uses true min/max (not percentiles) so the bounds are
+ * honest and monotonic: narrowing the filter can never raise a max or lower a
+ * min. Elevation gain and average speed are aggregate values, so there are no
+ * instantaneous spikes to clamp.
  */
 export function computeDomain(features: ActivityFeature[]): ColorDomain {
-  const ts: number[] = [];
-  const elev: number[] = [];
-  const speed: number[] = [];
   const types = new Set<string>();
+  let tsMin = Infinity;
+  let tsMax = -Infinity;
+  let elevMin = Infinity;
+  let elevMax = -Infinity;
+  let speedMin = Infinity;
+  let speedMax = -Infinity;
   for (const f of features) {
-    ts.push(f.properties.ts);
-    elev.push(f.properties.elevation_gain);
-    speed.push(speedKmh(f));
-    types.add(f.properties.type);
+    const p = f.properties;
+    const s = speedKmh(f);
+    if (p.ts < tsMin) tsMin = p.ts;
+    if (p.ts > tsMax) tsMax = p.ts;
+    if (p.elevation_gain < elevMin) elevMin = p.elevation_gain;
+    if (p.elevation_gain > elevMax) elevMax = p.elevation_gain;
+    if (s < speedMin) speedMin = s;
+    if (s > speedMax) speedMax = s;
+    types.add(p.type);
   }
-  const elevSorted = [...elev].sort((a, b) => a - b);
-  const speedSorted = [...speed].sort((a, b) => a - b);
+  if (features.length === 0) {
+    return { tsMin: 0, tsMax: 0, elevMin: 0, elevMax: 0, speedMin: 0, speedMax: 0, types: [] };
+  }
   return {
-    tsMin: ts.length ? Math.min(...ts) : 0,
-    tsMax: ts.length ? Math.max(...ts) : 0,
-    elevMin: percentile(elevSorted, 0.05),
-    elevMax: percentile(elevSorted, 0.95),
-    speedMin: percentile(speedSorted, 0.05),
-    speedMax: percentile(speedSorted, 0.95),
+    tsMin,
+    tsMax,
+    elevMin,
+    elevMax,
+    speedMin,
+    speedMax,
     types: [...types].sort(),
   };
 }
