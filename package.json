@@ -6,7 +6,6 @@
   "workspaces": ["app"],
   "scripts": {
     "auth": "tsx scripts/get-refresh-token.ts",
-    "mock": "tsx scripts/mock-data.ts",
     "sync": "tsx scripts/sync.ts",
     "build:geojson": "tsx scripts/build-geojson.ts",
     "build": "npm run build:geojson && npm --workspace app run build",
