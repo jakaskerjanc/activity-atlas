@@ -54,10 +54,19 @@ async function main() {
   const fetched = await fetchActivitiesAfter(token, after);
   console.log(`Fetched ${fetched.length} activities from Strava.`);
 
-  // Merge by id (fetched overwrites stale cached copies).
+  // Merge by id (fetched overwrites stale cached copies). Fetched summaries carry
+  // no detail_polyline, so carry over the cached one when the route is unchanged —
+  // otherwise the overlap window would re-detail recent activities every run. A
+  // changed summary_polyline means the route was edited, so drop the stale detail.
   const byId = new Map<number, CachedActivity>();
   for (const a of cache) byId.set(a.id, a);
-  for (const a of fetched) byId.set(a.id, a);
+  for (const a of fetched) {
+    const prev = byId.get(a.id);
+    if (prev?.detail_polyline && prev.summary_polyline === a.summary_polyline) {
+      a.detail_polyline = prev.detail_polyline;
+    }
+    byId.set(a.id, a);
+  }
 
   const merged = [...byId.values()].sort(
     (a, b) => Date.parse(a.start_date) - Date.parse(b.start_date),

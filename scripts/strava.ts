@@ -65,11 +65,17 @@ export class StravaHttpError extends Error {
   }
 }
 
+/** Give up waiting on 429s after this cumulative budget (covers a 15-min window
+ *  reset, but bails instead of spinning for hours on daily-limit exhaustion). */
+const MAX_RATELIMIT_WAIT_MS = 20 * 60 * 1000;
+
 /**
  * GET a Strava API path with bearer auth, honoring 429 Retry-After (default 60s)
- * by waiting and retrying the same request. Throws StravaHttpError on any other non-2xx.
+ * by waiting and retrying the same request, up to MAX_RATELIMIT_WAIT_MS total.
+ * Throws StravaHttpError on any other non-2xx (or when the wait budget is spent).
  */
 async function stravaGet(url: string, token: string): Promise<unknown> {
+  let waitedMs = 0;
   while (true) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -77,7 +83,14 @@ async function stravaGet(url: string, token: string): Promise<unknown> {
 
     if (res.status === 429) {
       const retry = Number(res.headers.get("retry-after")) || 60;
+      if (waitedMs + retry * 1000 > MAX_RATELIMIT_WAIT_MS) {
+        throw new StravaHttpError(
+          429,
+          `Rate limited; exceeded ${MAX_RATELIMIT_WAIT_MS / 60000}min wait budget (${url})`,
+        );
+      }
       console.warn(`Rate limited; waiting ${retry}s...`);
+      waitedMs += retry * 1000;
       await sleep(retry * 1000);
       continue; // retry same request
     }

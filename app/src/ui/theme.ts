@@ -42,13 +42,6 @@ export const INFO_PANEL_STYLE: CSSProperties = {
   maxWidth: "calc(100% - 48px)",
 };
 
-/** Thin horizontal divider between panel sections. */
-export const divider: CSSProperties = {
-  height: 1,
-  background: "rgba(255,255,255,.08)",
-  margin: "13px 0",
-};
-
 /** Small uppercase mono section eyebrow. */
 export const eyebrow: CSSProperties = {
   fontFamily: MONO,

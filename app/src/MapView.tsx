@@ -138,8 +138,8 @@ export function MapView(props: Props) {
 
       const d = propsRef.current.data;
       if (d) {
+        // Map is already constructed at the home view; no jumpTo needed here.
         (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
-        map.jumpTo({ center: SLOVENIA_CENTER, zoom: SLOVENIA_ZOOM });
         startFade();
       }
     });
