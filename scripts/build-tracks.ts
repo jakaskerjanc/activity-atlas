@@ -1,41 +1,39 @@
-// Build app/public/activities.geojson from data/activities.json.
+// Build app/public/tracks.json from data/activities.json.
 //
-// Decodes each activity's route polyline into a LineString and attaches the
-// filterable properties defined by ActivityFeatureProps. Prefers the
-// full-resolution detail_polyline (simplified to an overview line) and falls
-// back to the coarse summary_polyline. No API calls.
+// Decodes each activity's route polyline, simplifies the full-resolution detail
+// line (Douglas–Peucker), and RE-ENCODES it as a Google polyline. Shipping
+// encoded polylines instead of decoded GeoJSON coordinate arrays roughly halves
+// the payload and makes the browser's JSON.parse far cheaper; the frontend
+// decodes them back into LineString features (see app/src/tracks.ts). No API calls.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
-import type { CachedActivity, ActivityFeatureProps } from "./types.ts";
+import type { CachedActivity, EncodedTrack, TrackPayload } from "./types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = resolve(__dirname, "../data/activities.json");
-const OUT_PATH = resolve(__dirname, "../app/public/activities.geojson");
+const OUT_PATH = resolve(__dirname, "../app/public/tracks.json");
+
+/** Wire-format version written to tracks.json (see TrackPayload). */
+const PAYLOAD_VERSION = 1;
 
 /** Douglas–Peucker tolerance (meters) applied to detail polylines. */
 const SIMPLIFY_TOLERANCE_M = Number(process.env.SIMPLIFY_TOLERANCE_M) || 5;
-
-interface Feature {
-  type: "Feature";
-  geometry: { type: "LineString"; coordinates: [number, number][] };
-  properties: ActivityFeatureProps;
-}
 
 interface Stats {
   rawPoints: number;
   keptPoints: number;
 }
 
-function toFeature(a: CachedActivity, stats: Stats): Feature | null {
+function toTrack(a: CachedActivity, stats: Stats): EncodedTrack | null {
   // Prefer full-resolution detail; fall back to the coarse summary line.
   const encoded = a.detail_polyline || a.summary_polyline;
   if (!encoded) return null; // indoor / manual — no route
 
-  // @mapbox/polyline decodes to [lat, lng]; GeoJSON needs [lng, lat].
+  // @mapbox/polyline decodes to [lat, lng]; simplify works in [lng, lat].
   let coords = polyline
     .decode(encoded)
     .map(([lat, lng]) => [lng, lat] as [number, number]);
@@ -46,35 +44,35 @@ function toFeature(a: CachedActivity, stats: Stats): Feature | null {
   if (a.detail_polyline) coords = simplifyLngLat(coords, SIMPLIFY_TOLERANCE_M);
   stats.keptPoints += coords.length;
 
+  // Re-encode back to [lat, lng] for the compact wire format.
+  const poly = polyline.encode(coords.map(([lng, lat]) => [lat, lng] as [number, number]));
+
   return {
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: coords },
-    properties: {
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      ts: Math.floor(Date.parse(a.start_date) / 1000),
-      start_date: a.start_date,
-      distance: a.distance,
-      moving_time: a.moving_time,
-      elevation_gain: a.total_elevation_gain,
-    },
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    ts: Math.floor(Date.parse(a.start_date) / 1000),
+    start_date: a.start_date,
+    distance: a.distance,
+    moving_time: a.moving_time,
+    elevation_gain: a.total_elevation_gain,
+    poly,
   };
 }
 
 async function main() {
   const cache = JSON.parse(await readFile(CACHE_PATH, "utf8")) as CachedActivity[];
   const stats: Stats = { rawPoints: 0, keptPoints: 0 };
-  const features = cache
-    .map((a) => toFeature(a, stats))
-    .filter((f): f is Feature => f !== null);
+  const tracks = cache
+    .map((a) => toTrack(a, stats))
+    .filter((t): t is EncodedTrack => t !== null);
 
-  const geojson = { type: "FeatureCollection" as const, features };
+  const payload: TrackPayload = { v: PAYLOAD_VERSION, tracks };
   await mkdir(dirname(OUT_PATH), { recursive: true });
-  await writeFile(OUT_PATH, JSON.stringify(geojson));
+  await writeFile(OUT_PATH, JSON.stringify(payload));
   const detailed = cache.filter((a) => a.detail_polyline).length;
   console.log(
-    `Wrote ${features.length} route features (${cache.length - features.length} skipped, no route) to ${OUT_PATH}`,
+    `Wrote ${tracks.length} route tracks (${cache.length - tracks.length} skipped, no route) to ${OUT_PATH}`,
   );
   console.log(
     `Points: ${stats.rawPoints} -> ${stats.keptPoints} after simplify ` +

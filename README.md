@@ -1,15 +1,15 @@
 # Strava on Maps
 
 All your Strava activities as routes on one interactive Mapbox map, filterable
-by type and date. A weekly GitHub Action syncs activities, builds a GeoJSON
-file, and deploys a static site to GitHub Pages.
+by type and date. A weekly GitHub Action syncs activities, builds a compact
+track file, and deploys a static site to GitHub Pages.
 
 ## How it works
 
 Two scripts turn Strava data into the map, run in sequence:
 
 ```
-Strava API ──▶ sync.ts ──▶ data/activities.json ──▶ build-geojson.ts ──▶ activities.geojson ──▶ site
+Strava API ──▶ sync.ts ──▶ data/activities.json ──▶ build-tracks.ts ──▶ tracks.json ──▶ site
 ```
 
 **`sync.ts`** talks to the Strava API and updates the local cache,
@@ -25,11 +25,13 @@ Strava API ──▶ sync.ts ──▶ data/activities.json ──▶ build-geoj
    200-requests-per-15-minutes rate limit — a large backlog backfills over
    several runs rather than in one.
 
-**`build-geojson.ts`** then reads that cache and writes
-`app/public/activities.geojson`, simplifying each route with
-Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default 5 m) to keep the file small.
-The frontend loads this static file — no Strava API calls happen in the
-browser.
+**`build-tracks.ts`** then reads that cache and writes
+`app/public/tracks.json`, simplifying each route with Douglas–Peucker
+(`SIMPLIFY_TOLERANCE_M`, default 5 m) and shipping it as a Google-encoded
+polyline rather than a decoded GeoJSON coordinate array — roughly half the
+payload and a much cheaper parse. The frontend fetches this static file and
+decodes the polylines back into map geometry (`app/src/tracks.ts`) — no Strava
+API calls happen in the browser.
 
 ## Config
 
@@ -119,10 +121,10 @@ Once `.env` is populated (see setup above):
 ```bash
 npm install
 npm run sync            # refresh data/activities.json from Strava
-npm run build:geojson   # regenerate app/public/activities.geojson
+npm run build:tracks    # regenerate app/public/tracks.json
 npm --workspace app run dev
 ```
 
-`npm run sync` and `npm run build:geojson` only need to be re-run when
+`npm run sync` and `npm run build:tracks` only need to be re-run when
 Strava data changes — for day-to-day frontend work, `npm --workspace app run
 dev` alone is enough.

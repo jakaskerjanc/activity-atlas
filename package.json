@@ -7,8 +7,8 @@
   "scripts": {
     "auth": "tsx scripts/get-refresh-token.ts",
     "sync": "tsx scripts/sync.ts",
-    "build:geojson": "tsx scripts/build-geojson.ts",
-    "build": "npm run build:geojson && npm --workspace app run build",
+    "build:tracks": "tsx scripts/build-tracks.ts",
+    "build": "npm run build:tracks && npm --workspace app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test scripts/*.test.ts"
   },
