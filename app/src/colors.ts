@@ -79,10 +79,10 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
- * Derive the value domain used by the ramp modes. Computed once from the full
- * dataset (not the filtered set) so a route keeps the same color as the user
- * toggles filters. Elevation and speed use 5th/95th percentiles so a single
- * monster climb / GPS-glitch speed doesn't wash out the whole ramp.
+ * Derive the value domain used by the ramp modes from the given features —
+ * callers pass the currently-visible set so the recency/elevation/speed ramps
+ * span what's on screen. Elevation and speed use 5th/95th percentiles so a
+ * single monster climb / GPS-glitch speed doesn't wash out the whole ramp.
  */
 export function computeDomain(features: ActivityFeature[]): ColorDomain {
   const ts: number[] = [];

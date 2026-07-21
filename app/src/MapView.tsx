@@ -113,7 +113,9 @@ export function MapView(props: Props) {
     }
     const t0 = performance.now();
     const tick = (now: number) => {
-      const p = Math.min(1, (now - t0) / FADE_MS);
+      // Clamp low too: the rAF timestamp is the frame-start time and can be
+      // marginally before t0, which would make p (and thus opacity) negative.
+      const p = Math.max(0, Math.min(1, (now - t0) / FADE_MS));
       fadeRef.current = 1 - Math.pow(1 - p, 3); // easeOutCubic
       applyPaint();
       if (p < 1) rafRef.current = requestAnimationFrame(tick);
