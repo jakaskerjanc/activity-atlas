@@ -17,6 +17,11 @@ export interface ActivityFeatureProps {
   elevation_gain: number;
 }
 
+export type ActivityFeature = GeoJSON.Feature<
+  GeoJSON.LineString,
+  ActivityFeatureProps
+>;
+
 export type ActivityFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.LineString,
   ActivityFeatureProps
