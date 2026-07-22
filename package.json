@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["app"],
+  "workspaces": [
+    "app"
+  ],
   "scripts": {
     "auth": "tsx scripts/get-refresh-token.ts",
     "sync": "tsx scripts/sync.ts",
     "build:tracks": "tsx scripts/build-tracks.ts",
+    "build:icons": "tsx scripts/render-icons.ts",
     "build": "npm run build:tracks && npm --workspace app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test scripts/*.test.ts"
@@ -18,6 +21,7 @@
   "devDependencies": {
     "@types/mapbox__polyline": "^1.0.5",
     "@types/node": "^22.10.0",
+    "sharp": "^0.35.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
