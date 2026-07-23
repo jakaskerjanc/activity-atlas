@@ -24,7 +24,7 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
  * to refract; dark stays the muted dark base. */
 const STYLE_URL: Record<Theme, string> = {
   dark: "mapbox://styles/mapbox/dark-v11",
-  light: "mapbox://styles/mapbox/streets-v12",
+  light: "mapbox://styles/jkyy/cmrxclplz00ji01qk9apa184q",
 };
 
 const SOURCE_ID = "activities";
