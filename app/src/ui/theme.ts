@@ -1,7 +1,11 @@
 // Shared visual tokens + the floating "glass" panel styling from the Trace Atlas design.
+// Colors resolve to CSS variables (see index.css) so the whole chrome flips between the
+// dark and light (Apple liquid glass) themes via the data-theme attribute on <html>.
 
 import type { CSSProperties } from "react";
 
+// The route/mark accent as a literal — used where a real color string is required
+// (Mapbox paint expressions can't read CSS vars). DOM styling uses var(--accent*) instead.
 export const ACCENT = "#ff6b3d";
 export const MONO = "'JetBrains Mono', monospace";
 
@@ -10,14 +14,15 @@ const panelBase: CSSProperties = {
   zIndex: 20,
   display: "flex",
   flexDirection: "column",
-  borderRadius: 14,
+  borderRadius: 16,
   padding: "18px 18px",
   overflow: "hidden",
-  border: "1px solid rgba(255,255,255,.09)",
-  background: "rgba(14,15,20,.72)",
-  backdropFilter: "blur(18px)",
-  WebkitBackdropFilter: "blur(18px)",
-  boxShadow: "0 24px 60px rgba(0,0,0,.5)",
+  border: "1px solid var(--panel-border)",
+  background: "var(--panel-bg)",
+  backdropFilter: "var(--panel-blur)",
+  WebkitBackdropFilter: "var(--panel-blur)",
+  boxShadow: "var(--panel-shadow), var(--panel-highlight)",
+  transition: "background .35s ease, border-color .35s ease, box-shadow .35s ease",
 };
 
 /** The single merged control + stats panel, sized to content, scrolls if tall. */
@@ -47,6 +52,6 @@ export const eyebrow: CSSProperties = {
   fontFamily: MONO,
   fontSize: 10,
   letterSpacing: ".2em",
-  color: "#7e828d",
+  color: "var(--text-muted)",
   textTransform: "uppercase",
 };

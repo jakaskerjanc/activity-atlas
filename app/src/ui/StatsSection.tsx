@@ -2,7 +2,7 @@
 // Rendered as a section inside the merged SidePanel.
 
 import type { CSSProperties } from "react";
-import { ACCENT, MONO } from "./theme";
+import { MONO } from "./theme";
 import type { StatCard } from "../stats";
 
 interface Props {
@@ -34,7 +34,7 @@ export function StatsSection({ title, subtitle, cards, stravaUrl }: Props) {
             display: "block",
             fontSize: 10,
             letterSpacing: ".14em",
-            color: "#8b8f99",
+            color: "var(--text-muted)",
             textTransform: "uppercase",
             fontFamily: MONO,
             marginTop: 4,
@@ -49,19 +49,19 @@ export function StatsSection({ title, subtitle, cards, stravaUrl }: Props) {
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: 1,
-          background: "rgba(255,255,255,.07)",
+          background: "var(--card-grid)",
           borderRadius: 10,
           overflow: "hidden",
         }}
       >
         {cards.map((c) => (
-          <div key={c.label} style={{ background: "rgba(20,22,28,.9)", padding: "10px 12px" }}>
+          <div key={c.label} style={{ background: "var(--card-bg)", padding: "10px 12px" }}>
             <div style={c.accent ? accentVal : bigVal}>{c.value}</div>
             <div
               style={{
                 fontSize: 10,
                 letterSpacing: ".12em",
-                color: "#8b8f99",
+                color: "var(--text-muted)",
                 textTransform: "uppercase",
                 marginTop: 3,
               }}
@@ -79,15 +79,15 @@ const bigVal: CSSProperties = {
   fontFamily: MONO,
   fontSize: 21,
   fontWeight: 600,
-  color: "#fff",
+  color: "var(--text-strong)",
 };
-const accentVal: CSSProperties = { ...bigVal, color: ACCENT };
+const accentVal: CSSProperties = { ...bigVal, color: "var(--accent-text)" };
 
 const titleText: CSSProperties = {
   display: "block",
   fontSize: 15,
   fontWeight: 700,
-  color: "#eceef2",
+  color: "var(--text)",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",

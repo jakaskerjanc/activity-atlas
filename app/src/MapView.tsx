@@ -15,9 +15,17 @@ import {
 } from "./colors";
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
-import type { ActivityFeatureCollection } from "./types";
+import type { ActivityFeatureCollection, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
+/** Base map that reads well under each theme's panels. Light uses the toned streets
+ * style (roads/parks/water) so the translucent liquid-glass panels have real color
+ * to refract; dark stays the muted dark base. */
+const STYLE_URL: Record<Theme, string> = {
+  dark: "mapbox://styles/mapbox/dark-v11",
+  light: "mapbox://styles/mapbox/streets-v12",
+};
 
 const SOURCE_ID = "activities";
 const GLOW_ID = "activities-glow";
@@ -33,6 +41,8 @@ const FADE_MS = 1200;
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], -1];
 
 interface Props {
+  /** Selects the Mapbox base style; the panels themselves are themed in CSS. */
+  theme: Theme;
   data: ActivityFeatureCollection | null;
   filter: FilterState;
   colorMode: ColorMode;
@@ -70,6 +80,9 @@ export function MapView(props: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const loadedRef = useRef(false);
+  // Base style currently applied to the map, so the theme effect only calls
+  // setStyle when it actually changes.
+  const appliedStyleRef = useRef<string>("");
 
   // Latest props for event handlers registered once on the map.
   const propsRef = useRef(props);
@@ -190,24 +203,25 @@ export function MapView(props: Props) {
     rafRef.current = requestAnimationFrame(tick);
   }
 
-  // Init map once.
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
-      center: SLOVENIA_CENTER,
-      zoom: SLOVENIA_ZOOM,
-    });
-    mapRef.current = map;
-
-    map.on("load", () => {
+  /**
+   * Add the source + the four route layers and set their initial filter/color.
+   * Idempotent, so it can rebuild after a base-style swap (setStyle drops all
+   * custom sources/layers) as well as on first load. Layer-scoped event handlers
+   * are registered on the map instance once and rebind by layer id, so they keep
+   * working across a rebuild.
+   */
+  function installLayers() {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.getSource(SOURCE_ID)) {
       map.addSource(SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
         // Required for line-trim-offset (the replay draw-on reveal).
         lineMetrics: true,
       });
+    }
+    if (!map.getLayer(GLOW_ID)) {
       map.addLayer({
         id: GLOW_ID,
         type: "line",
@@ -220,6 +234,8 @@ export function MapView(props: Props) {
           "line-blur": 8,
         },
       });
+    }
+    if (!map.getLayer(CORE_ID)) {
       map.addLayer({
         id: CORE_ID,
         type: "line",
@@ -227,7 +243,9 @@ export function MapView(props: Props) {
         layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": ACCENT, "line-width": 2.6, "line-opacity": 0 },
       });
-      // Active (drawing) route layers — on top, parked until replay runs.
+    }
+    // Active (drawing) route layers — on top, parked until replay runs.
+    if (!map.getLayer(ACTIVE_GLOW_ID)) {
       map.addLayer({
         id: ACTIVE_GLOW_ID,
         type: "line",
@@ -242,6 +260,8 @@ export function MapView(props: Props) {
           "line-trim-offset": [0, 1],
         },
       });
+    }
+    if (!map.getLayer(ACTIVE_CORE_ID)) {
       map.addLayer({
         id: ACTIVE_CORE_ID,
         type: "line",
@@ -255,9 +275,26 @@ export function MapView(props: Props) {
           "line-trim-offset": [0, 1],
         },
       });
-      map.setFilter(GLOW_ID, buildFilter(propsRef.current.filter));
-      map.setFilter(CORE_ID, buildFilter(propsRef.current.filter));
-      applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
+    }
+    map.setFilter(GLOW_ID, buildFilter(propsRef.current.filter));
+    map.setFilter(CORE_ID, buildFilter(propsRef.current.filter));
+    applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
+  }
+
+  // Init map once.
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    const map = new mapboxgl.Map({
+      container: containerRef.current,
+      style: STYLE_URL[propsRef.current.theme],
+      center: SLOVENIA_CENTER,
+      zoom: SLOVENIA_ZOOM,
+    });
+    mapRef.current = map;
+    appliedStyleRef.current = STYLE_URL[propsRef.current.theme];
+
+    map.on("load", () => {
+      installLayers();
       loadedRef.current = true;
 
       const d = propsRef.current.data;
@@ -296,6 +333,27 @@ export function MapView(props: Props) {
       loadedRef.current = false;
     };
   }, []);
+
+  // Swap the base map style when the theme changes. setStyle drops our source and
+  // layers, so rebuild them on the next style.load and restore the current data,
+  // color, filter/replay state, and resting paint — without moving the camera or
+  // re-running the fade-in reveal.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    const url = STYLE_URL[props.theme];
+    if (appliedStyleRef.current === url) return;
+    appliedStyleRef.current = url;
+    map.once("style.load", () => {
+      installLayers();
+      const d = propsRef.current.data;
+      if (d) (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
+      fadeRef.current = 1;
+      if (propsRef.current.replaying) applyReplay(propsRef.current.replayFrame);
+      applyPaint();
+    });
+    map.setStyle(url);
+  }, [props.theme]);
 
   // Update source when data arrives/changes, then replay the reveal.
   useEffect(() => {

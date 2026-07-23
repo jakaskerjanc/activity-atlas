@@ -2,7 +2,7 @@
 // live in InfoPanel.
 
 import type { CSSProperties } from "react";
-import { ACCENT, PANEL_STYLE } from "./theme";
+import { PANEL_STYLE } from "./theme";
 import { FilterSection } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
 import type { ColorMode, ColorDomain } from "../colors";
@@ -42,13 +42,13 @@ export function SidePanel(p: Props) {
         onFromChange={p.onFromChange}
         onToChange={p.onToChange}
       />
-      <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "13px 0" }} />
+      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
       <ColorSection
         mode={p.colorMode}
         domain={p.colorDomain}
         onChange={p.onColorModeChange}
       />
-      <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "13px 0" }} />
+      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
       <button
         onClick={p.onStartReplay}
         disabled={!p.canReplay}
@@ -67,9 +67,9 @@ function replayBtn(enabled: boolean): CSSProperties {
     width: "100%",
     padding: "9px 12px",
     borderRadius: 8,
-    border: `1px solid ${enabled ? ACCENT : "rgba(255,255,255,.12)"}`,
-    background: enabled ? "rgba(255,107,61,.14)" : "transparent",
-    color: enabled ? "#eceef2" : "#54575f",
+    border: `1px solid ${enabled ? "var(--accent)" : "var(--control-border)"}`,
+    background: enabled ? "var(--accent-tint)" : "transparent",
+    color: enabled ? "var(--pill-on-text)" : "var(--text-faint)",
     fontSize: 13,
     fontWeight: 600,
     letterSpacing: ".02em",

@@ -1,6 +1,9 @@
 // Frontend copy of the GeoJSON data contract produced by the pipeline.
 // Keep in sync with scripts/types.ts (ActivityFeatureProps).
 
+/** UI color scheme. Drives both the panel chrome and the Mapbox base style. */
+export type Theme = "light" | "dark";
+
 export interface ActivityFeatureProps {
   id: number;
   name: string;

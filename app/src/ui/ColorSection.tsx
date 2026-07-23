@@ -3,7 +3,7 @@
 // scale. Rendered as a section inside the SidePanel.
 
 import type { CSSProperties } from "react";
-import { ACCENT, MONO, eyebrow } from "./theme";
+import { MONO, eyebrow } from "./theme";
 import {
   COLOR_MODES,
   legendFor,
@@ -71,12 +71,12 @@ function LegendView({ legend }: { legend: Legend }) {
 function pillStyle(on: boolean): CSSProperties {
   return {
     appearance: "none",
-    border: on ? `1px solid ${ACCENT}` : "1px solid rgba(255,255,255,.12)",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--control-border)",
     cursor: "pointer",
     padding: "5px 10px",
     borderRadius: 8,
-    background: on ? "rgba(255,107,61,.14)" : "transparent",
-    color: on ? "#eceef2" : "#8b8f99",
+    background: on ? "var(--accent-tint)" : "transparent",
+    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
     fontSize: 12,
     fontWeight: 500,
     transition: "background .15s, border-color .15s",
@@ -88,7 +88,7 @@ const swatchRow: CSSProperties = {
   alignItems: "center",
   gap: 7,
   fontSize: 12,
-  color: "#b7bac2",
+  color: "var(--text-soft)",
 };
 
 const swatchDot: CSSProperties = {
@@ -104,5 +104,5 @@ const gradientLabels: CSSProperties = {
   marginTop: 6,
   fontFamily: MONO,
   fontSize: 10,
-  color: "#8b8f99",
+  color: "var(--text-muted)",
 };

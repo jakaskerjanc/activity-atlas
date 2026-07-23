@@ -2,7 +2,7 @@
 // Rendered as a section inside the merged SidePanel.
 
 import type { CSSProperties } from "react";
-import { ACCENT, MONO, eyebrow } from "./theme";
+import { MONO, eyebrow } from "./theme";
 import { formatDate } from "../format";
 
 interface Props {
@@ -52,10 +52,10 @@ export function FilterSection({
         })}
       </div>
 
-      <div style={{ height: 1, background: "rgba(255,255,255,.08)", margin: "13px 0" }} />
+      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
 
       <div style={{ ...eyebrow, marginBottom: 6 }}>Date Range</div>
-      <div style={{ fontFamily: MONO, fontSize: 12, color: ACCENT, marginBottom: 12 }}>
+      <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--accent-text)", marginBottom: 12 }}>
         {formatDate(from)}  →  {formatDate(to)}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -108,8 +108,8 @@ function rowStyle(on: boolean): CSSProperties {
     width: "100%",
     padding: "6px 9px",
     borderRadius: 8,
-    background: on ? "rgba(255,107,61,.09)" : "transparent",
-    color: on ? "#eceef2" : "#6f727c",
+    background: on ? "var(--accent-tint-weak)" : "transparent",
+    color: on ? "var(--text)" : "var(--text-dim)",
     fontSize: 13,
     fontWeight: 500,
     transition: "background .15s",
@@ -122,9 +122,9 @@ function dotStyle(on: boolean): CSSProperties {
     height: 14,
     borderRadius: 4,
     flex: "0 0 auto",
-    background: on ? ACCENT : "transparent",
-    border: on ? "none" : "1.5px solid #4a4d57",
-    boxShadow: on ? `0 0 10px ${ACCENT}` : "none",
+    background: on ? "var(--accent)" : "transparent",
+    border: on ? "none" : "1.5px solid var(--border-empty)",
+    boxShadow: on ? "0 0 10px var(--accent)" : "none",
   };
 }
 
@@ -132,7 +132,7 @@ function countStyle(on: boolean): CSSProperties {
   return {
     fontFamily: MONO,
     fontSize: 11,
-    color: on ? "#8b8f99" : "#54575f",
+    color: on ? "var(--text-muted)" : "var(--text-faint)",
   };
 }
 
@@ -140,7 +140,7 @@ const sliderLabelRow: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
   fontSize: 10,
-  color: "#8b8f99",
+  color: "var(--text-muted)",
   marginBottom: 6,
   fontFamily: MONO,
 };

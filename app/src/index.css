@@ -1,3 +1,102 @@
+/* Theme tokens. Dark is the default (:root); light overrides under [data-theme="light"].
+   Every panel/text/control color in the UI resolves to one of these, so the whole
+   chrome flips by swapping the data-theme attribute on <html>. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0e0f13;
+  --text: #e7e8ec;
+  --text-strong: #ffffff;
+  --text-soft: #b7bac2;
+  --text-muted: #8b8f99;
+  --text-dim: #6f727c;
+  --text-faint: #54575f;
+  --border-empty: #4a4d57;
+
+  --accent: #ff6b3d;
+  --accent-text: #ff6b3d;
+  --accent-hover: #ff8a63;
+  --accent-tint: rgba(255, 107, 61, 0.14);
+  --accent-tint-weak: rgba(255, 107, 61, 0.09);
+  --pill-on-text: #eceef2;
+
+  --panel-bg: linear-gradient(
+    155deg,
+    rgba(26, 28, 36, 0.6),
+    rgba(12, 13, 18, 0.46)
+  );
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-blur: blur(26px) saturate(150%);
+  --panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --glass-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.4);
+
+  --divider: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(28, 30, 40, 0.5);
+  --card-grid: rgba(255, 255, 255, 0.08);
+  --control-border: rgba(255, 255, 255, 0.12);
+  --track: rgba(255, 255, 255, 0.14);
+  --scrollbar: rgba(255, 255, 255, 0.12);
+  --header-fade: rgba(10, 11, 15, 0.9);
+
+  --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.65);
+  --vignette-bg: radial-gradient(
+    120% 90% at 60% 40%,
+    transparent 55%,
+    rgba(6, 7, 10, 0.55) 100%
+  );
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eef0f4;
+  --text: #1c1c1e;
+  --text-strong: #0a0a0c;
+  --text-soft: rgba(28, 28, 30, 0.78);
+  --text-muted: rgba(60, 60, 67, 0.66);
+  --text-dim: rgba(60, 60, 67, 0.5);
+  --text-faint: rgba(60, 60, 67, 0.32);
+  --border-empty: rgba(60, 60, 67, 0.38);
+
+  --accent: #ff6b3d;
+  --accent-text: #d24a1c;
+  --accent-hover: #e0521f;
+  --accent-tint: rgba(255, 107, 61, 0.16);
+  --accent-tint-weak: rgba(255, 107, 61, 0.1);
+  --pill-on-text: var(--accent-text);
+
+  /* Liquid glass: a thin, see-through fill carried by a heavy saturating blur, with
+     a lit top edge and soft inner rim so the material reads as glass, not frosting. */
+  --panel-bg: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.4),
+    rgba(255, 255, 255, 0.18)
+  );
+  --panel-border: rgba(255, 255, 255, 0.55);
+  --panel-blur: blur(30px) saturate(190%) brightness(1.05);
+  --panel-shadow: 0 10px 40px rgba(20, 28, 48, 0.16);
+  --panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 22px rgba(255, 255, 255, 0.18);
+  --glass-shadow-sm: 0 6px 18px rgba(20, 28, 48, 0.14);
+
+  --divider: rgba(60, 60, 67, 0.16);
+  --card-bg: rgba(255, 255, 255, 0.32);
+  --card-grid: rgba(60, 60, 67, 0.14);
+  --control-border: rgba(60, 60, 67, 0.22);
+  --track: rgba(60, 60, 67, 0.2);
+  --scrollbar: rgba(60, 60, 67, 0.28);
+  --header-fade: rgba(238, 240, 244, 0.85);
+
+  --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.12);
+  --vignette-bg: radial-gradient(
+    120% 90% at 60% 40%,
+    transparent 60%,
+    rgba(150, 160, 180, 0.14) 100%
+  );
+}
+
 html,
 body,
 #root {
@@ -6,19 +105,19 @@ body,
 }
 
 body {
-  background: #0e0f13;
-  color: #e7e8ec;
+  background: var(--bg);
+  color: var(--text);
   font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
 a {
-  color: #ff6b3d;
+  color: var(--accent-text);
   text-decoration: none;
 }
 a:hover {
-  color: #ff8a63;
+  color: var(--accent-hover);
 }
 
 ::-webkit-scrollbar {
@@ -26,7 +125,7 @@ a:hover {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--scrollbar);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
@@ -38,7 +137,7 @@ input[type="range"] {
   appearance: none;
   width: 100%;
   height: 3px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--track);
   border-radius: 3px;
   outline: none;
 }
@@ -48,7 +147,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: #ff6b3d;
+  background: var(--accent);
   cursor: pointer;
   box-shadow: 0 0 0 4px rgba(255, 107, 61, 0.18);
 }
@@ -57,7 +156,7 @@ input[type="range"]::-moz-range-thumb {
   height: 15px;
   border: none;
   border-radius: 50%;
-  background: #ff6b3d;
+  background: var(--accent);
   cursor: pointer;
 }
 

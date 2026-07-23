@@ -3,7 +3,7 @@
 // while replay is active.
 
 import type { CSSProperties } from "react";
-import { ACCENT, MONO, eyebrow, INFO_PANEL_STYLE } from "./theme";
+import { MONO, eyebrow, INFO_PANEL_STYLE } from "./theme";
 import { formatDateYear } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
@@ -75,7 +75,7 @@ const dateStyle: CSSProperties = {
   fontFamily: MONO,
   fontSize: 15,
   fontWeight: 600,
-  color: ACCENT,
+  color: "var(--accent-text)",
   letterSpacing: ".02em",
 };
 
@@ -93,14 +93,14 @@ const playBtn: CSSProperties = {
   width: 38,
   height: 38,
   borderRadius: "50%",
-  background: ACCENT,
-  color: "#0e0f13",
+  background: "var(--accent)",
+  color: "#fff",
   fontSize: 13,
   lineHeight: 1,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  boxShadow: `0 0 16px ${ACCENT}`,
+  boxShadow: "0 0 16px var(--accent)",
 };
 
 const footRow: CSSProperties = {
@@ -112,12 +112,12 @@ const footRow: CSSProperties = {
 function pillStyle(on: boolean): CSSProperties {
   return {
     appearance: "none",
-    border: on ? `1px solid ${ACCENT}` : "1px solid rgba(255,255,255,.12)",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--control-border)",
     cursor: "pointer",
     padding: "4px 9px",
     borderRadius: 8,
-    background: on ? "rgba(255,107,61,.14)" : "transparent",
-    color: on ? "#eceef2" : "#8b8f99",
+    background: on ? "var(--accent-tint)" : "transparent",
+    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
     fontFamily: MONO,
     fontSize: 11,
     fontWeight: 500,
@@ -127,12 +127,12 @@ function pillStyle(on: boolean): CSSProperties {
 
 const exitBtn: CSSProperties = {
   appearance: "none",
-  border: "1px solid rgba(255,255,255,.12)",
+  border: "1px solid var(--control-border)",
   cursor: "pointer",
   padding: "4px 12px",
   borderRadius: 8,
   background: "transparent",
-  color: "#b7bac2",
+  color: "var(--text-soft)",
   fontSize: 12,
   fontWeight: 500,
 };
