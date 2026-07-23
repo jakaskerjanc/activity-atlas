@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
 
       - name: Sync activities from Strava
+        id: sync
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
           STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
@@ -42,9 +43,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "New activities fetched: ${{ steps.sync.outputs.new_count }}" >> "$GITHUB_STEP_SUMMARY"
           if ! git diff --quiet -- data/activities.json; then
             git add data/activities.json
-            git commit -m "chore: sync Strava activities"
+            git commit -m "chore: sync Strava activities (+${{ steps.sync.outputs.new_count }} new)"
             git push
           else
             echo "No new activities."

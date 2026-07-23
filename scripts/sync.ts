@@ -4,7 +4,7 @@
 // cached one (minus an overlap window to catch edits), merges by id, and
 // writes the cache back sorted by start_date.
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, appendFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAccessToken, fetchActivitiesAfter, fetchActivityDetail } from "./strava.ts";
@@ -89,7 +89,13 @@ async function main() {
 
   await mkdir(dirname(CACHE_PATH), { recursive: true });
   await writeFile(CACHE_PATH, JSON.stringify(merged, null, 2) + "\n");
-  console.log(`Cache now holds ${merged.length} activities (+${merged.length - cache.length} new).`);
+  const newCount = merged.length - cache.length;
+  console.log(`Cache now holds ${merged.length} activities (+${newCount} new).`);
+
+  // Surface the count to the calling workflow (e.g. for the commit message).
+  if (process.env.GITHUB_OUTPUT) {
+    await appendFile(process.env.GITHUB_OUTPUT, `new_count=${newCount}\n`);
+  }
 }
 
 main().catch((err) => {
