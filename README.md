@@ -1,5 +1,7 @@
 # Strava on Maps
 
+**[Live site →](https://jakaskerjanc.github.io/strava-on-maps/)**
+
 All your Strava activities as routes on one interactive Mapbox map, filterable
 by type and date. A weekly GitHub Action syncs activities, builds a compact
 track file, and deploys a static site to GitHub Pages.
