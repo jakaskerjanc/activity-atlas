@@ -1,10 +1,12 @@
 // Bottom-center panel: aggregate totals, or a single activity's stats when selected.
 
-import { INFO_PANEL_STYLE } from "./theme";
+import { GlassPanel } from "./GlassPanel";
 import { StatsSection } from "./StatsSection";
 import type { StatCard } from "../stats";
+import type { Theme } from "../types";
 
 interface Props {
+  theme: Theme;
   title: string;
   subtitle: string;
   cards: StatCard[];
@@ -13,13 +15,18 @@ interface Props {
 
 export function InfoPanel(p: Props) {
   return (
-    <aside style={INFO_PANEL_STYLE}>
+    <GlassPanel
+      theme={p.theme}
+      anchor={{ bottom: 24, centerX: true }}
+      width={420}
+      maxWidth="calc(100vw - 80px)"
+    >
       <StatsSection
         title={p.title}
         subtitle={p.subtitle}
         cards={p.cards}
         stravaUrl={p.stravaUrl}
       />
-    </aside>
+    </GlassPanel>
   );
 }

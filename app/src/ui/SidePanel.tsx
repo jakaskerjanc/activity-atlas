@@ -2,12 +2,14 @@
 // live in InfoPanel.
 
 import type { CSSProperties } from "react";
-import { PANEL_STYLE } from "./theme";
+import { GlassPanel } from "./GlassPanel";
 import { FilterSection } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
 import type { ColorMode, ColorDomain } from "../colors";
+import type { Theme } from "../types";
 
 interface Props {
+  theme: Theme;
   availableTypes: string[];
   typeCounts: Record<string, number>;
   enabledTypes: Set<string>;
@@ -29,7 +31,13 @@ interface Props {
 
 export function SidePanel(p: Props) {
   return (
-    <aside className="side-panel" style={PANEL_STYLE}>
+    <GlassPanel
+      className="side-panel"
+      theme={p.theme}
+      anchor={{ top: 82, left: 24 }}
+      width={296}
+      maxHeight="calc(100vh - 182px)"
+    >
       <FilterSection
         availableTypes={p.availableTypes}
         typeCounts={p.typeCounts}
@@ -56,7 +64,7 @@ export function SidePanel(p: Props) {
       >
         ▶  Replay history
       </button>
-    </aside>
+    </GlassPanel>
   );
 }
 

@@ -53,12 +53,17 @@ type Anchor =
 function glassOffsets(anchor: Anchor, size: { w: number; h: number }): CSSProperties
 ```
 
-Returns the `top`/`left`/`bottom` the library must receive so the panel's visual box
-lands on the anchor after `translate(-50%, -50%)`:
+Returns the `top`/`left` the library must receive so the panel's visual box lands on the
+anchor after `translate(-50%, -50%)`:
 
 - `{top, left}` → `top: (top + h/2)px`, `left: (left + w/2)px`
-- `{bottom, centerX}` → `bottom: (bottom - h/2)px`, `left: "50%"` (the -50% X translate
-  does the horizontal centering natively)
+- `{bottom, centerX}` → `top: calc(100% - (bottom + h/2)px)`, `left: "50%"` (the -50% X
+  translate does the horizontal centering natively)
+
+Always `top`/`left`, never `bottom`/`right`: the library copies only `position/top/left`
+onto its rim and highlight layers, so any edge it doesn't read leaves those layers
+stranded at their `left: 50%` default — a ghost rounded rectangle floating over the map.
+This was caught on the first screenshot pass, not in review.
 
 Pure and total, so it is unit-tested with vitest alongside `stats.ts` / `replay.ts`.
 There is no component-test setup in this repo and none is being added.
@@ -77,9 +82,12 @@ Owns positioning and material for all three panels.
 
 ### `ui/theme.ts` — per-theme material
 
-`glassTheme(theme)` returns `{ displacementScale, blurAmount, saturation,
-aberrationIntensity, overLight }`. Dark: `overLight: false`, lower blur, saturation ~140.
-Light: `overLight: true`, saturation ~180.
+`glassMaterial(theme)` returns `{ mode, displacementScale, blurAmount, saturation,
+aberrationIntensity, overLight }`. Both themes use `mode: "shader"` and `blurAmount: 0`,
+leaving only the library's blur floor (`4px` dark, `12px` under `overLight`) so the
+panels refract rather than frost. Dark: `overLight: false`, saturation 140,
+displacement 60. Light: `overLight: true`, saturation 180, displacement 90 — `overLight`
+halves the displacement internally, hence the larger figure.
 
 `PANEL_STYLE` and `INFO_PANEL_STYLE` are deleted — both positioning and material move
 into `GlassPanel`. `ACCENT`, `MONO` and `eyebrow` are unchanged.
@@ -92,6 +100,10 @@ into `GlassPanel`. `ACCENT`, `MONO` and `eyebrow` are unchanged.
 | `InfoPanel` | `{bottom: 24, centerX: true}` | width 420, `elasticity 0` |
 | `ReplayBar` | `{bottom: 24, centerX: true}` | same slot as `InfoPanel` |
 | Header toggle | fixed 38×38 | `LiquidGlass` directly, `cornerRadius 12`, `padding "0"`, `elasticity 0.3` |
+
+The toggle needs no measuring: a zero-sized wrapper marks its center (22px in from the
+right, centered in the 62px header) and the glass sits at `top/left: 0` inside it, where
+its own `translate(-50%, -50%)` centers it — which also keeps the rim layers aligned.
 
 `theme` is drilled from `App` into all four components, matching the existing plain-props
 style of this codebase.
@@ -108,11 +120,22 @@ their last consumers and are removed from both theme blocks.
 ## Verification
 
 - `npm run typecheck`, `npm --workspace app run build`, `npm --workspace app test`
-- Launch the app and screenshot both themes. Two things checked live rather than assumed:
-  1. React 19's `useId()` output resolves inside `filter: url(#…)` (the id contains
-     non-ASCII guillemets; valid as a CSS identifier in principle, worth confirming).
-  2. Frame rate while panning and during replay, with three `backdrop-filter` + SVG
-     filter instances compositing over the Mapbox canvas.
+- Launch the app and screenshot both themes.
+
+Confirmed live:
+
+- React 19's `useId()` emits `_r_0_` — plain ASCII, and `document.getElementById` resolves
+  the id inside `filter: url(#…)` on all three panels.
+- Anchors land exactly: side panel `top 82 / left 24`, info panel and replay bar both
+  `bottom 24` centered on the viewport, toggle `top 12 / right 22`.
+- Panel offsets recompute as content height changes (filter toggles, selection).
+- The `.side-panel` mobile hide still works through the glass wrapper.
+- Range sliders drag normally inside the glass; panels do not drift (`elasticity 0`).
+- No console or page errors in either theme.
+
+**Not verified:** frame rate. Headless Chromium has no GPU, and a rAF probe returned
+1–2 fps both with the glass and with it hidden — the harness floor, not a signal. Needs
+a look on real hardware while panning and during replay.
 
 ## Risks
 

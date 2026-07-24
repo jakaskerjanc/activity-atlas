@@ -2,8 +2,18 @@
 // Overlays the map.
 
 import type { CSSProperties } from "react";
-import { MONO } from "./theme";
+import LiquidGlass from "liquid-glass-react";
+import { MONO, glassMaterial } from "./theme";
 import type { Theme } from "../types";
+
+const BTN = 38;
+// The glass sits at top/left 0 of a zero-sized anchor and its own translate(-50%, -50%)
+// centers it there, so the anchor marks the button's center: 22px inset from the right,
+// vertically centered in the 62px header. It has to be top/left rather than `right`
+// because the library's rim layers only read position/top/left — a `right` anchor
+// strands them at their `left: 50%` default, adrift in the middle of the header.
+const BTN_CENTER_TOP = 62 / 2;
+const BTN_CENTER_RIGHT = 22 + BTN / 2;
 
 interface Props {
   theme: Theme;
@@ -56,36 +66,55 @@ export function Header({ theme, onToggleTheme }: Props) {
         </div>
       </div>
 
-      <button
-        onClick={onToggleTheme}
-        aria-label={`Switch to ${next} theme`}
-        title={`Switch to ${next} theme`}
-        style={toggleBtn}
+      {/* The click target stays a real <button> inside the glass: the library's own
+          onClick lands on a div, with no keyboard or screen-reader affordance. */}
+      <div
+        style={{
+          position: "absolute",
+          top: BTN_CENTER_TOP,
+          right: BTN_CENTER_RIGHT,
+          width: 0,
+          height: 0,
+        }}
       >
-        {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-      </button>
+        <LiquidGlass
+          {...glassMaterial(theme)}
+          cornerRadius={12}
+          elasticity={0.3}
+          padding="0"
+          style={{
+            position: "absolute",
+            top: "0px",
+            left: "0px",
+            pointerEvents: "auto",
+          }}
+        >
+          <button
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${next} theme`}
+            title={`Switch to ${next} theme`}
+            style={toggleBtn}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </LiquidGlass>
+      </div>
     </header>
   );
 }
 
 const toggleBtn: CSSProperties = {
-  pointerEvents: "auto",
   appearance: "none",
   cursor: "pointer",
-  width: 38,
-  height: 38,
-  flex: "0 0 auto",
+  width: BTN,
+  height: BTN,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  borderRadius: 12,
-  border: "1px solid var(--panel-border)",
-  background: "var(--panel-bg)",
-  backdropFilter: "var(--panel-blur)",
-  WebkitBackdropFilter: "var(--panel-blur)",
-  boxShadow: "var(--glass-shadow-sm), var(--panel-highlight)",
+  border: "none",
+  background: "transparent",
   color: "var(--text)",
-  transition: "background .35s ease, border-color .35s ease, color .35s ease",
+  transition: "color .35s ease",
 };
 
 function SunIcon() {

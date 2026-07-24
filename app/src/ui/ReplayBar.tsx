@@ -3,12 +3,15 @@
 // while replay is active.
 
 import type { CSSProperties } from "react";
-import { MONO, eyebrow, INFO_PANEL_STYLE } from "./theme";
+import { MONO, eyebrow } from "./theme";
+import { GlassPanel } from "./GlassPanel";
 import { formatDateYear } from "../format";
+import type { Theme } from "../types";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
 interface Props {
+  theme: Theme;
   playing: boolean;
   progress: number; // 0..1
   /** epoch seconds of the drawing route, or null before the first frame. */
@@ -23,7 +26,13 @@ interface Props {
 
 export function ReplayBar(p: Props) {
   return (
-    <aside style={{ ...INFO_PANEL_STYLE, gap: 12 }}>
+    <GlassPanel
+      theme={p.theme}
+      anchor={{ bottom: 24, centerX: true }}
+      width={420}
+      maxWidth="calc(100vw - 80px)"
+      gap={12}
+    >
       <div style={topRow}>
         <span style={eyebrow}>Replay</span>
         <span style={dateStyle}>{p.dateTs == null ? "—" : formatDateYear(p.dateTs)}</span>
@@ -61,7 +70,7 @@ export function ReplayBar(p: Props) {
           Exit
         </button>
       </div>
-    </aside>
+    </GlassPanel>
   );
 }
 

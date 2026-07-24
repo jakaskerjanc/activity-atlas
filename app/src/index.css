@@ -1,6 +1,11 @@
 /* Theme tokens. Dark is the default (:root); light overrides under [data-theme="light"].
    Every panel/text/control color in the UI resolves to one of these, so the whole
    chrome flips by swapping the data-theme attribute on <html>. */
+:root {
+  /* Restated inside glass panels, whose material resets the font — see GlassPanel. */
+  --font-ui: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -28,9 +33,6 @@
   );
   --panel-border: rgba(255, 255, 255, 0.12);
   --panel-blur: blur(26px) saturate(150%);
-  --panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-  --panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  --glass-shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.4);
 
   --divider: rgba(255, 255, 255, 0.08);
   --card-bg: rgba(28, 30, 40, 0.5);
@@ -67,8 +69,8 @@
   --accent-tint-weak: rgba(255, 107, 61, 0.1);
   --pill-on-text: var(--accent-text);
 
-  /* Liquid glass: a thin, see-through fill carried by a heavy saturating blur, with
-     a lit top edge and soft inner rim so the material reads as glass, not frosting. */
+  /* Only the error toast still uses these; the panels get their material from
+     liquid-glass-react. */
   --panel-bg: linear-gradient(
     155deg,
     rgba(255, 255, 255, 0.4),
@@ -76,10 +78,6 @@
   );
   --panel-border: rgba(255, 255, 255, 0.55);
   --panel-blur: blur(30px) saturate(190%) brightness(1.05);
-  --panel-shadow: 0 10px 40px rgba(20, 28, 48, 0.16);
-  --panel-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 0 22px rgba(255, 255, 255, 0.18);
-  --glass-shadow-sm: 0 6px 18px rgba(20, 28, 48, 0.14);
 
   --divider: rgba(60, 60, 67, 0.16);
   --card-bg: rgba(255, 255, 255, 0.32);
@@ -107,7 +105,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
