@@ -22,22 +22,25 @@ export interface GlassMaterial {
 }
 
 /**
- * Glass tuning per theme. `blurAmount: 0` leaves only the library's floor —
- * `blur((overLight ? 12 : 4)px)` — so the panels refract rather than frost.
- * `overLight` also halves the displacement, hence the larger scale in the light theme.
+ * Glass tuning per theme. `blurAmount: 0` leaves only the library's blur floor,
+ * `blur((overLight ? 12 : 4)px)`, so the panels refract rather than frost.
  *
- * Note the library's overLight darkening overlays are Tailwind-classed and this app has
- * no Tailwind, so overLight only affects blur, displacement and its own drop shadow.
+ * Both themes therefore run with `overLight: false` — it is the only way down to the
+ * 4px floor, and its other two effects are wanted here as well: it stops the library
+ * halving `displacementScale` (so 45 means 45), and it swaps its hardcoded
+ * `0 16px 70px rgba(0,0,0,.75)` shadow for a far lighter one, which suits a light theme
+ * better anyway. Its third effect, the darkening overlays, never applied: those are
+ * Tailwind-classed and this app has no Tailwind.
  */
 export function glassMaterial(theme: Theme): GlassMaterial {
   return theme === "light"
     ? {
         mode: "shader",
-        displacementScale: 90,
+        displacementScale: 45,
         blurAmount: 0,
         saturation: 180,
         aberrationIntensity: 2,
-        overLight: true,
+        overLight: false,
       }
     : {
         mode: "shader",

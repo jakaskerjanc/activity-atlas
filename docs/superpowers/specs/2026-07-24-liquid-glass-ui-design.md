@@ -83,11 +83,16 @@ Owns positioning and material for all three panels.
 ### `ui/theme.ts` — per-theme material
 
 `glassMaterial(theme)` returns `{ mode, displacementScale, blurAmount, saturation,
-aberrationIntensity, overLight }`. Both themes use `mode: "shader"` and `blurAmount: 0`,
-leaving only the library's blur floor (`4px` dark, `12px` under `overLight`) so the
-panels refract rather than frost. Dark: `overLight: false`, saturation 140,
-displacement 60. Light: `overLight: true`, saturation 180, displacement 90 — `overLight`
-halves the displacement internally, hence the larger figure.
+aberrationIntensity, overLight }`. Both themes use `mode: "shader"`, `blurAmount: 0` and
+`overLight: false`, which lands both on the library's 4px blur floor — the panels
+refract rather than frost. Dark: saturation 140, displacement 60. Light: saturation 180,
+displacement 45.
+
+`overLight: false` in the light theme is deliberate. It is the only way down to the 4px
+floor (`overLight` raises it to 12), it stops the library halving `displacementScale`,
+and it swaps the hardcoded `0 16px 70px rgba(0,0,0,.75)` shadow for a much lighter one —
+all three wanted here. Its fourth effect, the darkening overlays, never applied: those
+are Tailwind-classed and this app has no Tailwind.
 
 `PANEL_STYLE` and `INFO_PANEL_STYLE` are deleted — both positioning and material move
 into `GlassPanel`. `ACCENT`, `MONO` and `eyebrow` are unchanged.
