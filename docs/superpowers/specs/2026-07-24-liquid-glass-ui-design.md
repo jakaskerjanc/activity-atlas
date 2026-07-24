@@ -77,8 +77,18 @@ Owns positioning and material for all three panels.
   the style handed to `LiquidGlass`. The panel is `visibility: hidden` for the single
   frame before the first measurement, so it never paints half-offset.
 - The content div resets the library's font declaration and text-shadow, and owns
-  `width`, `display: flex; flexDirection: column`, `maxHeight` and `overflowY: auto`
-  (the library's own box is `overflow: hidden` and cannot scroll).
+  `width`, `display: flex; flexDirection: column` and `maxHeight`.
+
+**Padding lives on the content, not the glass.** The library's box is `overflow: hidden`,
+so an accent glow (`box-shadow: 0 0 16px`) painted past the panel's inset is cut off.
+Holding the inset inside the content box turns it into bleed room instead. `insetX`/
+`insetY` must therefore be at least the largest glow in the panel: 18 for the replay
+bar's play button (16px), 18 horizontally for the side panel's type dots (10px).
+
+**Scrolling is opt-in via `maxHeight`.** A vertical scroll container clips horizontally
+too, so panels that don't need it stay `overflow: visible`. When a panel does scroll, a
+6px `GUTTER` moves back onto the glass so the scrollbar clears the 16px corner radius,
+and the scroller takes a `.glass-scroll` class for a thin, dim bar.
 
 ### `ui/theme.ts` — per-theme material
 
@@ -101,8 +111,8 @@ into `GlassPanel`. `ACCENT`, `MONO` and `eyebrow` are unchanged.
 
 | Surface | Anchor | Notes |
 | --- | --- | --- |
-| `SidePanel` | `{top: 82, left: 24}` | width 296, `maxHeight: calc(100vh - 182px)`, `elasticity 0` |
-| `InfoPanel` | `{bottom: 24, centerX: true}` | width 420, `elasticity 0` |
+| `SidePanel` | `{top: 82, left: 24}` | width 296, `insetX 18`, `maxHeight: calc(100vh - 134px)`, `elasticity 0` |
+| `InfoPanel` | `{bottom: 24, centerX: true}` | width 420, inset 18, `elasticity 0` |
 | `ReplayBar` | `{bottom: 24, centerX: true}` | same slot as `InfoPanel` |
 | Header toggle | fixed 38×38 | `LiquidGlass` directly, `cornerRadius 12`, `padding "0"`, `elasticity 0.3` |
 

@@ -12,16 +12,31 @@ import { glassOffsets, type GlassAnchor, type GlassSize } from "./glassOffsets";
 import { glassMaterial } from "./theme";
 import type { Theme } from "../types";
 
-const PAD_X = 16;
-const PAD_Y = 14;
+/**
+ * Padding held on the glass rather than the content, so a scrollbar is not jammed
+ * against the rounded rim. The scroll box — and therefore the full-height scrollbar —
+ * is inset by this much, which at a 16px corner radius is enough for the bar to clear
+ * the corner arc. Only used when the panel actually scrolls: everywhere else the whole
+ * inset lives inside the content box, where it doubles as bleed room.
+ */
+const GUTTER = 6;
 
 interface Props {
   anchor: GlassAnchor;
-  /** Content width; the glass box is this plus horizontal padding. */
+  /** Content width; the glass box is this plus `insetX` on each side. */
   width: number;
-  /** Caps the *content* box; the glass reads 2 * PAD_X wider. */
+  /** Caps the *content* box; the glass reads 2 * insetX wider. */
   maxWidth?: string;
+  /** Set only when the panel should scroll — that is what makes it a scroll container. */
   maxHeight?: string;
+  /**
+   * Distance from the glass edge to the content. Most of it sits inside the content
+   * box, which is what keeps accent glows (`box-shadow: 0 0 Npx`) from being cut off:
+   * the glass clips at its own edge, so anything painted beyond the inset disappears.
+   * Keep these >= the largest glow inside the panel.
+   */
+  insetX?: number;
+  insetY?: number;
   /** Column gap between children. */
   gap?: number;
   /** Passed through to the glass container, e.g. `.side-panel` for the mobile hide. */
@@ -31,6 +46,9 @@ interface Props {
 }
 
 export function GlassPanel(p: Props) {
+  const { insetX = 16, insetY = 14 } = p;
+  const scrolls = p.maxHeight != null;
+  const glassPad = scrolls ? GUTTER : 0;
   const contentRef = useRef<HTMLDivElement>(null);
   // {0,0} until the first measurement; the panel stays hidden until then so it never
   // paints at the uncompensated anchor.
@@ -41,8 +59,8 @@ export function GlassPanel(p: Props) {
     if (!el) return;
     const measure = () => {
       // offsetWidth/Height, not getBoundingClientRect: layout size, unaffected by the
-      // library's hover scale transform.
-      const next = { w: el.offsetWidth + PAD_X * 2, h: el.offsetHeight + PAD_Y * 2 };
+      // library's hover scale transform. Both already include the content padding.
+      const next = { w: el.offsetWidth + glassPad * 2, h: el.offsetHeight + glassPad * 2 };
       setSize((prev) => {
         if (prev.w === next.w && prev.h === next.h) return prev;
         // The library only re-measures itself on window resize, so its displacement map
@@ -55,7 +73,7 @@ export function GlassPanel(p: Props) {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [glassPad]);
 
   const measured = size.w > 0 && size.h > 0;
 
@@ -64,7 +82,7 @@ export function GlassPanel(p: Props) {
       {...glassMaterial(p.theme)}
       cornerRadius={16}
       elasticity={0}
-      padding={`${PAD_Y}px ${PAD_X}px`}
+      padding={`${glassPad}px`}
       className={p.className}
       style={{
         position: "absolute",
@@ -75,12 +93,19 @@ export function GlassPanel(p: Props) {
     >
       <div
         ref={contentRef}
+        className={scrolls ? "glass-scroll" : undefined}
         style={{
           ...contentStyle,
           width: p.width,
           maxWidth: p.maxWidth,
           maxHeight: p.maxHeight,
+          padding: `${insetY - glassPad}px ${insetX - glassPad}px`,
           gap: p.gap,
+          // A vertical scroll container clips horizontally too, so only opt in when the
+          // panel needs it — otherwise glows would be cut at the content edge instead of
+          // bleeding into the inset.
+          overflowY: scrolls ? "auto" : "visible",
+          overflowX: scrolls ? "hidden" : "visible",
         }}
       >
         {p.children}
@@ -89,9 +114,9 @@ export function GlassPanel(p: Props) {
   );
 }
 
-// Undoes the library's font reset and text shadow, and restores column layout +
-// scrolling (its own box is overflow: hidden). `inherit` is no use here — the value
-// being inherited *is* the library's reset — so the body's typography is restated.
+// Undoes the library's font reset and text shadow, and restores column layout.
+// `inherit` is no use here — the value being inherited *is* the library's reset — so
+// the body's typography is restated.
 const contentStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
@@ -101,6 +126,4 @@ const contentStyle: CSSProperties = {
   lineHeight: "normal",
   color: "var(--text)",
   textShadow: "none",
-  overflowY: "auto",
-  overflowX: "hidden",
 };

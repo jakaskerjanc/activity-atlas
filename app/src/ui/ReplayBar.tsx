@@ -30,7 +30,10 @@ export function ReplayBar(p: Props) {
       theme={p.theme}
       anchor={{ bottom: 24, centerX: true }}
       width={420}
-      maxWidth="calc(100vw - 80px)"
+      maxWidth="calc(100vw - 84px)"
+      // >= the play button's 16px accent glow, which the glass would otherwise clip.
+      insetX={18}
+      insetY={18}
       gap={12}
     >
       <div style={topRow}>

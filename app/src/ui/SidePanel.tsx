@@ -36,7 +36,13 @@ export function SidePanel(p: Props) {
       theme={p.theme}
       anchor={{ top: 82, left: 24 }}
       width={296}
-      maxHeight="calc(100vh - 182px)"
+      // All the room between the 82px anchor and a 24px bottom margin, less the panel's
+      // own 14px insets. At any ordinary window height the content fits and no scrollbar
+      // appears; the cap only bites on a very short window, where scrolling beats
+      // running off the bottom of the screen.
+      maxHeight="calc(100vh - 134px)"
+      // Leaves 12px inside the scroll box, clearing the type dots' 10px accent glow.
+      insetX={18}
     >
       <FilterSection
         availableTypes={p.availableTypes}

@@ -19,7 +19,9 @@ export function InfoPanel(p: Props) {
       theme={p.theme}
       anchor={{ bottom: 24, centerX: true }}
       width={420}
-      maxWidth="calc(100vw - 80px)"
+      maxWidth="calc(100vw - 84px)"
+      insetX={18}
+      insetY={18}
     >
       <StatsSection
         title={p.title}
