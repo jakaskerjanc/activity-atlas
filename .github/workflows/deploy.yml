@@ -1,10 +1,5 @@
 name: Sync & Deploy
 
-on:
-  schedule:
-    - cron: "0 19 * * *" # daily, 19:00 UTC
-  workflow_dispatch: {}
-
 # One deploy at a time; let a newer run supersede an in-progress one.
 concurrency:
   group: pages
