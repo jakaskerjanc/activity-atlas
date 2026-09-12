@@ -21,7 +21,7 @@ const OUT_PATH = resolve(__dirname, "../app/public/tracks.json");
 const PAYLOAD_VERSION = 1;
 
 /** Douglas–Peucker tolerance (meters) applied to detail polylines. */
-const SIMPLIFY_TOLERANCE_M = Number(process.env.SIMPLIFY_TOLERANCE_M) || 5;
+const SIMPLIFY_TOLERANCE_M = Number(process.env.SIMPLIFY_TOLERANCE_M) || 10;
 
 interface Stats {
   rawPoints: number;
