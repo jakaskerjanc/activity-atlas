@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
 
       - name: Sync activities from Strava
+        if: false # sync is broken, skip until fixed
         id: sync
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
@@ -40,6 +41,7 @@ jobs:
         run: npm run sync
 
       - name: Commit refreshed cache
+        if: false # depends on sync step above
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
