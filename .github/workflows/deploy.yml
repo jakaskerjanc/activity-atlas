@@ -1,5 +1,10 @@
 name: Sync & Deploy
 
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
 # One deploy at a time; let a newer run supersede an in-progress one.
 concurrency:
   group: pages
