@@ -1,5 +1,5 @@
 // Build app/public/tracks.json from the committed SQLite store.
-// Reads activities with geometry, simplifies each route (Douglas–Peucker, 5 m)
+// Reads activities with geometry, simplifies each route (Douglas–Peucker, 10 m)
 // and re-encodes it as a Google polyline for the compact wire format. No network.
 
 import { writeFile, mkdir } from "node:fs/promises";

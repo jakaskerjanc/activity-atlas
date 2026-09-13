@@ -1,0 +1,34 @@
+name: Fetch Garmin
+
+on:
+  schedule:
+    - cron: "17 4 * * *"      # daily ~04:17 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-garmin
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GH_PAT }}   # PAT push retriggers deploy.yml; GITHUB_TOKEN would not
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Fetch, rotate token, commit
+        env:
+          GARMIN_TOKEN: ${{ secrets.GARMIN_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GARMIN_TOKEN_OUT: ${{ runner.temp }}/token.new
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          scripts/ci_fetch.sh

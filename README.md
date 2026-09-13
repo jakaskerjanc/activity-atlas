@@ -47,6 +47,28 @@ should commit afterward.
 Ongoing incremental fetch from the Garmin Connect API (`ingest/garmin_fetch.py`)
 is a later phase — for now it's a stub.
 
+## Live Garmin fetch
+
+One-time token bootstrap (interactive; needs email + password + MFA):
+
+```bash
+npm run auth | gh secret set GARMIN_TOKEN   # also dumps ~/.garminconnect for local reuse
+```
+
+Local incremental fetch (token-only; appends new activities to `data/activities.sqlite`):
+
+```bash
+GARMINTOKENS=$HOME/.garminconnect npm run fetch:garmin
+```
+
+CI (`.github/workflows/fetch-garmin.yml`) runs daily: fetch → rotate `GARMIN_TOKEN`
+(the refresh token rotates on use) → commit the DB, which retriggers deploy.
+Rerun `npm run auth` only after a password change or token revocation.
+
+**Secrets:** `GARMIN_TOKEN` (from `npm run auth`) and `GH_PAT`
+(fine-grained, this repo, **contents: write + secrets: write** — the PAT push is
+what retriggers `deploy.yml`, and secrets:write lets CI rotate the token).
+
 ## Config
 
 Add these to a root `.env` (see `.example.env`):

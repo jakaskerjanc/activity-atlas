@@ -68,3 +68,9 @@ def test_normalize_garmin_no_gps():
                               distance_m=0, moving_time_s=2400, elevation_gain_m=0, track=[]))
     assert a.id == "g:900002" and a.garmin_id == "900002" and a.strava_id is None
     assert a.polyline == "" and a.start_lat is None
+
+
+def test_paddelball_title_cases():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert canonical_type("paddelball") == "Paddelball"

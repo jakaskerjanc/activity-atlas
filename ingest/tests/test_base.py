@@ -53,7 +53,10 @@ def test_parse_file_rejects_unknown_extension(tmp_path):
         _Imp(str(tmp_path / "d.sqlite"), []).parse_file("x.csv", io.BytesIO(b""))
 
 
-def test_fetcher_stub_raises(tmp_path):
+def test_fetcher_exits_without_creds(tmp_path, monkeypatch):
     from ingest.garmin_fetch import GarminFetcher
-    with pytest.raises(NotImplementedError):
+    monkeypatch.delenv("GARMIN_TOKEN", raising=False)
+    monkeypatch.delenv("GARMINTOKENS", raising=False)
+    with pytest.raises(SystemExit) as exc:
         list(GarminFetcher(str(tmp_path / "d.sqlite")).activities())
+    assert exc.value.code == 2

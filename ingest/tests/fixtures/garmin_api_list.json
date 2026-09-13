@@ -1,0 +1,30 @@
+[
+  {
+    "activityId": 5000001,
+    "activityName": "Morning Run",
+    "activityType": {"typeKey": "running"},
+    "startTimeGMT": "2026-09-12 06:30:00",
+    "startTimeLocal": "2026-09-12 08:30:00",
+    "distance": 10006.79,
+    "duration": 3300.0,
+    "movingDuration": 3200.0,
+    "elevationGain": 34.0,
+    "hasPolyline": true,
+    "startLatitude": 46.05,
+    "startLongitude": 14.5
+  },
+  {
+    "activityId": 5000002,
+    "activityName": "Gym",
+    "activityType": {"typeKey": "strength_training"},
+    "startTimeGMT": "2026-09-11 17:00:00",
+    "startTimeLocal": "2026-09-11 19:00:00",
+    "distance": 0.0,
+    "duration": 2400.0,
+    "movingDuration": null,
+    "elevationGain": 0.0,
+    "hasPolyline": false,
+    "startLatitude": null,
+    "startLongitude": null
+  }
+]
