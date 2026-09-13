@@ -1,19 +1,19 @@
-name: Sync & Deploy
+name: Deploy
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: {}
+    paths: ["data/activities.sqlite", "app/**", "scripts/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
 
-# One deploy at a time; let a newer run supersede an in-progress one.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 permissions:
-  contents: write # commit the refreshed activity cache
-  pages: write # deploy to GitHub Pages
-  id-token: write # OIDC for deploy-pages
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
@@ -23,47 +23,18 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
-
-      - name: Sync activities from Strava
-        if: false # sync is broken, skip until fixed
-        id: sync
-        env:
-          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
-          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
-          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
-        run: npm run sync
-
-      - name: Commit refreshed cache
-        if: false # depends on sync step above
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "New activities fetched: ${{ steps.sync.outputs.new_count }}" >> "$GITHUB_STEP_SUMMARY"
-          if ! git diff --quiet -- data/activities.json; then
-            git add data/activities.json
-            git commit -m "chore: sync Strava activities (+${{ steps.sync.outputs.new_count }} new)"
-            git push
-          else
-            echo "No new activities."
-          fi
-
       - name: Build site
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
         run: npm run build
-
       - uses: actions/configure-pages@v6
-
       - uses: actions/upload-pages-artifact@v5
         with:
           path: app/dist
-
       - id: deploy
         uses: actions/deploy-pages@v5

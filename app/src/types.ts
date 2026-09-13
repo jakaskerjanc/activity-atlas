@@ -5,7 +5,8 @@
 export type Theme = "light" | "dark";
 
 export interface ActivityFeatureProps {
-  id: number;
+  /** namespaced wire id ("s:<stravaId>" / "g:<garminId>") */
+  id: string;
   name: string;
   /** activity-type filter key (Strava sport_type) */
   type: string;

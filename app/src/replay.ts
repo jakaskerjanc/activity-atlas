@@ -12,7 +12,7 @@ import type { ActivityFeature } from "./types";
 /** One step of the replay: enough to drive the map filters + the date readout. */
 export interface ReplayStep {
   /** feature id — selects the single route the active layers draw. */
-  id: number;
+  id: string;
   /** epoch seconds — boundary for "completed" routes and the running date label. */
   ts: number;
 }
@@ -22,7 +22,7 @@ export interface ReplayFrame {
   /** index into the timeline of the route currently drawing. */
   index: number;
   /** id of the route currently drawing (active layers filter on this). */
-  id: number;
+  id: string;
   /** epoch seconds of the drawing route — completed set is everything before this. */
   ts: number;
   /** 0..1 fraction of the active route drawn so far (line-trim reveal). */
@@ -46,7 +46,7 @@ export function buildTimeline(features: ActivityFeature[]): ReplayStep[] {
   return features
     .map((f) => ({ id: f.properties.id, ts: f.properties.ts }))
     // ts primary, id as a stable tiebreak so equal-second starts keep a fixed order.
-    .sort((a, b) => a.ts - b.ts || a.id - b.id);
+    .sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**

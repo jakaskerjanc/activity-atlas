@@ -7,7 +7,7 @@ function route(coords: [number, number][]): ActivityFeature {
     type: "Feature",
     geometry: { type: "LineString", coordinates: coords },
     properties: {
-      id: 1,
+      id: "s:1",
       name: "Test",
       type: "Run",
       ts: 1000,

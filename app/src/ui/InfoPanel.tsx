@@ -10,7 +10,7 @@ interface Props {
   title: string;
   subtitle: string;
   cards: StatCard[];
-  stravaUrl: string | null;
+  link: { url: string; label: string } | null;
 }
 
 export function InfoPanel(p: Props) {
@@ -27,7 +27,7 @@ export function InfoPanel(p: Props) {
         title={p.title}
         subtitle={p.subtitle}
         cards={p.cards}
-        stravaUrl={p.stravaUrl}
+        link={p.link}
       />
     </GlassPanel>
   );

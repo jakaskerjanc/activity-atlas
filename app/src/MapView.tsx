@@ -38,7 +38,7 @@ const ACTIVE_CORE_ID = "activities-active-core";
 const FADE_MS = 1200;
 
 /** Matches nothing — parks the active layers when no route is drawing. */
-const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], -1];
+const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
 
 interface Props {
   /** Selects the Mapbox base style; the panels themselves are themed in CSS. */
@@ -47,10 +47,10 @@ interface Props {
   filter: FilterState;
   colorMode: ColorMode;
   colorDomain: ColorDomain;
-  hoverId: number | null;
-  selectedId: number | null;
-  onHover: (id: number | null) => void;
-  onSelect: (id: number) => void;
+  hoverId: string | null;
+  selectedId: string | null;
+  onHover: (id: string | null) => void;
+  onSelect: (id: string) => void;
   onDeselect: () => void;
   /** True while replay owns the map; suspends hover/select highlighting + the plain filter. */
   replaying: boolean;
@@ -92,7 +92,7 @@ export function MapView(props: Props) {
   const rafRef = useRef<number | null>(null);
 
   const activeId = hoverId ?? selectedId;
-  const activeRef = useRef<number | null>(activeId);
+  const activeRef = useRef<string | null>(activeId);
   activeRef.current = activeId;
 
   /** Repaint both layers for the current active track + fade factor. */
@@ -158,8 +158,9 @@ export function MapView(props: Props) {
     }
 
     const user = buildFilter(propsRef.current.filter);
-    // "Before the drawing route" in the exact order buildTimeline uses: ts, then id as
-    // the tiebreak. Keying on the pair (not ts alone) keeps same-second activities from
+    // "Before the drawing route" in the exact order buildTimeline uses: ts, then
+    // id (string) as the lexicographic tiebreak — must match buildTimeline's sort.
+    // Keying on the pair (not ts alone) keeps same-second activities from
     // flickering out while a route sharing their timestamp draws.
     const before: ExpressionSpecification = [
       "any",
@@ -308,7 +309,7 @@ export function MapView(props: Props) {
     // Hover highlighting (glow is the wider hit target). Suspended during replay.
     map.on("mousemove", GLOW_ID, (e) => {
       if (propsRef.current.replaying) return;
-      const id = e.features?.[0]?.properties?.id as number | undefined;
+      const id = e.features?.[0]?.properties?.id as string | undefined;
       map.getCanvas().style.cursor = "pointer";
       if (id != null) propsRef.current.onHover(id);
     });
@@ -321,7 +322,7 @@ export function MapView(props: Props) {
     map.on("click", (e) => {
       if (propsRef.current.replaying) return;
       const hits = map.queryRenderedFeatures(e.point, { layers: [GLOW_ID] });
-      const id = hits[0]?.properties?.id as number | undefined;
+      const id = hits[0]?.properties?.id as string | undefined;
       if (id != null) propsRef.current.onSelect(id);
       else propsRef.current.onDeselect();
     });

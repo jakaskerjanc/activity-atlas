@@ -8,19 +8,23 @@
     "app"
   ],
   "scripts": {
-    "auth": "tsx scripts/get-refresh-token.ts",
-    "sync": "tsx scripts/sync.ts",
     "dev": "npm --workspace app run dev",
     "build:tracks": "tsx scripts/build-tracks.ts",
     "build:icons": "tsx scripts/render-icons.ts",
     "build": "npm run build:tracks && npm --workspace app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test scripts/*.test.ts"
+    "test": "tsx --test scripts/*.test.ts",
+    "test:all": "npm run test && npm run test:py && npm --workspace app run test",
+    "import:strava": "${PYTHON_BIN:-python3} -m ingest.strava_import",
+    "import:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_import",
+    "test:py": "${PYTHON_BIN:-python3} -m pytest ingest -q"
   },
   "dependencies": {
-    "@mapbox/polyline": "^1.2.1"
+    "@mapbox/polyline": "^1.2.1",
+    "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/mapbox__polyline": "^1.0.5",
     "@types/node": "^22.10.0",
     "sharp": "^0.35.3",

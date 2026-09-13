@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>t</name><trkseg>
+    <trkpt lat="46.05000" lon="14.50000"><time>2026-08-01T06:30:00Z</time></trkpt>
+    <trkpt lat="46.05100" lon="14.50100"><time>2026-08-01T06:30:05Z</time></trkpt>
+    <trkpt lat="46.05200" lon="14.50200"><time>2026-08-01T06:30:10Z</time></trkpt>
+  </trkseg></trk>
+</gpx>

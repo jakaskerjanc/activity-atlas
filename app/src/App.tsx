@@ -11,7 +11,7 @@ import { ReplayBar } from "./ui/ReplayBar";
 import type { FilterState } from "./filters";
 import type { ActivityFeatureCollection, TrackPayload, Theme } from "./types";
 import { decodeTracks } from "./tracks";
-import { formatDate, formatDateYear } from "./format";
+import { formatDate, formatDateYear, activityLink } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
@@ -50,8 +50,8 @@ export default function App() {
 
   const [colorMode, setColorMode] = useState<ColorMode>("recency");
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [hoverId, setHoverId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
 
   // Replay transport. `progress` is the single source of truth (0..1); App runs
   // the rAF clock while playing and MapView renders whatever frame it resolves to.
@@ -223,11 +223,11 @@ export default function App() {
   );
 
   // InfoPanel content: selected activity, or aggregate totals.
-  const { title, subtitle, cards, stravaUrl } = useMemo<{
+  const { title, subtitle, cards, link } = useMemo<{
     title: string;
     subtitle: string;
     cards: StatCard[];
-    stravaUrl: string | null;
+    link: { url: string; label: string } | null;
   }>(() => {
     if (selectedFeature) {
       const p = selectedFeature.properties;
@@ -235,14 +235,14 @@ export default function App() {
         title: p.name,
         subtitle: `${p.type} · ${formatDateYear(p.ts)}`,
         cards: activityCards(selectedFeature),
-        stravaUrl: `https://www.strava.com/activities/${p.id}`,
+        link: activityLink(p.id),
       };
     }
     return {
       title: "All Activities",
       subtitle: `${formatDate(fromVal)} — ${formatDate(toVal)}`,
       cards: totalCards(filteredFeatures),
-      stravaUrl: null,
+      link: null,
     };
   }, [selectedFeature, filteredFeatures, fromVal, toVal]);
 
@@ -326,7 +326,7 @@ export default function App() {
               title={title}
               subtitle={subtitle}
               cards={cards}
-              stravaUrl={stravaUrl}
+              link={link}
             />
           )}
         </>

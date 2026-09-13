@@ -53,3 +53,17 @@ export function formatDateYear(ts: number): string {
 export function isFootBased(type: string): boolean {
   return /run|walk|hike/i.test(type);
 }
+
+/**
+ * Resolve a namespaced wire id ("s:123" / "g:456") to its source's activity page.
+ * Returns null for anything unrecognized so the UI just renders plain text.
+ */
+export function activityLink(id: string): { url: string; label: string } | null {
+  const sep = id.indexOf(":");
+  if (sep < 1) return null;
+  const raw = id.slice(sep + 1);
+  if (!raw) return null;
+  if (id[0] === "s") return { url: `https://www.strava.com/activities/${raw}`, label: "View on Strava" };
+  if (id[0] === "g") return { url: `https://connect.garmin.com/modern/activity/${raw}`, label: "View on Garmin Connect" };
+  return null;
+}

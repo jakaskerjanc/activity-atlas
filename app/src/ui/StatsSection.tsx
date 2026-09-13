@@ -9,19 +9,19 @@ interface Props {
   title: string;
   subtitle: string;
   cards: StatCard[];
-  stravaUrl?: string | null;
+  link?: { url: string; label: string } | null;
 }
 
-export function StatsSection({ title, subtitle, cards, stravaUrl }: Props) {
+export function StatsSection({ title, subtitle, cards, link }: Props) {
   return (
     <>
       <div style={{ marginBottom: 12 }}>
-        {stravaUrl ? (
+        {link ? (
           <a
-            href={stravaUrl}
+            href={link.url}
             target="_blank"
             rel="noopener noreferrer"
-            title="View on Strava"
+            title={link.label}
             style={titleLink}
           >
             {title}

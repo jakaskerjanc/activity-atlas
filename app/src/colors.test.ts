@@ -14,7 +14,7 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
     type: "Feature",
     geometry: { type: "LineString", coordinates: [] },
     properties: {
-      id: 1,
+      id: "s:1",
       name: "Test",
       type: "Run",
       ts: 1000,

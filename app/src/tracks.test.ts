@@ -10,7 +10,7 @@ function encodeLngLat(coords: [number, number][]): string {
 
 function track(over: Partial<EncodedTrack> & { poly: string }): EncodedTrack {
   return {
-    id: 1,
+    id: "s:1",
     name: "Test",
     type: "Run",
     ts: 1723975135,
@@ -30,7 +30,7 @@ const PATH: [number, number][] = [
 
 describe("decodeTracks", () => {
   test("expands a payload into a GeoJSON FeatureCollection", () => {
-    const fc = decodeTracks({ v: 1, tracks: [track({ poly: encodeLngLat(PATH) })] });
+    const fc = decodeTracks({ v: PAYLOAD_VERSION, tracks: [track({ poly: encodeLngLat(PATH) })] });
     expect(fc.type).toBe("FeatureCollection");
     expect(fc.features).toHaveLength(1);
     expect(fc.features[0].type).toBe("Feature");
@@ -38,7 +38,7 @@ describe("decodeTracks", () => {
   });
 
   test("round-trips coordinates in [lng, lat] order (5-decimal precision)", () => {
-    const fc = decodeTracks({ v: 1, tracks: [track({ poly: encodeLngLat(PATH) })] });
+    const fc = decodeTracks({ v: PAYLOAD_VERSION, tracks: [track({ poly: encodeLngLat(PATH) })] });
     const coords = fc.features[0].geometry.coordinates as [number, number][];
     expect(coords).toHaveLength(PATH.length);
     coords.forEach(([lng, lat], i) => {
@@ -51,11 +51,11 @@ describe("decodeTracks", () => {
 
   test("carries the filterable props through onto feature.properties", () => {
     const fc = decodeTracks({
-      v: 1,
+      v: PAYLOAD_VERSION,
       tracks: [
         track({
           poly: encodeLngLat(PATH),
-          id: 42,
+          id: "s:42",
           name: "Morning Ride",
           type: "Ride",
           ts: 1700000000,
@@ -66,7 +66,7 @@ describe("decodeTracks", () => {
       ],
     });
     expect(fc.features[0].properties).toEqual({
-      id: 42,
+      id: "s:42",
       name: "Morning Ride",
       type: "Ride",
       ts: 1700000000,
@@ -80,19 +80,19 @@ describe("decodeTracks", () => {
   });
 
   test("empty payload yields an empty FeatureCollection", () => {
-    expect(decodeTracks({ v: 1, tracks: [] }).features).toEqual([]);
+    expect(decodeTracks({ v: PAYLOAD_VERSION, tracks: [] }).features).toEqual([]);
   });
 
   test("drops degenerate geometries (< 2 points) instead of emitting them", () => {
     const onePoint = encodeLngLat([[14.5, 46.05]]); // a single coordinate
     const fc = decodeTracks({
-      v: 1,
+      v: PAYLOAD_VERSION,
       tracks: [
-        track({ id: 1, poly: onePoint }),
-        track({ id: 2, poly: encodeLngLat(PATH) }),
+        track({ id: "s:1", poly: onePoint }),
+        track({ id: "s:2", poly: encodeLngLat(PATH) }),
       ],
     });
-    expect(fc.features.map((f) => f.properties.id)).toEqual([2]);
+    expect(fc.features.map((f) => f.properties.id)).toEqual(["s:2"]);
   });
 
   test("throws on an unsupported payload version", () => {

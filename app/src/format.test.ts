@@ -7,6 +7,7 @@ import {
   formatDate,
   formatDateYear,
   isFootBased,
+  activityLink,
 } from "./format";
 
 describe("formatKm", () => {
@@ -83,4 +84,24 @@ describe("isFootBased", () => {
     "%s is not foot-based",
     (t) => expect(isFootBased(t)).toBe(false),
   );
+});
+
+describe("activityLink", () => {
+  test("strava id -> strava url", () => {
+    expect(activityLink("s:10089952322")).toEqual({
+      url: "https://www.strava.com/activities/10089952322",
+      label: "View on Strava",
+    });
+  });
+  test("garmin id -> garmin url", () => {
+    expect(activityLink("g:12345678")).toEqual({
+      url: "https://connect.garmin.com/modern/activity/12345678",
+      label: "View on Garmin Connect",
+    });
+  });
+  test("unknown prefix / malformed -> null", () => {
+    expect(activityLink("x:1")).toBeNull();
+    expect(activityLink("")).toBeNull();
+    expect(activityLink("12345")).toBeNull();
+  });
 });
