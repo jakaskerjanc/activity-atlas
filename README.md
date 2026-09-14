@@ -52,7 +52,9 @@ is a later phase — for now it's a stub.
 One-time token bootstrap (interactive; needs email + password + MFA):
 
 ```bash
-npm run auth | gh secret set GARMIN_TOKEN   # also dumps ~/.garminconnect for local reuse
+npm run --silent auth | gh secret set GARMIN_TOKEN   # also dumps ~/.garminconnect for local reuse
+# --silent is required: without it, npm's "> pkg@ver auth" banner leaks into
+# stdout and corrupts the piped secret (silent JSON-parse failure in CI).
 ```
 
 Local incremental fetch (token-only; appends new activities to `data/activities.sqlite`):
