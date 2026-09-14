@@ -5,8 +5,14 @@ import type { CSSProperties } from "react";
 import { GlassPanel } from "./GlassPanel";
 import { FilterSection } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
+import { useMediaQuery } from "./useMediaQuery";
 import type { ColorMode, ColorDomain } from "../colors";
 import type { Theme } from "../types";
+
+// Matches the old `.side-panel` CSS hide. Below this width the controls do not fit, so
+// the panel is dropped entirely — see the comment in SidePanel for why it must not be
+// merely hidden.
+const MOBILE_QUERY = "(max-width: 680px)";
 
 interface Props {
   theme: Theme;
@@ -30,9 +36,14 @@ interface Props {
 }
 
 export function SidePanel(p: Props) {
+  // Unmount on narrow screens instead of hiding with CSS. Hiding keeps the element in
+  // the tree but measures it 0x0, and liquid-glass-react's "shader" mode then throws
+  // IndexSizeError building its displacement map (createImageData(0, 0)) — which took
+  // the whole app down on phones.
+  if (useMediaQuery(MOBILE_QUERY)) return null;
+
   return (
     <GlassPanel
-      className="side-panel"
       theme={p.theme}
       anchor={{ top: 82, left: 24 }}
       width={296}

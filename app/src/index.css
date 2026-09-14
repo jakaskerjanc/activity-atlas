@@ -178,12 +178,6 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-@media (max-width: 680px) {
-  .side-panel {
-    display: none !important;
-  }
-}
-
 @keyframes fadeUp {
   from {
     opacity: 0;

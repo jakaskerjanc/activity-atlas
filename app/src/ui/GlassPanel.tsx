@@ -39,8 +39,6 @@ interface Props {
   insetY?: number;
   /** Column gap between children. */
   gap?: number;
-  /** Passed through to the glass container, e.g. `.side-panel` for the mobile hide. */
-  className?: string;
   theme: Theme;
   children: ReactNode;
 }
@@ -83,7 +81,6 @@ export function GlassPanel(p: Props) {
       cornerRadius={16}
       elasticity={0}
       padding={`${glassPad}px`}
-      className={p.className}
       style={{
         position: "absolute",
         zIndex: 20,
