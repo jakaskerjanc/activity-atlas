@@ -1,6 +1,5 @@
-// Reactive CSS media query. Used to decide whether a panel is rendered at all: the
-// liquid-glass material is expensive to build and, in "shader" mode, crashes at zero
-// size (see SidePanel) — so a panel that a stylesheet would hide must not be mounted.
+// Reactive CSS media query. Used to decide whether a panel is rendered at all (see
+// SidePanel), so a panel that a stylesheet would hide is dropped from the tree instead.
 
 import { useEffect, useState } from "react";
 

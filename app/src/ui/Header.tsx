@@ -2,18 +2,11 @@
 // Overlays the map.
 
 import type { CSSProperties } from "react";
-import LiquidGlass from "liquid-glass-react";
-import { MONO, glassMaterial } from "./theme";
+import { MONO } from "./theme";
 import type { Theme } from "../types";
 
 const BTN = 38;
-// The glass sits at top/left 0 of a zero-sized anchor and its own translate(-50%, -50%)
-// centers it there, so the anchor marks the button's center: 22px inset from the right,
-// vertically centered in the 62px header. It has to be top/left rather than `right`
-// because the library's rim layers only read position/top/left — a `right` anchor
-// strands them at their `left: 50%` default, adrift in the middle of the header.
-const BTN_CENTER_TOP = 62 / 2;
-const BTN_CENTER_RIGHT = 22 + BTN / 2;
+const HEADER_HEIGHT = 62;
 
 interface Props {
   theme: Theme;
@@ -29,7 +22,7 @@ export function Header({ theme, onToggleTheme }: Props) {
         top: 0,
         left: 0,
         right: 0,
-        height: 62,
+        height: HEADER_HEIGHT,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -66,38 +59,22 @@ export function Header({ theme, onToggleTheme }: Props) {
         </div>
       </div>
 
-      {/* The click target stays a real <button> inside the glass: the library's own
-          onClick lands on a div, with no keyboard or screen-reader affordance. */}
       <div
         style={{
           position: "absolute",
-          top: BTN_CENTER_TOP,
-          right: BTN_CENTER_RIGHT,
-          width: 0,
-          height: 0,
+          top: (HEADER_HEIGHT - BTN) / 2,
+          right: 22,
+          pointerEvents: "auto",
         }}
       >
-        <LiquidGlass
-          {...glassMaterial(theme)}
-          cornerRadius={12}
-          elasticity={0.3}
-          padding="0"
-          style={{
-            position: "absolute",
-            top: "0px",
-            left: "0px",
-            pointerEvents: "auto",
-          }}
+        <button
+          onClick={onToggleTheme}
+          aria-label={`Switch to ${next} theme`}
+          title={`Switch to ${next} theme`}
+          style={toggleBtn}
         >
-          <button
-            onClick={onToggleTheme}
-            aria-label={`Switch to ${next} theme`}
-            title={`Switch to ${next} theme`}
-            style={toggleBtn}
-          >
-            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-          </button>
-        </LiquidGlass>
+          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+        </button>
       </div>
     </header>
   );
@@ -111,8 +88,11 @@ const toggleBtn: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  border: "none",
-  background: "transparent",
+  borderRadius: 12,
+  border: "1px solid var(--panel-border)",
+  background: "var(--panel-bg)",
+  backdropFilter: "var(--panel-blur)",
+  WebkitBackdropFilter: "var(--panel-blur)",
   color: "var(--text)",
   transition: "color .35s ease",
 };
