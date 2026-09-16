@@ -8,13 +8,13 @@
     "app"
   ],
   "scripts": {
-    "dev": "npm --workspace app run dev",
+    "dev": "pnpm --filter app run dev",
     "build:tracks": "tsx scripts/build-tracks.ts",
     "build:icons": "tsx scripts/render-icons.ts",
-    "build": "npm run build:tracks && npm --workspace app run build",
+    "build": "pnpm run build:tracks && pnpm --filter app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test scripts/*.test.ts",
-    "test:all": "npm run test && npm run test:py && npm --workspace app run test",
+    "test:all": "pnpm run test && pnpm run test:py && pnpm --filter app run test",
     "import:strava": "${PYTHON_BIN:-python3} -m ingest.strava_import",
     "import:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_import",
     "auth": "${PYTHON_BIN:-python3} -m ingest.garmin_auth",

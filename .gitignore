@@ -11,3 +11,4 @@ dist/
 # copy is never committed or bundled into dist/.
 app/public/tracks.json
 app/public/activities.geojson
+package-lock.json
