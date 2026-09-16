@@ -3,10 +3,8 @@
 import { GlassPanel } from "./GlassPanel";
 import { StatsSection } from "./StatsSection";
 import type { StatCard } from "../stats";
-import type { Theme } from "../types";
 
 interface Props {
-  theme: Theme;
   title: string;
   subtitle: string;
   cards: StatCard[];
@@ -16,7 +14,6 @@ interface Props {
 export function InfoPanel(p: Props) {
   return (
     <GlassPanel
-      theme={p.theme}
       anchor={{ bottom: 24, centerX: true }}
       width={420}
       maxWidth="calc(100vw - 84px)"

@@ -290,7 +290,6 @@ export default function App() {
       {data && (
         <>
           <SidePanel
-            theme={theme}
             availableTypes={availableTypes}
             typeCounts={typeCounts}
             enabledTypes={enabledTypes}
@@ -309,7 +308,6 @@ export default function App() {
           />
           {replaying ? (
             <ReplayBar
-              theme={theme}
               playing={playing}
               progress={progress}
               dateTs={replayFrame?.ts ?? null}
@@ -322,7 +320,6 @@ export default function App() {
             />
           ) : (
             <InfoPanel
-              theme={theme}
               title={title}
               subtitle={subtitle}
               cards={cards}

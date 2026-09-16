@@ -2,7 +2,6 @@
    Every panel/text/control color in the UI resolves to one of these, so the whole
    chrome flips by swapping the data-theme attribute on <html>. */
 :root {
-  /* Restated inside glass panels, whose material resets the font — see GlassPanel. */
   --font-ui: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
@@ -32,7 +31,7 @@
     rgba(12, 13, 18, 0.46)
   );
   --panel-border: rgba(255, 255, 255, 0.12);
-  --panel-blur: blur(26px) saturate(150%);
+  --panel-blur: blur(10px) saturate(150%);
 
   --divider: rgba(255, 255, 255, 0.08);
   --card-bg: rgba(28, 30, 40, 0.5);
@@ -69,15 +68,13 @@
   --accent-tint-weak: rgba(255, 107, 61, 0.1);
   --pill-on-text: var(--accent-text);
 
-  /* Only the error toast still uses these; the panels get their material from
-     liquid-glass-react. */
   --panel-bg: linear-gradient(
     155deg,
     rgba(255, 255, 255, 0.4),
     rgba(255, 255, 255, 0.18)
   );
   --panel-border: rgba(255, 255, 255, 0.55);
-  --panel-blur: blur(30px) saturate(190%) brightness(1.05);
+  --panel-blur: blur(10px) saturate(190%) brightness(1.05);
 
   --divider: rgba(60, 60, 67, 0.16);
   --card-bg: rgba(255, 255, 255, 0.32);

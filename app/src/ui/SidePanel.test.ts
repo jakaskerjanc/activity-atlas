@@ -1,8 +1,5 @@
-// Regression for the mobile crash: liquid-glass-react's "shader" mode builds a
-// displacement-map canvas from the element's measured size and throws IndexSizeError at
-// 0x0. The narrow-screen rule hid .side-panel with `display:none`, so the glass mounted
-// at zero size and took the app down. SidePanel must simply not mount it below the
-// breakpoint.
+// SidePanel drops itself from the tree below the mobile breakpoint instead of being
+// hidden with CSS (see the MOBILE_QUERY comment in SidePanel.tsx).
 
 import { afterEach, describe, expect, test } from "vitest";
 import { createElement } from "react";
@@ -32,7 +29,6 @@ afterEach(() => {
 });
 
 const props = {
-  theme: "dark" as const,
   availableTypes: ["Run"],
   typeCounts: { Run: 1 },
   enabledTypes: new Set(["Run"]),
