@@ -12,7 +12,22 @@ import type { CSSProperties, ReactNode } from "react";
  */
 const GUTTER = 6;
 
-export type GlassAnchor = { top: number; left: number } | { bottom: number; centerX: true };
+// Clearance kept past the panel's right edge when it clamps via `avoidLeft`.
+const AVOID_RIGHT_MARGIN = 24;
+
+export type GlassAnchor =
+  | { top: number; left: number }
+  | {
+      bottom: number;
+      centerX: true;
+      /**
+       * Minimum left offset (px), for a bottom-center panel that must clear a fixed
+       * element (e.g. SidePanel) instead of overlapping it when centered. When set, the
+       * panel centers itself only in the space to the right of that offset, and its
+       * width caps to fit there.
+       */
+      avoidLeft?: number;
+    };
 
 interface Props {
   anchor: GlassAnchor;
@@ -39,13 +54,20 @@ export function GlassPanel(p: Props) {
   const { insetX = 16, insetY = 14 } = p;
   const scrolls = p.maxHeight != null;
   const pad = scrolls ? GUTTER : 0;
+  const avoidLeft = "avoidLeft" in p.anchor ? p.anchor.avoidLeft : undefined;
+  // When clamped, the box's own left offset already reserves the avoided space, so cap
+  // content width to what's left of the viewport instead of the caller's maxWidth.
+  const maxWidth =
+    avoidLeft != null
+      ? `calc(100vw - ${avoidLeft + 2 * insetX + AVOID_RIGHT_MARGIN}px)`
+      : p.maxWidth;
 
   return (
     <div
       style={{
         position: "absolute",
         zIndex: 20,
-        ...anchorStyle(p.anchor),
+        ...anchorStyle(p.anchor, p.width, insetX),
         borderRadius: 16,
         background: "var(--panel-bg)",
         border: "1px solid var(--panel-border)",
@@ -60,7 +82,7 @@ export function GlassPanel(p: Props) {
           display: "flex",
           flexDirection: "column",
           width: p.width,
-          maxWidth: p.maxWidth,
+          maxWidth,
           maxHeight: p.maxHeight,
           padding: `${insetY - pad}px ${insetX - pad}px`,
           gap: p.gap,
@@ -77,8 +99,15 @@ export function GlassPanel(p: Props) {
   );
 }
 
-function anchorStyle(anchor: GlassAnchor): CSSProperties {
+function anchorStyle(anchor: GlassAnchor, width: number, insetX: number): CSSProperties {
   if ("bottom" in anchor) {
+    if (anchor.avoidLeft != null) {
+      const halfBox = width / 2 + insetX;
+      return {
+        bottom: anchor.bottom,
+        left: `max(${anchor.avoidLeft}px, calc(50% - ${halfBox}px))`,
+      };
+    }
     return { bottom: anchor.bottom, left: "50%", transform: "translateX(-50%)" };
   }
   return { top: anchor.top, left: anchor.left };
