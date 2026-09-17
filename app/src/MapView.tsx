@@ -15,6 +15,7 @@ import {
 } from "./colors";
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
+import { fitPadding } from "./ui/layout";
 import type { ActivityFeatureCollection, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -66,10 +67,9 @@ interface Props {
   replayEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
   onReplayReady: () => void;
+  /** Reserves room for the left panel when fitting a track; false when it is collapsed. */
+  sidePanelExpanded: boolean;
 }
-
-/** Padding that keeps a fitted track centered in the strip between the panels. */
-const FIT_PADDING = { top: 90, bottom: 80, left: 330, right: 360 };
 
 /** Home view on initial load: Slovenia, centered on Ljubljana. */
 const SLOVENIA_CENTER: [number, number] = [14.5058, 46.0569];
@@ -105,6 +105,14 @@ export function MapView(props: Props) {
   function currentActiveId(): string | null {
     const p = propsRef.current;
     return p.replaying ? null : (p.hoverId ?? p.selectedId);
+  }
+
+  /** Fit padding for the current canvas + panel state. Recomputed at fit time so a
+   * collapsed side panel stops reserving room, and a narrow canvas clamps to fit. */
+  function currentFitPadding() {
+    const el = mapRef.current?.getContainer();
+    if (!el) return { top: 0, bottom: 0, left: 0, right: 0 };
+    return fitPadding(el.clientWidth, el.clientHeight, propsRef.current.sidePanelExpanded);
   }
 
   /** Repaint the base layers for the current active presence + fade factor. The
@@ -506,7 +514,10 @@ export function MapView(props: Props) {
     // Refinement centres tightly on the density peak; the cap keeps it a comfortable
     // regional view rather than zooming to street level.
     const camera = bounds
-      ? map.cameraForBounds(bounds, { padding: FIT_PADDING, maxZoom: 11 })
+      ? map.cameraForBounds(bounds, {
+          padding: currentFitPadding(),
+          maxZoom: 11,
+        })
       : null;
     if (!camera) {
       ready();
@@ -537,7 +548,10 @@ export function MapView(props: Props) {
     }
     if (bounds.isEmpty()) return;
 
-    const camera = map.cameraForBounds(bounds, { padding: FIT_PADDING, maxZoom: 15 });
+    const camera = map.cameraForBounds(bounds, {
+      padding: currentFitPadding(),
+      maxZoom: 15,
+    });
     if (!camera) return;
     // Always animate (user-requested), even under prefers-reduced-motion, via essential.
     // curve < 1.42 keeps the zoom-out arc gentle; easeOutCubic for a soft landing.

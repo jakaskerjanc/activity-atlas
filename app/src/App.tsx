@@ -274,6 +274,7 @@ export default function App() {
         replayFrame={replayFrame}
         replayEpoch={replayEpoch}
         onReplayReady={onReplayReady}
+        sidePanelExpanded={!panels.sideCollapsed}
       />
 
       {/* Vignette for depth (decorative, click-through). */}
