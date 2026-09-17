@@ -1,10 +1,16 @@
-// Shared overlay geometry. Kept out of the components so panels that must lay
-// themselves out relative to each other (e.g. bottom-center panels clearing the
-// SidePanel) read one source of truth instead of duplicating numbers.
+// Shared overlay geometry. Kept out of the components so dependent panels read one
+// source of truth instead of duplicating numbers.
 
-// Matches the old `.side-panel` CSS hide. Below this width the controls do not fit, so
-// the panel is dropped entirely.
-export const MOBILE_QUERY = "(max-width: 680px)";
+// Below this width both overlay panels start collapsed, so the map keeps the small
+// viewport. A resize that crosses this boundary re-applies the collapsed state, which is
+// what overrides a manual expand/collapse until the next crossing. The user can still
+// expand either panel by clicking its edge tab.
+export const COLLAPSE_QUERY = "(max-width: 1000px)";
+
+// The edge tab that toggles collapse. It protrudes this far past the panel's leading
+// edge, so it stays on screen after the panel has slid fully away.
+export const PANEL_TAB_SIZE = 22;
+export const PANEL_TAB_LONG = 52;
 
 // SidePanel's fixed placement. GlassPanel reads 2 * insetX wider than `width`.
 export const SIDE_PANEL_TOP = 82;
@@ -12,11 +18,27 @@ export const SIDE_PANEL_LEFT = 24;
 export const SIDE_PANEL_WIDTH = 296;
 export const SIDE_PANEL_INSET_X = 18;
 
-// Gap kept between SidePanel's right edge and a panel that clears it.
+// Gap kept between SidePanel's right edge and the bottom panel when both are open.
 export const SIDE_PANEL_GAP = 24;
 
-// The left offset a bottom-center panel must stay right of: SidePanel's right edge plus
-// the gap. Bottom-center panels pass this as GlassPanel's `avoidLeft` so they never
-// overlap SidePanel above the mobile breakpoint, where it is still rendered.
-export const SIDE_PANEL_CLEARANCE =
+// Bottom-center panel geometry (InfoPanel / ReplayBar share it).
+export const BOTTOM_PANEL_WIDTH = 420;
+export const BOTTOM_PANEL_INSET_X = 18;
+
+// How much of the bottom panel stays on screen when it is collapsed, on top of the 24px
+// anchor that would otherwise sit below the viewport edge. Enough to keep the title strip
+// (title + subtitle) readable, so a selected activity stays identifiable.
+export const BOTTOM_PANEL_PEEK = 48;
+
+// SidePanel's right edge, plus the gap: where a bottom-center panel would start to
+// collide if it stayed centered.
+const SIDE_PANEL_CLEARANCE =
   SIDE_PANEL_LEFT + SIDE_PANEL_WIDTH + 2 * SIDE_PANEL_INSET_X + SIDE_PANEL_GAP;
+
+// The viewport width at which the centered bottom panel and the side panel stop
+// overlapping: twice the bottom panel's half-box plus the side panel's reserved strip.
+// At or above it both can stay open; below it the side panel auto-collapses (and can
+// still be expanded by hand, overlapping the bottom panel).
+export const BOTH_PANELS_MIN_WIDTH =
+  2 * (SIDE_PANEL_CLEARANCE + BOTTOM_PANEL_WIDTH / 2 + BOTTOM_PANEL_INSET_X);
+export const BOTH_PANELS_QUERY = `(min-width: ${BOTH_PANELS_MIN_WIDTH}px)`;

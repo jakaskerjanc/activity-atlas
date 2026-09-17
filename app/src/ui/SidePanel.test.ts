@@ -1,32 +1,10 @@
-// SidePanel drops itself from the tree below the mobile breakpoint instead of being
-// hidden with CSS (see the MOBILE_QUERY comment in SidePanel.tsx).
+// SidePanel is collapsible rather than dropped on narrow screens: it stays mounted and
+// slides off the left edge, leaving only the edge tab that toggles it back.
 
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SidePanel } from "./SidePanel";
-
-interface MediaQueryListLike {
-  matches: boolean;
-  media: string;
-  addEventListener(): void;
-  removeEventListener(): void;
-}
-
-function stubViewport(matches: boolean) {
-  (globalThis as { window?: unknown }).window = {
-    matchMedia: (media: string): MediaQueryListLike => ({
-      matches,
-      media,
-      addEventListener() {},
-      removeEventListener() {},
-    }),
-  };
-}
-
-afterEach(() => {
-  delete (globalThis as { window?: unknown }).window;
-});
 
 const props = {
   availableTypes: ["Run"],
@@ -52,16 +30,31 @@ const props = {
   onColorModeChange: () => {},
   onStartReplay: () => {},
   canReplay: true,
+  collapsed: false,
+  onToggle: () => {},
 };
 
-describe("SidePanel on narrow screens", () => {
-  test("mounts nothing below the breakpoint, so the glass never measures 0x0", () => {
-    stubViewport(true);
-    expect(renderToStaticMarkup(createElement(SidePanel, props))).toBe("");
+describe("SidePanel collapse", () => {
+  test("renders an in-place toggle tab when expanded", () => {
+    const html = renderToStaticMarkup(createElement(SidePanel, props));
+    expect(html).toContain('aria-label="Collapse filters"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("translateX(-100%)");
   });
 
-  test("still renders the panel above the breakpoint", () => {
-    stubViewport(false);
-    expect(renderToStaticMarkup(createElement(SidePanel, props))).not.toBe("");
+  test("slides off-screen and offers to expand when collapsed", () => {
+    const html = renderToStaticMarkup(
+      createElement(SidePanel, { ...props, collapsed: true }),
+    );
+    expect(html).toContain('aria-label="Expand filters"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("translateX(-100%)");
+  });
+
+  test("keeps rendering below the old 680px breakpoint, since collapse replaced it", () => {
+    const html = renderToStaticMarkup(
+      createElement(SidePanel, { ...props, collapsed: true }),
+    );
+    expect(html).not.toBe("");
   });
 });

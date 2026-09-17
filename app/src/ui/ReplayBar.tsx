@@ -5,8 +5,7 @@
 import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
-import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./layout";
-import { useMediaQuery } from "./useMediaQuery";
+import { BOTTOM_PANEL_INSET_X, BOTTOM_PANEL_WIDTH } from "./layout";
 import { formatDateYear } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
@@ -22,25 +21,25 @@ interface Props {
   onSeek: (progress: number) => void;
   onSpeed: (speed: number) => void;
   onExit: () => void;
+  /** Collapsed off the bottom edge, leaving its title strip visible to click. */
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 export function ReplayBar(p: Props) {
-  // SidePanel renders above the mobile breakpoint; clear it instead of overlapping.
-  const sidePanelVisible = !useMediaQuery(MOBILE_QUERY);
-
   return (
     <GlassPanel
-      anchor={{
-        bottom: 24,
-        centerX: true,
-        avoidLeft: sidePanelVisible ? SIDE_PANEL_CLEARANCE : undefined,
-      }}
-      width={420}
+      anchor={{ bottom: 24, centerX: true }}
+      width={BOTTOM_PANEL_WIDTH}
       maxWidth="calc(100vw - 84px)"
       // >= the play button's 16px accent glow, which the glass would otherwise clip.
-      insetX={18}
+      insetX={BOTTOM_PANEL_INSET_X}
       insetY={18}
       gap={12}
+      collapsed={p.collapsed}
+      onToggleCollapse={p.onToggle}
+      collapseEdge="bottom"
+      collapseLabel="replay controls"
     >
       <div style={topRow}>
         <span style={eyebrow}>Replay</span>

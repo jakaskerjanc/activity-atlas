@@ -15,6 +15,7 @@ import { formatDate, formatDateYear, activityLink } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
+import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 
 const DATA_URL = `${import.meta.env.BASE_URL}tracks.json`;
 // A type value no activity can have — used to express "show none" through buildFilter,
@@ -42,6 +43,9 @@ export default function App() {
       ?.setAttribute("content", theme === "light" ? "#eef0f4" : "#0e0f13");
   }, [theme]);
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+  // Panel collapse state. A resize across the narrow breakpoint overrides manual toggles.
+  const panels = useCollapsiblePanels();
 
   // Types shown. null until data loads, then initialized to "all on".
   const [enabled, setEnabled] = useState<Set<string> | null>(null);
@@ -305,6 +309,8 @@ export default function App() {
             onColorModeChange={setColorMode}
             onStartReplay={startReplay}
             canReplay={timeline.length > 0}
+            collapsed={panels.sideCollapsed}
+            onToggle={panels.toggleSide}
           />
           {replaying ? (
             <ReplayBar
@@ -317,6 +323,8 @@ export default function App() {
               onSeek={seek}
               onSpeed={setSpeed}
               onExit={exitReplay}
+              collapsed={panels.bottomCollapsed}
+              onToggle={panels.toggleBottom}
             />
           ) : (
             <InfoPanel
@@ -324,6 +332,8 @@ export default function App() {
               subtitle={subtitle}
               cards={cards}
               link={link}
+              collapsed={panels.bottomCollapsed}
+              onToggle={panels.toggleBottom}
             />
           )}
         </>

@@ -5,9 +5,7 @@ import type { CSSProperties } from "react";
 import { GlassPanel } from "./GlassPanel";
 import { FilterSection } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
-import { useMediaQuery } from "./useMediaQuery";
 import {
-  MOBILE_QUERY,
   SIDE_PANEL_INSET_X,
   SIDE_PANEL_LEFT,
   SIDE_PANEL_TOP,
@@ -33,11 +31,12 @@ interface Props {
   onStartReplay: () => void;
   /** False when the filter leaves nothing to replay. */
   canReplay: boolean;
+  /** Slid off the left edge; only the toggle tab stays visible. */
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 export function SidePanel(p: Props) {
-  if (useMediaQuery(MOBILE_QUERY)) return null;
-
   return (
     <GlassPanel
       anchor={{ top: SIDE_PANEL_TOP, left: SIDE_PANEL_LEFT }}
@@ -47,8 +46,14 @@ export function SidePanel(p: Props) {
       // appears; the cap only bites on a very short window, where scrolling beats
       // running off the bottom of the screen.
       maxHeight="calc(100vh - 134px)"
+      // Keeps the panel inside the viewport when expanded on a narrow screen.
+      maxWidth="calc(100vw - 72px)"
       // Leaves 12px inside the scroll box, clearing the type dots' 10px accent glow.
       insetX={SIDE_PANEL_INSET_X}
+      collapsed={p.collapsed}
+      onToggleCollapse={p.onToggle}
+      collapseEdge="left"
+      collapseLabel="filters"
     >
       <FilterSection
         availableTypes={p.availableTypes}
