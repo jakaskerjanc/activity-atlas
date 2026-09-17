@@ -5,6 +5,8 @@
 import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
+import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./SidePanel";
+import { useMediaQuery } from "./useMediaQuery";
 import { formatDateYear } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
@@ -23,9 +25,16 @@ interface Props {
 }
 
 export function ReplayBar(p: Props) {
+  // SidePanel renders above the mobile breakpoint; clear it instead of overlapping.
+  const sidePanelVisible = !useMediaQuery(MOBILE_QUERY);
+
   return (
     <GlassPanel
-      anchor={{ bottom: 24, centerX: true }}
+      anchor={{
+        bottom: 24,
+        centerX: true,
+        avoidLeft: sidePanelVisible ? SIDE_PANEL_CLEARANCE : undefined,
+      }}
       width={420}
       maxWidth="calc(100vw - 84px)"
       // >= the play button's 16px accent glow, which the glass would otherwise clip.

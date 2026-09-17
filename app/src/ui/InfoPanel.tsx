@@ -2,6 +2,8 @@
 
 import { GlassPanel } from "./GlassPanel";
 import { StatsSection } from "./StatsSection";
+import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./SidePanel";
+import { useMediaQuery } from "./useMediaQuery";
 import type { StatCard } from "../stats";
 
 interface Props {
@@ -12,9 +14,16 @@ interface Props {
 }
 
 export function InfoPanel(p: Props) {
+  // SidePanel renders above the mobile breakpoint; clear it instead of overlapping.
+  const sidePanelVisible = !useMediaQuery(MOBILE_QUERY);
+
   return (
     <GlassPanel
-      anchor={{ bottom: 24, centerX: true }}
+      anchor={{
+        bottom: 24,
+        centerX: true,
+        avoidLeft: sidePanelVisible ? SIDE_PANEL_CLEARANCE : undefined,
+      }}
       width={420}
       maxWidth="calc(100vw - 84px)"
       insetX={18}

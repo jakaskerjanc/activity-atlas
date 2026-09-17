@@ -10,7 +10,12 @@ import type { ColorMode, ColorDomain } from "../colors";
 
 // Matches the old `.side-panel` CSS hide. Below this width the controls do not fit, so
 // the panel is dropped entirely.
-const MOBILE_QUERY = "(max-width: 680px)";
+export const MOBILE_QUERY = "(max-width: 680px)";
+
+// SidePanel's right edge (anchor.left 24 + width 296 + 2 * insetX 18 = 356) plus a 24px
+// gap. Bottom-center panels clear this via GlassPanel's `avoidLeft` so they never overlap
+// SidePanel above the mobile breakpoint, where it is still rendered.
+export const SIDE_PANEL_CLEARANCE = 380;
 
 interface Props {
   availableTypes: string[];

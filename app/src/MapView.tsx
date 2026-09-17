@@ -290,6 +290,9 @@ export function MapView(props: Props) {
       style: STYLE_URL[propsRef.current.theme],
       center: SLOVENIA_CENTER,
       zoom: SLOVENIA_ZOOM,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
     });
     mapRef.current = map;
     appliedStyleRef.current = STYLE_URL[propsRef.current.theme];
