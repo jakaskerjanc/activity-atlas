@@ -2,7 +2,7 @@
 
 import { GlassPanel } from "./GlassPanel";
 import { StatsSection } from "./StatsSection";
-import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./SidePanel";
+import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./layout";
 import { useMediaQuery } from "./useMediaQuery";
 import type { StatCard } from "../stats";
 

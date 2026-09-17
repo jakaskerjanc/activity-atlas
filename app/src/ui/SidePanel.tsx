@@ -6,16 +6,14 @@ import { GlassPanel } from "./GlassPanel";
 import { FilterSection } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
 import { useMediaQuery } from "./useMediaQuery";
+import {
+  MOBILE_QUERY,
+  SIDE_PANEL_INSET_X,
+  SIDE_PANEL_LEFT,
+  SIDE_PANEL_TOP,
+  SIDE_PANEL_WIDTH,
+} from "./layout";
 import type { ColorMode, ColorDomain } from "../colors";
-
-// Matches the old `.side-panel` CSS hide. Below this width the controls do not fit, so
-// the panel is dropped entirely.
-export const MOBILE_QUERY = "(max-width: 680px)";
-
-// SidePanel's right edge (anchor.left 24 + width 296 + 2 * insetX 18 = 356) plus a 24px
-// gap. Bottom-center panels clear this via GlassPanel's `avoidLeft` so they never overlap
-// SidePanel above the mobile breakpoint, where it is still rendered.
-export const SIDE_PANEL_CLEARANCE = 380;
 
 interface Props {
   availableTypes: string[];
@@ -42,15 +40,15 @@ export function SidePanel(p: Props) {
 
   return (
     <GlassPanel
-      anchor={{ top: 82, left: 24 }}
-      width={296}
+      anchor={{ top: SIDE_PANEL_TOP, left: SIDE_PANEL_LEFT }}
+      width={SIDE_PANEL_WIDTH}
       // All the room between the 82px anchor and a 24px bottom margin, less the panel's
       // own 14px insets. At any ordinary window height the content fits and no scrollbar
       // appears; the cap only bites on a very short window, where scrolling beats
       // running off the bottom of the screen.
       maxHeight="calc(100vh - 134px)"
       // Leaves 12px inside the scroll box, clearing the type dots' 10px accent glow.
-      insetX={18}
+      insetX={SIDE_PANEL_INSET_X}
     >
       <FilterSection
         availableTypes={p.availableTypes}

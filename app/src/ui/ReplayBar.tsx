@@ -5,7 +5,7 @@
 import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
-import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./SidePanel";
+import { MOBILE_QUERY, SIDE_PANEL_CLEARANCE } from "./layout";
 import { useMediaQuery } from "./useMediaQuery";
 import { formatDateYear } from "../format";
 

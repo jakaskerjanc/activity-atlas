@@ -294,6 +294,11 @@ export function MapView(props: Props) {
       pitchWithRotate: false,
       touchPitch: false,
     });
+    // The options above only stop mouse drag / touch pitch. Two-finger pinch and
+    // Shift+arrows still rotate and pitch, so switch those off explicitly; this keeps
+    // the camera 2D without disabling pinch zoom or keyboard pan/zoom.
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     mapRef.current = map;
     appliedStyleRef.current = STYLE_URL[propsRef.current.theme];
 
