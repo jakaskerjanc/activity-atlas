@@ -97,10 +97,15 @@ export function MapView(props: Props) {
   const fadeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
-  const activeId = hoverId ?? selectedId;
-  const activeRef = useRef<string | null>(activeId);
-  activeRef.current = activeId;
   const syncedActiveRef = useRef<string | null>(null);
+
+  /** Single source of truth for the highlighted track: hover beats selection, and
+   * replay suspends highlighting. Both the base-layer dimming and the feature-state
+   * highlight read this, so they can never disagree. */
+  function currentActiveId(): string | null {
+    const p = propsRef.current;
+    return p.replaying ? null : (p.hoverId ?? p.selectedId);
+  }
 
   /** Repaint the base layers for the current active presence + fade factor. The
    * active track itself is drawn by the feature-state-gated hover layers, so these
@@ -111,7 +116,7 @@ export function MapView(props: Props) {
     const f = fadeRef.current;
     // In replay the base layers carry the accumulated (completed) routes at their
     // resting look — hover/select highlighting and the fade are both suspended.
-    const active = propsRef.current.replaying ? false : activeRef.current != null;
+    const active = currentActiveId() != null;
     // Heat mode drops the per-line opacity so overlapping corridors accumulate
     // toward full accent — density, not hue, carries the signal.
     const heat = propsRef.current.colorMode === "heat";
@@ -136,9 +141,7 @@ export function MapView(props: Props) {
   function syncFeatureState(force = false) {
     const map = mapRef.current;
     if (!map || !map.getSource(SOURCE_ID)) return;
-    const next = propsRef.current.replaying
-      ? null
-      : (propsRef.current.hoverId ?? propsRef.current.selectedId);
+    const next = currentActiveId();
     const prev = syncedActiveRef.current;
     if (!force && prev === next) return;
     if (prev != null && prev !== next) {
@@ -453,7 +456,7 @@ export function MapView(props: Props) {
   // Repaint base layers when the active presence changes.
   useEffect(() => {
     applyPaint();
-  }, [activeId]);
+  }, [hoverId, selectedId, replaying]);
 
   // Hand the active track to feature-state so the highlight layers follow it.
   useEffect(() => {
