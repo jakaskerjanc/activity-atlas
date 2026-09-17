@@ -35,7 +35,13 @@ const CORE_ID = "activities-core";
 // stay fully painted underneath.
 const ACTIVE_GLOW_ID = "activities-active-glow";
 const ACTIVE_CORE_ID = "activities-active-core";
+const HOVER_GLOW_ID = "activities-hover-glow";
+const HOVER_CORE_ID = "activities-hover-core";
 const FADE_MS = 1200;
+
+/** Per-feature highlight gate. Toggling feature-state is cheap; swapping paint
+ * expressions would force Mapbox to reload the whole source on every hover. */
+const ACTIVE_STATE: ExpressionSpecification = ["boolean", ["feature-state", "active"], false];
 
 /** Matches nothing — parks the active layers when no route is drawing. */
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
@@ -94,35 +100,54 @@ export function MapView(props: Props) {
   const activeId = hoverId ?? selectedId;
   const activeRef = useRef<string | null>(activeId);
   activeRef.current = activeId;
+  const syncedActiveRef = useRef<string | null>(null);
 
-  /** Repaint both layers for the current active track + fade factor. */
+  /** Repaint the base layers for the current active presence + fade factor. The
+   * active track itself is drawn by the feature-state-gated hover layers, so these
+   * stay plain constants (constant -> constant writes never trigger a relayout). */
   function applyPaint() {
     const map = mapRef.current;
     if (!map || !map.getLayer(GLOW_ID)) return;
     const f = fadeRef.current;
     // In replay the base layers carry the accumulated (completed) routes at their
     // resting look — hover/select highlighting and the fade are both suspended.
-    const active = propsRef.current.replaying ? null : activeRef.current;
+    const active = propsRef.current.replaying ? false : activeRef.current != null;
     // Heat mode drops the per-line opacity so overlapping corridors accumulate
     // toward full accent — density, not hue, carries the signal.
     const heat = propsRef.current.colorMode === "heat";
     const glowW = heat ? 5 : 6;
     const coreW = heat ? 1.8 : 2.6;
 
-    if (active == null) {
+    if (!active) {
       map.setPaintProperty(GLOW_ID, "line-opacity", (heat ? 0.14 : 0.2) * f);
       map.setPaintProperty(GLOW_ID, "line-width", glowW);
       map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.34 : 0.82) * f);
       map.setPaintProperty(CORE_ID, "line-width", coreW);
       return;
     }
-    const match: ExpressionSpecification = ["==", ["get", "id"], active];
-    const dimGlow = heat ? 0.04 : 0.05;
-    const dimCore = heat ? 0.1 : 0.16;
-    map.setPaintProperty(GLOW_ID, "line-opacity", ["case", match, 0.5 * f, dimGlow * f]);
-    map.setPaintProperty(GLOW_ID, "line-width", ["case", match, 10, glowW]);
-    map.setPaintProperty(CORE_ID, "line-opacity", ["case", match, 1 * f, dimCore * f]);
-    map.setPaintProperty(CORE_ID, "line-width", ["case", match, 4.6, coreW]);
+    map.setPaintProperty(GLOW_ID, "line-opacity", (heat ? 0.04 : 0.05) * f);
+    map.setPaintProperty(GLOW_ID, "line-width", glowW);
+    map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.1 : 0.16) * f);
+    map.setPaintProperty(CORE_ID, "line-width", coreW);
+  }
+
+  /** Move the `active` feature-state to the hovered/selected track. This is the
+   * only write a hover triggers, and it never causes a source relayout. */
+  function syncFeatureState(force = false) {
+    const map = mapRef.current;
+    if (!map || !map.getSource(SOURCE_ID)) return;
+    const next = propsRef.current.replaying
+      ? null
+      : (propsRef.current.hoverId ?? propsRef.current.selectedId);
+    const prev = syncedActiveRef.current;
+    if (!force && prev === next) return;
+    if (prev != null && prev !== next) {
+      map.setFeatureState({ source: SOURCE_ID, id: prev }, { active: false });
+    }
+    if (next != null) {
+      map.setFeatureState({ source: SOURCE_ID, id: next }, { active: true });
+    }
+    syncedActiveRef.current = next;
   }
 
   /** Set the data-driven line color for a mode; core gains blur in heat mode. */
@@ -133,6 +158,8 @@ export function MapView(props: Props) {
     map.setPaintProperty(GLOW_ID, "line-color", color);
     map.setPaintProperty(CORE_ID, "line-color", color);
     map.setPaintProperty(CORE_ID, "line-blur", mode === "heat" ? 2 : 0);
+    map.setPaintProperty(HOVER_GLOW_ID, "line-color", color);
+    map.setPaintProperty(HOVER_CORE_ID, "line-color", color);
     // The drawing route follows the same color scale so it reads as one of the set.
     map.setPaintProperty(ACTIVE_GLOW_ID, "line-color", color);
     map.setPaintProperty(ACTIVE_CORE_ID, "line-color", color);
@@ -154,6 +181,8 @@ export function MapView(props: Props) {
       const base = buildFilter(propsRef.current.filter);
       map.setFilter(GLOW_ID, base);
       map.setFilter(CORE_ID, base);
+      map.setFilter(HOVER_GLOW_ID, base);
+      map.setFilter(HOVER_CORE_ID, base);
       return;
     }
 
@@ -220,6 +249,8 @@ export function MapView(props: Props) {
         data: { type: "FeatureCollection", features: [] },
         // Required for line-trim-offset (the replay draw-on reveal).
         lineMetrics: true,
+        // Exposes each feature's string id to feature-state (hover/select highlight).
+        promoteId: "id",
       });
     }
     if (!map.getLayer(GLOW_ID)) {
@@ -243,6 +274,34 @@ export function MapView(props: Props) {
         source: SOURCE_ID,
         layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": ACCENT, "line-width": 2.6, "line-opacity": 0 },
+      });
+    }
+    // Hover/select highlight layers — one feature at a time, gated by feature-state.
+    if (!map.getLayer(HOVER_GLOW_ID)) {
+      map.addLayer({
+        id: HOVER_GLOW_ID,
+        type: "line",
+        source: SOURCE_ID,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ACCENT,
+          "line-width": 10,
+          "line-opacity": ["case", ACTIVE_STATE, 0.5, 0],
+          "line-blur": 8,
+        },
+      });
+    }
+    if (!map.getLayer(HOVER_CORE_ID)) {
+      map.addLayer({
+        id: HOVER_CORE_ID,
+        type: "line",
+        source: SOURCE_ID,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": ACCENT,
+          "line-width": 4.6,
+          "line-opacity": ["case", ACTIVE_STATE, 1, 0],
+        },
       });
     }
     // Active (drawing) route layers — on top, parked until replay runs.
@@ -277,8 +336,11 @@ export function MapView(props: Props) {
         },
       });
     }
-    map.setFilter(GLOW_ID, buildFilter(propsRef.current.filter));
-    map.setFilter(CORE_ID, buildFilter(propsRef.current.filter));
+    const base = buildFilter(propsRef.current.filter);
+    map.setFilter(GLOW_ID, base);
+    map.setFilter(CORE_ID, base);
+    map.setFilter(HOVER_GLOW_ID, base);
+    map.setFilter(HOVER_CORE_ID, base);
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
   }
 
@@ -349,6 +411,8 @@ export function MapView(props: Props) {
       installLayers();
       const d = propsRef.current.data;
       if (d) (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
+      syncedActiveRef.current = null;
+      syncFeatureState(true);
       fadeRef.current = 1;
       if (propsRef.current.replaying) applyReplay(propsRef.current.replayFrame);
       applyPaint();
@@ -374,6 +438,8 @@ export function MapView(props: Props) {
     const expr = buildFilter(filter);
     map.setFilter(GLOW_ID, expr);
     map.setFilter(CORE_ID, expr);
+    map.setFilter(HOVER_GLOW_ID, expr);
+    map.setFilter(HOVER_CORE_ID, expr);
   }, [filter, replaying]);
 
   // Recolor when the color mode or its value domain changes. applyPaint follows
@@ -384,10 +450,16 @@ export function MapView(props: Props) {
     applyPaint();
   }, [colorMode, colorDomain]);
 
-  // Repaint highlight when the active track changes.
+  // Repaint base layers when the active presence changes.
   useEffect(() => {
     applyPaint();
   }, [activeId]);
+
+  // Hand the active track to feature-state so the highlight layers follow it.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    syncFeatureState();
+  }, [hoverId, selectedId, replaying]);
 
   // Reflect each replay frame (also restores the base filter when it goes null).
   useEffect(() => {
