@@ -6,7 +6,7 @@ import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
 import { BOTTOM_PANEL_INSET_X, BOTTOM_PANEL_WIDTH } from "./layout";
-import { formatDate } from "../format";
+import { formatMonth, monthIndex } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -43,7 +43,9 @@ export function ReplayBar(p: Props) {
     >
       <div style={topRow}>
         <span style={eyebrow}>Replay</span>
-        <span style={dateStyle}>{p.dateTs == null ? "—" : formatDate(p.dateTs)}</span>
+        <span style={dateStyle}>
+          {p.dateTs == null ? "—" : formatMonth(monthIndex(p.dateTs))}
+        </span>
       </div>
 
       <div style={controlRow}>
