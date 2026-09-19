@@ -30,21 +30,46 @@ export function speedKmh(meters: number, seconds: number): string {
   return (meters / 1000 / (seconds / 3600)).toFixed(1);
 }
 
-/** epoch seconds -> "Aug 18" (UTC, deterministic). */
+/** epoch seconds -> "Aug 18, 2024" (UTC, deterministic). */
 export function formatDate(ts: number): string {
   return new Date(ts * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
     month: "short",
     day: "numeric",
     timeZone: "UTC",
   });
 }
 
-/** epoch seconds -> "Aug 18, 2024" (UTC, deterministic). */
-export function formatDateYear(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString("en-US", {
+// --- Months ---------------------------------------------------------------
+// The date-range slider steps by whole months, so its bounds live in month-index
+// space (an integer that increments by one per calendar month) rather than epoch
+// seconds, which have no constant month-sized step.
+
+/** epoch seconds -> UTC month index (year * 12 + zero-based month). */
+export function monthIndex(ts: number): number {
+  const d = new Date(ts * 1000);
+  return d.getUTCFullYear() * 12 + d.getUTCMonth();
+}
+
+/** First instant of a month index: 00:00:00 UTC on the 1st. */
+export function monthStart(index: number): number {
+  const year = Math.floor(index / 12);
+  const month = index - year * 12;
+  return Date.UTC(year, month, 1) / 1000;
+}
+
+/** Last instant of a month index: 23:59:59 UTC on the final day. */
+export function monthEnd(index: number): number {
+  return monthStart(index + 1) - 1;
+}
+
+/** month index -> "August 2024" (UTC, deterministic). */
+export function formatMonth(index: number): string {
+  const year = Math.floor(index / 12);
+  const month = index - year * 12;
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
     year: "numeric",
-    month: "short",
-    day: "numeric",
+    month: "long",
     timeZone: "UTC",
   });
 }

@@ -6,7 +6,7 @@ import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
 import { BOTTOM_PANEL_INSET_X, BOTTOM_PANEL_WIDTH } from "./layout";
-import { formatDateYear } from "../format";
+import { formatDate } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -43,7 +43,7 @@ export function ReplayBar(p: Props) {
     >
       <div style={topRow}>
         <span style={eyebrow}>Replay</span>
-        <span style={dateStyle}>{p.dateTs == null ? "—" : formatDateYear(p.dateTs)}</span>
+        <span style={dateStyle}>{p.dateTs == null ? "—" : formatDate(p.dateTs)}</span>
       </div>
 
       <div style={controlRow}>
@@ -52,7 +52,7 @@ export function ReplayBar(p: Props) {
           aria-label={p.playing ? "Pause" : p.atEnd ? "Restart" : "Play"}
           style={playBtn}
         >
-          {p.playing ? "❚❚" : p.atEnd ? "↻" : "▶"}
+          <TransportIcon playing={p.playing} atEnd={p.atEnd} />
         </button>
         <input
           type="range"
@@ -79,6 +79,32 @@ export function ReplayBar(p: Props) {
         </button>
       </div>
     </GlassPanel>
+  );
+}
+
+// Transport glyphs as paths on a 24px grid. Text glyphs (▶/❚❚/↻) carried the font's
+// own side bearings and baseline, so they never sat centered in the circle; these are
+// optically centered and inherit the button's color via currentColor.
+function TransportIcon({ playing, atEnd }: { playing: boolean; atEnd: boolean }) {
+  if (playing) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z" />
+      </svg>
+    );
+  }
+  if (atEnd) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+      </svg>
+    );
+  }
+  // The triangle's mass sits right of its box center, which reads as centered in a circle.
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
   );
 }
 

@@ -3,7 +3,7 @@
 
 import type { CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
-import { formatDate } from "../format";
+import { formatMonth } from "../format";
 
 interface Props {
   availableTypes: string[];
@@ -13,26 +13,25 @@ interface Props {
   enabledTypes: Set<string>;
   onToggleType: (type: string) => void;
 
-  tsMin: number;
-  tsMax: number;
-  /** current bounds (default to full range) */
-  from: number;
-  to: number;
-  onFromChange: (ts: number) => void;
-  onToChange: (ts: number) => void;
+  /** month-index bounds of the slider domain (see format.ts: monthIndex). */
+  minMonth: number;
+  maxMonth: number;
+  /** selected bounds, also month indices */
+  fromMonth: number;
+  toMonth: number;
+  onFromChange: (month: number) => void;
+  onToChange: (month: number) => void;
 }
-
-const DAY = 86400;
 
 export function FilterSection({
   availableTypes,
   typeCounts,
   enabledTypes,
   onToggleType,
-  tsMin,
-  tsMax,
-  from,
-  to,
+  minMonth,
+  maxMonth,
+  fromMonth,
+  toMonth,
   onFromChange,
   onToChange,
 }: Props) {
@@ -55,38 +54,77 @@ export function FilterSection({
       <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
 
       <div style={{ ...eyebrow, marginBottom: 6 }}>Date Range</div>
-      <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--accent-text)", marginBottom: 12 }}>
-        {formatDate(from)}  →  {formatDate(to)}
+      <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--accent-text)", marginBottom: 10 }}>
+        {formatMonth(fromMonth)}  →  {formatMonth(toMonth)}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div>
-          <div style={sliderLabelRow}>
-            <span>EARLIEST</span>
-            <span>{formatDate(from)}</span>
-          </div>
-          <input
-            type="range"
-            min={tsMin}
-            max={tsMax}
-            step={DAY}
-            value={from}
-            onChange={(e) => onFromChange(+e.target.value)}
-          />
+      <DualRange
+        min={minMonth}
+        max={maxMonth}
+        from={fromMonth}
+        to={toMonth}
+        onFromChange={onFromChange}
+        onToChange={onToChange}
+      />
+    </>
+  );
+}
+
+/**
+ * One rail with two draggable thumbs, so the lit segment reads as the active window.
+ * Native range inputs are single-thumb, so this overlays two of them: the inputs are
+ * pointer-transparent and only their thumbs take pointer events (see .range-dual in
+ * index.css), and the accent span is painted on the rail between the two values.
+ */
+function DualRange({
+  min,
+  max,
+  from,
+  to,
+  onFromChange,
+  onToChange,
+}: {
+  min: number;
+  max: number;
+  from: number;
+  to: number;
+  onFromChange: (month: number) => void;
+  onToChange: (month: number) => void;
+}) {
+  const span = max - min;
+  const pctFrom = span > 0 ? ((from - min) / span) * 100 : 0;
+  const pctTo = span > 0 ? ((to - min) / span) * 100 : 100;
+
+  return (
+    <>
+      <div style={rangeWrap}>
+        {/* Inset by half a thumb so the fill's 0..100% lines up with the thumb centres. */}
+        <div style={rail}>
+          <div style={{ ...windowFill, left: `${pctFrom}%`, right: `${100 - pctTo}%` }} />
         </div>
-        <div>
-          <div style={sliderLabelRow}>
-            <span>LATEST</span>
-            <span>{formatDate(to)}</span>
-          </div>
-          <input
-            type="range"
-            min={tsMin}
-            max={tsMax}
-            step={DAY}
-            value={to}
-            onChange={(e) => onToChange(+e.target.value)}
-          />
-        </div>
+        <input
+          type="range"
+          className="range-dual"
+          min={min}
+          max={max}
+          step={1}
+          value={from}
+          onChange={(e) => onFromChange(+e.target.value)}
+          aria-label="Earliest month"
+        />
+        <input
+          type="range"
+          className="range-dual"
+          min={min}
+          max={max}
+          step={1}
+          value={to}
+          onChange={(e) => onToChange(+e.target.value)}
+          aria-label="Latest month"
+        />
+      </div>
+      <div style={rangeEnds}>
+        <span>{formatMonth(min)}</span>
+        <span>{formatMonth(max)}</span>
       </div>
     </>
   );
@@ -136,11 +174,39 @@ function countStyle(on: boolean): CSSProperties {
   };
 }
 
-const sliderLabelRow: CSSProperties = {
+// Matches the thumb size in index.css; the rail is inset by half of it so the accent
+// span's percentages map to thumb-centre positions rather than the raw input box.
+const THUMB = 15;
+
+const rangeWrap: CSSProperties = {
+  position: "relative",
+  height: 16,
+  margin: "2px 0 4px",
+};
+
+const rail: CSSProperties = {
+  position: "absolute",
+  left: THUMB / 2,
+  right: THUMB / 2,
+  top: "50%",
+  transform: "translateY(-50%)",
+  height: 3,
+  borderRadius: 3,
+  background: "var(--track)",
+};
+
+const windowFill: CSSProperties = {
+  position: "absolute",
+  top: 0,
+  bottom: 0,
+  background: "var(--accent)",
+  borderRadius: 3,
+};
+
+const rangeEnds: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
+  fontFamily: MONO,
   fontSize: 10,
   color: "var(--text-muted)",
-  marginBottom: 6,
-  fontFamily: MONO,
 };

@@ -5,7 +5,10 @@ import {
   pacePerKm,
   speedKmh,
   formatDate,
-  formatDateYear,
+  monthIndex,
+  monthStart,
+  monthEnd,
+  formatMonth,
   isFootBased,
   activityLink,
 } from "./format";
@@ -62,16 +65,39 @@ describe("speedKmh", () => {
 });
 
 describe("formatDate", () => {
-  test("formats epoch seconds as short month + day (UTC)", () => {
+  test("formats epoch seconds as short month + day + year (UTC)", () => {
     // 2024-08-18T09:58:55Z
-    expect(formatDate(1723975135)).toBe("Aug 18");
+    expect(formatDate(1723975135)).toBe("Aug 18, 2024");
   });
 });
 
-describe("formatDateYear", () => {
-  test("formats epoch seconds as short month + day + year (UTC)", () => {
-    // 2024-08-18T09:58:55Z
-    expect(formatDateYear(1723975135)).toBe("Aug 18, 2024");
+describe("month index helpers", () => {
+  // 2024-08-18T09:58:55Z -> August (zero-based 7) => 2024 * 12 + 7
+  const AUG_2024 = 2024 * 12 + 7;
+
+  test("monthIndex maps a timestamp to year * 12 + month", () => {
+    expect(monthIndex(1723975135)).toBe(AUG_2024);
+  });
+
+  test("monthStart is 00:00 UTC on the 1st", () => {
+    expect(new Date(monthStart(AUG_2024) * 1000).toISOString()).toBe(
+      "2024-08-01T00:00:00.000Z",
+    );
+  });
+
+  test("monthEnd is the last second of the month", () => {
+    expect(new Date(monthEnd(AUG_2024) * 1000).toISOString()).toBe(
+      "2024-08-31T23:59:59.000Z",
+    );
+  });
+
+  test("adjacent indices step exactly one month, across a year boundary", () => {
+    expect(monthIndex(monthStart(AUG_2024 + 5))).toBe(AUG_2024 + 5); // Jan 2025
+    expect(monthEnd(AUG_2024 + 5) + 1).toBe(monthStart(AUG_2024 + 6));
+  });
+
+  test("formatMonth reads long month + year", () => {
+    expect(formatMonth(AUG_2024)).toBe("August 2024");
   });
 });
 

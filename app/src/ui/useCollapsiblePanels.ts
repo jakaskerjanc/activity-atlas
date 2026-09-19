@@ -11,6 +11,8 @@ export interface CollapsiblePanels {
   bottomCollapsed: boolean;
   toggleSide: () => void;
   toggleBottom: () => void;
+  /** Force the bottom panel open (e.g. when replay mounts its transport there). */
+  expandBottom: () => void;
 }
 
 /**
@@ -44,5 +46,6 @@ export function useCollapsiblePanels(): CollapsiblePanels {
     bottomCollapsed,
     toggleSide: () => setSideCollapsed((v) => !v),
     toggleBottom: () => setBottomCollapsed((v) => !v),
+    expandBottom: () => setBottomCollapsed(false),
   };
 }

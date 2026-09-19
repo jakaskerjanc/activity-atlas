@@ -18,12 +18,12 @@ interface Props {
   typeCounts: Record<string, number>;
   enabledTypes: Set<string>;
   onToggleType: (type: string) => void;
-  tsMin: number;
-  tsMax: number;
-  from: number;
-  to: number;
-  onFromChange: (ts: number) => void;
-  onToChange: (ts: number) => void;
+  minMonth: number;
+  maxMonth: number;
+  fromMonth: number;
+  toMonth: number;
+  onFromChange: (month: number) => void;
+  onToChange: (month: number) => void;
   colorMode: ColorMode;
   colorDomain: ColorDomain;
   onColorModeChange: (mode: ColorMode) => void;
@@ -60,10 +60,10 @@ export function SidePanel(p: Props) {
         typeCounts={p.typeCounts}
         enabledTypes={p.enabledTypes}
         onToggleType={p.onToggleType}
-        tsMin={p.tsMin}
-        tsMax={p.tsMax}
-        from={p.from}
-        to={p.to}
+        minMonth={p.minMonth}
+        maxMonth={p.maxMonth}
+        fromMonth={p.fromMonth}
+        toMonth={p.toMonth}
         onFromChange={p.onFromChange}
         onToChange={p.onToChange}
       />

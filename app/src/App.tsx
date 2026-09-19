@@ -11,7 +11,7 @@ import { ReplayBar } from "./ui/ReplayBar";
 import type { FilterState } from "./filters";
 import type { ActivityFeatureCollection, TrackPayload, Theme } from "./types";
 import { decodeTracks } from "./tracks";
-import { formatDate, formatDateYear, activityLink } from "./format";
+import { formatDate, formatMonth, activityLink, monthEnd, monthIndex, monthStart } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
@@ -49,6 +49,7 @@ export default function App() {
 
   // Types shown. null until data loads, then initialized to "all on".
   const [enabled, setEnabled] = useState<Set<string> | null>(null);
+  // Date window in month-index space, so the sliders step a whole calendar month per tick.
   const [from, setFrom] = useState<number | undefined>();
   const [to, setTo] = useState<number | undefined>();
 
@@ -91,9 +92,16 @@ export default function App() {
     if (data && enabled === null) setEnabled(new Set(availableTypes));
   }, [data, availableTypes, enabled]);
 
-  const fromVal = from ?? tsMin;
-  const toVal = to ?? tsMax;
   const enabledTypes = enabled ?? new Set(availableTypes);
+
+  // The slider domain is whole months; the map filter still takes epoch seconds, so
+  // each month index expands to its first/last instant (both ends inclusive).
+  const minMonth = monthIndex(tsMin);
+  const maxMonth = monthIndex(tsMax);
+  const fromMonth = from ?? minMonth;
+  const toMonth = to ?? maxMonth;
+  const fromTs = monthStart(fromMonth);
+  const toTs = monthEnd(toMonth);
 
   // Translate UI state into the map's FilterState.
   const filter: FilterState = useMemo(() => {
@@ -103,10 +111,10 @@ export default function App() {
         : enabled.size === 0
           ? [NONE_SENTINEL]
           : [...enabled];
-    return { types, from: fromVal, to: toVal };
-  }, [enabled, fromVal, toVal]);
+    return { types, from: fromTs, to: toTs };
+  }, [enabled, fromTs, toTs]);
 
-  const inWindow = (ts: number) => ts >= fromVal && ts <= toVal;
+  const inWindow = (ts: number) => ts >= fromTs && ts <= toTs;
 
   // Features currently visible under the type + date filters. Shared by the
   // color scale and the aggregate totals.
@@ -117,7 +125,7 @@ export default function App() {
             (f) => enabledTypes.has(f.properties.type) && inWindow(f.properties.ts),
           )
         : [],
-    [data, enabledTypes, fromVal, toVal],
+    [data, enabledTypes, fromTs, toTs],
   );
 
   // Color scale domain from the visible set, so recency/elevation/speed ramps
@@ -175,6 +183,7 @@ export default function App() {
     setProgress(0);
     setReplaying(true);
     setReplayEpoch((n) => n + 1);
+    panels.expandBottom(); // reveal the transport if the user had it collapsed
     // Playback starts from onReplayReady once MapView's fit-to-cluster fly-to lands, so
     // routes don't draw during the camera pan. (It always plays — an explicitly-requested
     // animation runs even under prefers-reduced-motion, like the selected-track fly-to.)
@@ -216,7 +225,7 @@ export default function App() {
       }
     }
     return counts;
-  }, [data, fromVal, toVal]);
+  }, [data, fromTs, toTs]);
 
   const selectedFeature = useMemo(
     () =>
@@ -237,18 +246,18 @@ export default function App() {
       const p = selectedFeature.properties;
       return {
         title: p.name,
-        subtitle: `${p.type} · ${formatDateYear(p.ts)}`,
+        subtitle: `${p.type} · ${formatDate(p.ts)}`,
         cards: activityCards(selectedFeature),
         link: activityLink(p.id),
       };
     }
     return {
       title: "All Activities",
-      subtitle: `${formatDate(fromVal)} — ${formatDate(toVal)}`,
+      subtitle: `${formatMonth(fromMonth)} — ${formatMonth(toMonth)}`,
       cards: totalCards(filteredFeatures),
       link: null,
     };
-  }, [selectedFeature, filteredFeatures, fromVal, toVal]);
+  }, [selectedFeature, filteredFeatures, fromMonth, toMonth]);
 
   const toggleType = (t: string) =>
     setEnabled((prev) => {
@@ -299,12 +308,12 @@ export default function App() {
             typeCounts={typeCounts}
             enabledTypes={enabledTypes}
             onToggleType={toggleType}
-            tsMin={tsMin}
-            tsMax={tsMax}
-            from={fromVal}
-            to={toVal}
-            onFromChange={(ts) => setFrom(Math.min(ts, toVal))}
-            onToChange={(ts) => setTo(Math.max(ts, fromVal))}
+            minMonth={minMonth}
+            maxMonth={maxMonth}
+            fromMonth={fromMonth}
+            toMonth={toMonth}
+            onFromChange={(m) => setFrom(Math.min(m, toMonth))}
+            onToChange={(m) => setTo(Math.max(m, fromMonth))}
             colorMode={colorMode}
             colorDomain={colorDomain}
             onColorModeChange={setColorMode}

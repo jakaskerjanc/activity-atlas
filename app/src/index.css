@@ -175,6 +175,25 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
+/* Dual-thumb range (see FilterSection's DualRange): two stacked inputs share one rail,
+   so the inputs themselves are pointer-transparent and only their thumbs are grabbable,
+   letting the nearer thumb take the drag instead of the topmost input swallowing it. */
+input[type="range"].range-dual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+}
+input[type="range"].range-dual::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+input[type="range"].range-dual::-moz-range-thumb {
+  pointer-events: auto;
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
