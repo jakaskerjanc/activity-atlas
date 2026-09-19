@@ -22,7 +22,7 @@ export function ColorSection({ mode, domain, onChange }: Props) {
   return (
     <>
       <div style={{ ...eyebrow, marginBottom: 8 }}>Color</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
         {COLOR_MODES.map(({ mode: m, label }) => (
           <button key={m} onClick={() => onChange(m)} style={pillStyle(m === mode)}>
             {label}
@@ -73,6 +73,7 @@ function pillStyle(on: boolean): CSSProperties {
     appearance: "none",
     border: on ? "1px solid var(--accent)" : "1px solid var(--control-border)",
     cursor: "pointer",
+    textAlign: "center",
     padding: "5px 10px",
     borderRadius: 8,
     background: on ? "var(--accent-tint)" : "transparent",

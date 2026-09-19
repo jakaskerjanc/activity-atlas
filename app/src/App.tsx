@@ -52,7 +52,7 @@ export default function App() {
   const [from, setFrom] = useState<number | undefined>();
   const [to, setTo] = useState<number | undefined>();
 
-  const [colorMode, setColorMode] = useState<ColorMode>("recency");
+  const [colorMode, setColorMode] = useState<ColorMode>("uniform");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
