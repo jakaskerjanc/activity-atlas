@@ -12,18 +12,11 @@ import {
   SIDE_PANEL_WIDTH,
 } from "./layout";
 import type { ColorMode, ColorDomain } from "../colors";
+import type { ActivityFilter } from "../activityFilter";
 
 interface Props {
-  availableTypes: string[];
-  typeCounts: Record<string, number>;
-  enabledTypes: Set<string>;
-  onToggleType: (type: string) => void;
-  minMonth: number;
-  maxMonth: number;
-  fromMonth: number;
-  toMonth: number;
-  onFromChange: (month: number) => void;
-  onToChange: (month: number) => void;
+  filter: ActivityFilter;
+  onFilterChange: (filter: ActivityFilter) => void;
   colorMode: ColorMode;
   colorDomain: ColorDomain;
   onColorModeChange: (mode: ColorMode) => void;
@@ -55,18 +48,7 @@ export function SidePanel(p: Props) {
       collapseEdge="left"
       collapseLabel="filters"
     >
-      <FilterSection
-        availableTypes={p.availableTypes}
-        typeCounts={p.typeCounts}
-        enabledTypes={p.enabledTypes}
-        onToggleType={p.onToggleType}
-        minMonth={p.minMonth}
-        maxMonth={p.maxMonth}
-        fromMonth={p.fromMonth}
-        toMonth={p.toMonth}
-        onFromChange={p.onFromChange}
-        onToChange={p.onToChange}
-      />
+      <FilterSection filter={p.filter} onChange={p.onFilterChange} />
       <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
       <ColorSection
         mode={p.colorMode}

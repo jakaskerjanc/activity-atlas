@@ -1,6 +1,6 @@
 // Top-level wiring: load the GeoJSON once, own all UI state, and feed the map + the
-// Trace Atlas panels. The map/data/filter contract (MapView, filters.ts) is unchanged;
-// this file just composes the design's chrome around it.
+// Trace Atlas panels. Which activities are shown is the Activity filter's call
+// (activityFilter.ts); this file holds it and hands its results to the map and panels.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "./MapView";
@@ -8,19 +8,21 @@ import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
-import type { FilterState } from "./filters";
+import {
+  createActivityFilter,
+  filterExpression,
+  visibleActivities,
+  type ActivityFilter,
+} from "./activityFilter";
 import type { ActivityFeatureCollection, TrackPayload, Theme } from "./types";
 import { decodeTracks } from "./tracks";
-import { formatDate, formatMonth, activityLink, monthEnd, monthIndex, monthStart } from "./format";
+import { formatDate, formatMonth, activityLink } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 
 const DATA_URL = `${import.meta.env.BASE_URL}tracks.json`;
-// A type value no activity can have — used to express "show none" through buildFilter,
-// whose empty-array case means "show all".
-const NONE_SENTINEL = " __none__";
 
 // Initial theme: a saved choice wins, else follow the OS. Kept in sync with the
 // inline <head> script in index.html so the first paint doesn't flash.
@@ -47,11 +49,8 @@ export default function App() {
   // Panel collapse state. A resize across the narrow breakpoint overrides manual toggles.
   const panels = useCollapsiblePanels();
 
-  // Types shown. null until data loads, then initialized to "all on".
-  const [enabled, setEnabled] = useState<Set<string> | null>(null);
-  // Date window in month-index space, so the sliders step a whole calendar month per tick.
-  const [from, setFrom] = useState<number | undefined>();
-  const [to, setTo] = useState<number | undefined>();
+  // Which activities are shown. null until data loads.
+  const [filter, setFilter] = useState<ActivityFilter | null>(null);
 
   const [colorMode, setColorMode] = useState<ColorMode>("uniform");
 
@@ -72,74 +71,29 @@ export default function App() {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((payload: TrackPayload) => setData(decodeTracks(payload)))
+      .then((payload: TrackPayload) => {
+        const decoded = decodeTracks(payload);
+        setData(decoded);
+        setFilter(createActivityFilter(decoded.features));
+      })
       .catch((e) => setError(String(e)));
   }, []);
 
-  const availableTypes = useMemo(() => {
-    if (!data) return [];
-    return [...new Set(data.features.map((f) => f.properties.type))].sort();
-  }, [data]);
-
-  const [tsMin, tsMax] = useMemo(() => {
-    if (!data || data.features.length === 0) return [0, 0];
-    const ts = data.features.map((f) => f.properties.ts);
-    return [Math.min(...ts), Math.max(...ts)];
-  }, [data]);
-
-  // Initialize the enabled set once types are known.
-  useEffect(() => {
-    if (data && enabled === null) setEnabled(new Set(availableTypes));
-  }, [data, availableTypes, enabled]);
-
-  const enabledTypes = enabled ?? new Set(availableTypes);
-
-  // The slider domain is whole months; the map filter still takes epoch seconds, so
-  // each month index expands to its first/last instant (both ends inclusive).
-  const minMonth = monthIndex(tsMin);
-  const maxMonth = monthIndex(tsMax);
-  const fromMonth = from ?? minMonth;
-  const toMonth = to ?? maxMonth;
-  const fromTs = monthStart(fromMonth);
-  const toTs = monthEnd(toMonth);
-
-  // Translate UI state into the map's FilterState.
-  const filter: FilterState = useMemo(() => {
-    const types =
-      enabled === null
-        ? []
-        : enabled.size === 0
-          ? [NONE_SENTINEL]
-          : [...enabled];
-    return { types, from: fromTs, to: toTs };
-  }, [enabled, fromTs, toTs]);
-
-  const inWindow = (ts: number) => ts >= fromTs && ts <= toTs;
-
-  // Features currently visible under the type + date filters. Shared by the
-  // color scale and the aggregate totals.
-  const filteredFeatures = useMemo(
-    () =>
-      data
-        ? data.features.filter(
-            (f) => enabledTypes.has(f.properties.type) && inWindow(f.properties.ts),
-          )
-        : [],
-    [data, enabledTypes, fromTs, toTs],
-  );
+  const visible = useMemo(() => (filter ? visibleActivities(filter) : []), [filter]);
+  const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
   // Color scale domain from the visible set, so recency/elevation/speed ramps
   // span what's actually shown. Type→color stays keyed to the full type list
   // (availableTypes) so a type doesn't change color as others are toggled off.
   const colorDomain = useMemo(
-    () => ({ ...computeDomain(filteredFeatures), types: availableTypes }),
-    [filteredFeatures, availableTypes],
+    () => ({ ...computeDomain(visible), types: [...(filter?.availableTypes ?? [])] }),
+    [visible, filter?.availableTypes],
   );
 
   // Chronological step list for the currently filtered set, and the frame the
   // current progress resolves to. Memoized so MapView's frame effect only fires
   // when the resolved frame actually changes.
-  const timeline = useMemo(() => buildTimeline(filteredFeatures), [filteredFeatures]);
+  const timeline = useMemo(() => buildTimeline(visible), [visible]);
   const replayFrame = useMemo(
     () => (replaying ? frameAt(timeline, progress) : null),
     [replaying, timeline, progress],
@@ -215,18 +169,6 @@ export default function App() {
     if (replaying && timeline.length === 0) exitReplay();
   }, [replaying, timeline.length]);
 
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    if (data) {
-      for (const f of data.features) {
-        if (inWindow(f.properties.ts)) {
-          counts[f.properties.type] = (counts[f.properties.type] ?? 0) + 1;
-        }
-      }
-    }
-    return counts;
-  }, [data, fromTs, toTs]);
-
   const selectedFeature = useMemo(
     () =>
       selectedId == null || !data
@@ -253,25 +195,19 @@ export default function App() {
     }
     return {
       title: "All Activities",
-      subtitle: `${formatMonth(fromMonth)} — ${formatMonth(toMonth)}`,
-      cards: totalCards(filteredFeatures),
+      subtitle: filter ? `${formatMonth(filter.fromMonth)} — ${formatMonth(filter.toMonth)}` : "",
+      cards: totalCards(visible),
       link: null,
     };
-  }, [selectedFeature, filteredFeatures, fromMonth, toMonth]);
-
-  const toggleType = (t: string) =>
-    setEnabled((prev) => {
-      const next = new Set(prev ?? availableTypes);
-      next.has(t) ? next.delete(t) : next.add(t);
-      return next;
-    });
+  }, [selectedFeature, visible, filter?.fromMonth, filter?.toMonth]);
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }}>
       <MapView
         theme={theme}
         data={data}
-        filter={filter}
+        filter={mapFilter}
+        visible={visible}
         colorMode={colorMode}
         colorDomain={colorDomain}
         hoverId={hoverId}
@@ -301,19 +237,11 @@ export default function App() {
 
       <Header theme={theme} onToggleTheme={toggleTheme} />
 
-      {data && (
+      {filter && (
         <>
           <SidePanel
-            availableTypes={availableTypes}
-            typeCounts={typeCounts}
-            enabledTypes={enabledTypes}
-            onToggleType={toggleType}
-            minMonth={minMonth}
-            maxMonth={maxMonth}
-            fromMonth={fromMonth}
-            toMonth={toMonth}
-            onFromChange={(m) => setFrom(Math.min(m, toMonth))}
-            onToChange={(m) => setTo(Math.max(m, fromMonth))}
+            filter={filter}
+            onFilterChange={setFilter}
             colorMode={colorMode}
             colorDomain={colorDomain}
             onColorModeChange={setColorMode}

@@ -5,18 +5,26 @@ import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SidePanel } from "./SidePanel";
+import { createActivityFilter } from "../activityFilter";
 
 const props = {
-  availableTypes: ["Run"],
-  typeCounts: { Run: 1 },
-  enabledTypes: new Set(["Run"]),
-  onToggleType: () => {},
-  minMonth: 0,
-  maxMonth: 1,
-  fromMonth: 0,
-  toMonth: 1,
-  onFromChange: () => {},
-  onToChange: () => {},
+  filter: createActivityFilter([
+    {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [] },
+      properties: {
+        id: "s:1",
+        name: "Test",
+        type: "Run",
+        ts: 1723975135,
+        start_date: "2024-08-18T09:58:55Z",
+        distance: 10000,
+        moving_time: 3000,
+        elevation_gain: 100,
+      },
+    },
+  ]),
+  onFilterChange: () => {},
   colorMode: "recency" as const,
   colorDomain: {
     tsMin: 0,

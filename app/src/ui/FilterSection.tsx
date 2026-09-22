@@ -1,51 +1,36 @@
 // Filter controls: activity-type toggles (with live counts) + date-range sliders.
 // Rendered as a section inside the merged SidePanel.
 
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { MONO, eyebrow } from "./theme";
 import { formatMonth } from "../format";
+import {
+  setFromMonth,
+  setToMonth,
+  toggleType,
+  typeCounts,
+  type ActivityFilter,
+} from "../activityFilter";
 
 interface Props {
-  availableTypes: string[];
-  /** count of features of each type within the current date window */
-  typeCounts: Record<string, number>;
-  /** set of types currently shown */
-  enabledTypes: Set<string>;
-  onToggleType: (type: string) => void;
-
-  /** month-index bounds of the slider domain (see format.ts: monthIndex). */
-  minMonth: number;
-  maxMonth: number;
-  /** selected bounds, also month indices */
-  fromMonth: number;
-  toMonth: number;
-  onFromChange: (month: number) => void;
-  onToChange: (month: number) => void;
+  filter: ActivityFilter;
+  onChange: (filter: ActivityFilter) => void;
 }
 
-export function FilterSection({
-  availableTypes,
-  typeCounts,
-  enabledTypes,
-  onToggleType,
-  minMonth,
-  maxMonth,
-  fromMonth,
-  toMonth,
-  onFromChange,
-  onToChange,
-}: Props) {
+export function FilterSection({ filter, onChange }: Props) {
+  // Memoized: App re-renders every replay frame, and the filter only changes on input.
+  const counts = useMemo(() => typeCounts(filter), [filter]);
   return (
     <>
       <div style={{ ...eyebrow, marginBottom: 8 }}>Activity Types</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {availableTypes.map((t) => {
-          const on = enabledTypes.has(t);
+        {filter.availableTypes.map((t) => {
+          const on = filter.types.has(t);
           return (
-            <button key={t} onClick={() => onToggleType(t)} style={rowStyle(on)}>
+            <button key={t} onClick={() => onChange(toggleType(filter, t))} style={rowStyle(on)}>
               <span style={dotStyle(on)} />
               <span style={{ flex: 1, textAlign: "left" }}>{t}</span>
-              <span style={countStyle(on)}>{typeCounts[t] ?? 0}</span>
+              <span style={countStyle(on)}>{counts[t] ?? 0}</span>
             </button>
           );
         })}
@@ -55,15 +40,15 @@ export function FilterSection({
 
       <div style={{ ...eyebrow, marginBottom: 6 }}>Date Range</div>
       <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--accent-text)", marginBottom: 10 }}>
-        {formatMonth(fromMonth)}  →  {formatMonth(toMonth)}
+        {formatMonth(filter.fromMonth)}  →  {formatMonth(filter.toMonth)}
       </div>
       <DualRange
-        min={minMonth}
-        max={maxMonth}
-        from={fromMonth}
-        to={toMonth}
-        onFromChange={onFromChange}
-        onToChange={onToChange}
+        min={filter.minMonth}
+        max={filter.maxMonth}
+        from={filter.fromMonth}
+        to={filter.toMonth}
+        onFromChange={(m) => onChange(setFromMonth(filter, m))}
+        onToChange={(m) => onChange(setToMonth(filter, m))}
       />
     </>
   );

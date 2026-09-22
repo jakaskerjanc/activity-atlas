@@ -1,12 +1,12 @@
 // Owns the Mapbox GL map. Renders activity routes as a glow + core line pair in the
 // Trace Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
-// (re-triggered by REPLAY). Filtering + the GeoJSON data contract are unchanged.
+// (re-triggered by REPLAY). Which activities show is decided upstream (activityFilter.ts);
+// this module only applies the expression it is handed.
 
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
-import type { ExpressionSpecification } from "mapbox-gl";
+import type { ExpressionSpecification, FilterSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { buildFilter, type FilterState } from "./filters";
 import {
   ACCENT,
   lineColorExpression,
@@ -16,7 +16,7 @@ import {
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
 import { fitPadding } from "./ui/layout";
-import type { ActivityFeatureCollection, Theme } from "./types";
+import type { ActivityFeature, ActivityFeatureCollection, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -51,7 +51,10 @@ interface Props {
   /** Selects the Mapbox base style; the panels themselves are themed in CSS. */
   theme: Theme;
   data: ActivityFeatureCollection | null;
-  filter: FilterState;
+  /** The activity filter as a Mapbox expression; null before data loads (draw all). */
+  filter: FilterSpecification | null;
+  /** The activities that pass the filter; the replay camera fits to these. */
+  visible: ActivityFeature[];
   colorMode: ColorMode;
   colorDomain: ColorDomain;
   hoverId: string | null;
@@ -189,7 +192,7 @@ export function MapView(props: Props) {
     if (!frame) {
       map.setFilter(ACTIVE_GLOW_ID, MATCH_NONE);
       map.setFilter(ACTIVE_CORE_ID, MATCH_NONE);
-      const base = buildFilter(propsRef.current.filter);
+      const base = propsRef.current.filter;
       map.setFilter(GLOW_ID, base);
       map.setFilter(CORE_ID, base);
       map.setFilter(HOVER_GLOW_ID, base);
@@ -197,7 +200,7 @@ export function MapView(props: Props) {
       return;
     }
 
-    const user = buildFilter(propsRef.current.filter);
+    const user = propsRef.current.filter;
     // "Before the drawing route" in the exact order buildTimeline uses: ts, then
     // id (string) as the lexicographic tiebreak — must match buildTimeline's sort.
     // Keying on the pair (not ts alone) keeps same-second activities from
@@ -347,7 +350,7 @@ export function MapView(props: Props) {
         },
       });
     }
-    const base = buildFilter(propsRef.current.filter);
+    const base = propsRef.current.filter;
     map.setFilter(GLOW_ID, base);
     map.setFilter(CORE_ID, base);
     map.setFilter(HOVER_GLOW_ID, base);
@@ -454,11 +457,10 @@ export function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !map.getLayer(CORE_ID)) return;
     if (replaying) return;
-    const expr = buildFilter(filter);
-    map.setFilter(GLOW_ID, expr);
-    map.setFilter(CORE_ID, expr);
-    map.setFilter(HOVER_GLOW_ID, expr);
-    map.setFilter(HOVER_CORE_ID, expr);
+    map.setFilter(GLOW_ID, filter);
+    map.setFilter(CORE_ID, filter);
+    map.setFilter(HOVER_GLOW_ID, filter);
+    map.setFilter(HOVER_CORE_ID, filter);
   }, [filter, replaying]);
 
   // Recolor when the color mode or its value domain changes. applyPaint follows
@@ -487,29 +489,22 @@ export function MapView(props: Props) {
   }, [replayFrame]);
 
   // Enter/exit replay: reset the base-layer look, and on entry fit the camera to
-  // the filtered set so the whole map is in frame as it draws in. Reads data + filter
+  // the visible activities so the whole map is in frame as it draws in. Reads them
   // from propsRef so it depends only on the enter/exit signals — the current values are
   // always fresh, with no stale-closure trap and no refit on every unrelated filter tweak.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     applyPaint();
-    const { data, filter } = propsRef.current;
-    if (!replaying || !data) return;
+    const { visible } = propsRef.current;
+    if (!replaying) return;
 
     // Kick off playback once the camera settles (or right away if it doesn't move).
     const ready = () => propsRef.current.onReplayReady();
 
-    const { types, from, to } = filter;
-    const shown = (p: { type: string; ts: number }) =>
-      (types.length === 0 || types.includes(p.type)) &&
-      (from === undefined || p.ts >= from) &&
-      (to === undefined || p.ts <= to);
-
     // Fit the densest cluster, not the raw extent, so an occasional trip abroad
     // doesn't zoom the home region down to a dot while it draws in.
-    const shownFeatures = data.features.filter((f) => shown(f.properties));
-    const box = densestClusterBounds(shownFeatures);
+    const box = densestClusterBounds(visible);
     const bounds = box && new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]);
     // Refinement centres tightly on the density peak; the cap keeps it a comfortable
     // regional view rather than zooming to street level.
