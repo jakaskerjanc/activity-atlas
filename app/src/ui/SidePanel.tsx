@@ -20,7 +20,7 @@ interface Props {
   colorMode: ColorMode;
   colorDomain: ColorDomain;
   onColorModeChange: (mode: ColorMode) => void;
-  /** Start chronological replay of the currently filtered set. */
+  /** Start chronological replay of the visible activities. */
   onStartReplay: () => void;
   /** False when the filter leaves nothing to replay. */
   canReplay: boolean;

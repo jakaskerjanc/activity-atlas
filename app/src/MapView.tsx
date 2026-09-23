@@ -47,12 +47,20 @@ const ACTIVE_STATE: ExpressionSpecification = ["boolean", ["feature-state", "act
 /** Matches nothing — parks the active layers when no route is drawing. */
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
 
+/** Point the four base route layers (glow, core, and their hover twins) at one filter. */
+function applyBaseFilter(map: mapboxgl.Map, expr: FilterSpecification | null) {
+  map.setFilter(GLOW_ID, expr);
+  map.setFilter(CORE_ID, expr);
+  map.setFilter(HOVER_GLOW_ID, expr);
+  map.setFilter(HOVER_CORE_ID, expr);
+}
+
 interface Props {
   /** Selects the Mapbox base style; the panels themselves are themed in CSS. */
   theme: Theme;
   data: ActivityFeatureCollection | null;
   /** The activity filter as a Mapbox expression; null before data loads (draw all). */
-  filter: FilterSpecification | null;
+  mapFilter: FilterSpecification | null;
   /** The activities that pass the filter; the replay camera fits to these. */
   visible: ActivityFeature[];
   colorMode: ColorMode;
@@ -66,7 +74,7 @@ interface Props {
   replaying: boolean;
   /** Current replay frame (null when idle). Drives the completed/active split + trim. */
   replayFrame: ReplayFrame | null;
-  /** Signals replay just became active — used to fit the camera to the filtered set once. */
+  /** Signals replay just became active — used to fit the camera to the visible activities once. */
   replayEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
   onReplayReady: () => void;
@@ -83,7 +91,7 @@ const prefersReducedMotion = () =>
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export function MapView(props: Props) {
-  const { data, filter, colorMode, colorDomain, hoverId, selectedId } = props;
+  const { data, mapFilter, colorMode, colorDomain, hoverId, selectedId } = props;
   const { replaying, replayFrame, replayEpoch } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,15 +200,11 @@ export function MapView(props: Props) {
     if (!frame) {
       map.setFilter(ACTIVE_GLOW_ID, MATCH_NONE);
       map.setFilter(ACTIVE_CORE_ID, MATCH_NONE);
-      const base = propsRef.current.filter;
-      map.setFilter(GLOW_ID, base);
-      map.setFilter(CORE_ID, base);
-      map.setFilter(HOVER_GLOW_ID, base);
-      map.setFilter(HOVER_CORE_ID, base);
+      applyBaseFilter(map, propsRef.current.mapFilter);
       return;
     }
 
-    const user = propsRef.current.filter;
+    const user = propsRef.current.mapFilter;
     // "Before the drawing route" in the exact order buildTimeline uses: ts, then
     // id (string) as the lexicographic tiebreak — must match buildTimeline's sort.
     // Keying on the pair (not ts alone) keeps same-second activities from
@@ -350,11 +354,7 @@ export function MapView(props: Props) {
         },
       });
     }
-    const base = propsRef.current.filter;
-    map.setFilter(GLOW_ID, base);
-    map.setFilter(CORE_ID, base);
-    map.setFilter(HOVER_GLOW_ID, base);
-    map.setFilter(HOVER_CORE_ID, base);
+    applyBaseFilter(map, propsRef.current.mapFilter);
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
   }
 
@@ -457,11 +457,8 @@ export function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !map.getLayer(CORE_ID)) return;
     if (replaying) return;
-    map.setFilter(GLOW_ID, filter);
-    map.setFilter(CORE_ID, filter);
-    map.setFilter(HOVER_GLOW_ID, filter);
-    map.setFilter(HOVER_CORE_ID, filter);
-  }, [filter, replaying]);
+    applyBaseFilter(map, mapFilter);
+  }, [mapFilter, replaying]);
 
   // Recolor when the color mode or its value domain changes. applyPaint follows
   // so heat mode's dimmed base opacities take effect immediately.

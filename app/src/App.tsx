@@ -90,7 +90,7 @@ export default function App() {
     [visible, filter?.availableTypes],
   );
 
-  // Chronological step list for the currently filtered set, and the frame the
+  // Chronological step list for the visible activities, and the frame the
   // current progress resolves to. Memoized so MapView's frame effect only fires
   // when the resolved frame actually changes.
   const timeline = useMemo(() => buildTimeline(visible), [visible]);
@@ -206,7 +206,7 @@ export default function App() {
       <MapView
         theme={theme}
         data={data}
-        filter={mapFilter}
+        mapFilter={mapFilter}
         visible={visible}
         colorMode={colorMode}
         colorDomain={colorDomain}

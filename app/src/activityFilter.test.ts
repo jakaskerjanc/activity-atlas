@@ -9,25 +9,7 @@ import {
   typeCounts,
   visibleActivities,
 } from "./activityFilter";
-import type { ActivityFeature, ActivityFeatureProps } from "./types";
-
-function activity(props: Partial<ActivityFeatureProps>): ActivityFeature {
-  return {
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [] },
-    properties: {
-      id: "s:1",
-      name: "Test",
-      type: "Run",
-      ts: 1723975135,
-      start_date: "2024-08-18T09:58:55Z",
-      distance: 10000,
-      moving_time: 3000,
-      elevation_gain: 100,
-      ...props,
-    },
-  };
-}
+import { activity } from "./testFixtures";
 
 // Epoch seconds for a UTC instant, so fixtures read as dates.
 const at = (iso: string) => Date.parse(iso) / 1000;

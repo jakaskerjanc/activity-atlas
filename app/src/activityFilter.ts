@@ -42,50 +42,50 @@ export function createActivityFilter(activities: readonly ActivityFeature[]): Ac
 }
 
 /** Switch an activity type on or off. A type the data doesn't contain is ignored. */
-export function toggleType(f: ActivityFilter, type: string): ActivityFilter {
-  if (!f.availableTypes.includes(type)) return f;
-  const types = new Set(f.types);
+export function toggleType(filter: ActivityFilter, type: string): ActivityFilter {
+  if (!filter.availableTypes.includes(type)) return filter;
+  const types = new Set(filter.types);
   if (types.has(type)) types.delete(type);
   else types.add(type);
-  return { ...f, types };
+  return { ...filter, types };
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** Move the date range's start month; it can't pass the end or leave the data's months. */
-export function setFromMonth(f: ActivityFilter, month: number): ActivityFilter {
-  return { ...f, fromMonth: clamp(month, f.minMonth, f.toMonth) };
+export function setFromMonth(filter: ActivityFilter, month: number): ActivityFilter {
+  return { ...filter, fromMonth: clamp(month, filter.minMonth, filter.toMonth) };
 }
 
 /** Move the date range's end month; it can't pass the start or leave the data's months. */
-export function setToMonth(f: ActivityFilter, month: number): ActivityFilter {
-  return { ...f, toMonth: clamp(month, f.fromMonth, f.maxMonth) };
+export function setToMonth(filter: ActivityFilter, month: number): ActivityFilter {
+  return { ...filter, toMonth: clamp(month, filter.fromMonth, filter.maxMonth) };
 }
 
 /** Inclusive epoch-second bounds of the date range. */
-function rangeTs(f: ActivityFilter): [number, number] {
-  return [monthStart(f.fromMonth), monthEnd(f.toMonth)];
+function rangeTs(filter: ActivityFilter): [number, number] {
+  return [monthStart(filter.fromMonth), monthEnd(filter.toMonth)];
 }
 
-function inRange(f: ActivityFilter): (a: ActivityFeature) => boolean {
-  const [from, to] = rangeTs(f);
+function inRange(filter: ActivityFilter): (a: ActivityFeature) => boolean {
+  const [from, to] = rangeTs(filter);
   return (a) => a.properties.ts >= from && a.properties.ts <= to;
 }
 
 /** The activities that pass the filter. */
-export function visibleActivities(f: ActivityFilter): ActivityFeature[] {
-  const dated = inRange(f);
-  return f.activities.filter((a) => f.types.has(a.properties.type) && dated(a));
+export function visibleActivities(filter: ActivityFilter): ActivityFeature[] {
+  const dated = inRange(filter);
+  return filter.activities.filter((a) => filter.types.has(a.properties.type) && dated(a));
 }
 
 /**
  * Activities per type inside the date range. Ignores the type selection, so a type
  * that is switched off still shows how many activities turning it on would bring back.
  */
-export function typeCounts(f: ActivityFilter): Record<string, number> {
-  const dated = inRange(f);
+export function typeCounts(filter: ActivityFilter): Record<string, number> {
+  const dated = inRange(filter);
   const counts: Record<string, number> = {};
-  for (const a of f.activities) {
+  for (const a of filter.activities) {
     if (dated(a)) counts[a.properties.type] = (counts[a.properties.type] ?? 0) + 1;
   }
   return counts;
@@ -96,11 +96,11 @@ export function typeCounts(f: ActivityFilter): Record<string, number> {
  * and `ts` feature properties. An empty type selection yields an `in` over an empty
  * list, which matches nothing.
  */
-export function filterExpression(f: ActivityFilter): FilterSpecification {
-  const [from, to] = rangeTs(f);
+export function filterExpression(filter: ActivityFilter): FilterSpecification {
+  const [from, to] = rangeTs(filter);
   return [
     "all",
-    ["in", ["get", "type"], ["literal", [...f.types]]],
+    ["in", ["get", "type"], ["literal", [...filter.types]]],
     [">=", ["get", "ts"], from],
     ["<=", ["get", "ts"], to],
   ];

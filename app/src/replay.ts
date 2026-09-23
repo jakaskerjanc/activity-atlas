@@ -41,7 +41,7 @@ export function totalDurationMs(count: number): number {
   return Math.min(MAX_TOTAL_MS, Math.max(MIN_TOTAL_MS, count * PER_ACTIVITY_MS));
 }
 
-/** Chronological step list for the given (already filtered) features, ascending by ts. */
+/** Chronological step list for the given visible activities, ascending by ts. */
 export function buildTimeline(features: ActivityFeature[]): ReplayStep[] {
   return features
     .map((f) => ({ id: f.properties.id, ts: f.properties.ts }))
