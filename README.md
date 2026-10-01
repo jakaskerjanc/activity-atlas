@@ -1,6 +1,6 @@
 # Strava on Maps
 
-**[Live site →](https://jakaskerjanc.github.io/strava-on-maps/)**
+**[Live site →](https://strava-map.jakas.si/)**
 
 All your Strava and Garmin activities as routes on one interactive Mapbox
 map, filterable by type and date. A GitHub Action builds a compact track file
@@ -94,7 +94,8 @@ cp .example.env .env
 ### 2. Create a Mapbox token
 
 Create a **public** token at <https://account.mapbox.com/access-tokens/>,
-restricted by URL to your GitHub Pages domain. Add it to `.env` as
+restricted by URL to the domain you serve the site from
+(e.g. `https://strava-map.jakas.si`). Add it to `.env` as
 `VITE_MAPBOX_TOKEN`.
 
 ### 3. Export and import your activity history
@@ -119,6 +120,9 @@ gh secret set VITE_MAPBOX_TOKEN -b"pk.xxx"
 ### 5. Enable Pages and run the workflow
 
 - Settings → Pages → Source = GitHub Actions.
+- Optional: set a custom domain under Settings → Pages (this site uses
+  `strava-map.jakas.si`, a CNAME to `<user>.github.io`) and enable
+  **Enforce HTTPS**.
 - Push to `main` (or run **Deploy** manually from the Actions tab) to build
   and deploy.
 

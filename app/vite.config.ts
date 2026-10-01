@@ -1,10 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Relative base so the built site works under a GitHub Pages project path
-// (e.g. https://<user>.github.io/strava-on-maps/).
+// Served from the root of a custom domain (https://strava-map.jakas.si/).
 export default defineConfig({
-  base: "./",
+  base: "/",
   envDir: "..",
   plugins: [react()],
 });
