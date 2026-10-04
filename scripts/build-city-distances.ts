@@ -132,6 +132,12 @@ export const USER_AGENT = "strava-on-maps-build (https://github.com/jakaskerjanc
 export const SIMPLIFY_M = 500;
 /** Total ferry distance above which a profile's route is rejected. */
 export const MAX_FERRY_M = 20_000;
+/**
+ * Farthest OSRM may move an endpoint onto its road graph. Beyond its map
+ * coverage it snaps to the nearest covered road instead of failing (Bogotá →
+ * Portuguese coast, 7,666 km), which would ship an impossible route.
+ */
+export const MAX_SNAP_M = 5_000;
 /** The FOSSGIS server's policy: at most 1 request per second. */
 export const MIN_REQUEST_GAP_MS = 1_000;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -156,6 +162,8 @@ export interface OsrmResponse {
   code: string;
   message?: string;
   routes?: OsrmRoute[];
+  /** Snapped endpoints; `distance` = meters moved from the requested coordinate. */
+  waypoints?: { distance: number }[];
 }
 
 /** A measured profile: accepted route, or the reason it was rejected. */
@@ -194,6 +202,7 @@ export function ferryMeters(route: OsrmRoute): number {
 export function evaluateRoute(res: OsrmResponse): RouteOutcome {
   const route = res.routes?.[0];
   if (res.code !== "Ok" || !route) return { ok: false, reason: res.code || "NoCode" };
+  if ((res.waypoints ?? []).some((w) => w.distance > MAX_SNAP_M)) return { ok: false, reason: "snap" };
   if (ferryMeters(route) > MAX_FERRY_M) return { ok: false, reason: "ferry" };
   const coords = simplifyLngLat(route.geometry.coordinates, SIMPLIFY_M);
   if (coords.length < 2) return { ok: false, reason: "EmptyGeometry" };

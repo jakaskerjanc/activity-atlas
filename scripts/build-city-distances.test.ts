@@ -486,3 +486,14 @@ test("fetchRoute: a non-400 error status (e.g. JSON 403) is retried, then failed
   assert.deepEqual(res, { kind: "failed", reason: "HTTP 403" });
   assert.equal(calls.length, MAX_ATTEMPTS);
 });
+
+test("evaluateRoute: a destination OSRM snapped far away (outside its map) is rejected", () => {
+  // Real case: Bogotá snapped 7,666 km onto the Portuguese coast; Annaba 235 km onto Sardinia.
+  const res = { ...osrmOk(LINE, 1_157_000), waypoints: [{ distance: 0 }, { distance: 235_227 }] };
+  assert.deepEqual(evaluateRoute(res), { ok: false, reason: "snap" });
+});
+
+test("evaluateRoute: a short snap to the nearest road is accepted", () => {
+  const res = { ...osrmOk(LINE, 153_000), waypoints: [{ distance: 3 }, { distance: 1_200 }] };
+  assert.ok(evaluateRoute(res).ok);
+});

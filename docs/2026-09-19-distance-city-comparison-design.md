@@ -175,6 +175,10 @@ GET https://routing.openstreetmap.de/routed-{bike|foot}/route/v1/driving/{lon,la
     and library `build-tracks.ts` uses.
 - **Reject that profile** (set it to `null`, log the reason) if there's too much
   ferry, `NoRoute`, or any other non-`Ok` code.
+- **Reject on snapping:** outside its map coverage OSRM doesn't fail, it snaps
+  the endpoint to the nearest covered road (measured: Bogotá → Portuguese coast,
+  7,666 km away; Annaba → Sardinia, 235 km). Reject when any `waypoints[].distance`
+  exceeds 5 km.
 - **Drop the city** only if **both** profiles are `null`.
 - **Politeness / throughput:** strictly sequential, **≥ 1 s between request
   starts** (the server's policy), User-Agent `strava-on-maps-build (<repo URL>)`.
