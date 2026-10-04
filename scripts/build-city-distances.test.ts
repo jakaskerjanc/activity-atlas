@@ -117,3 +117,159 @@ test("selectCandidates: output is independent of input order", () => {
   const b = selectCandidates([...cities].reverse()).map((c) => c.id);
   assert.deepEqual(a, b);
 });
+
+// --- Stage B: OSRM ---------------------------------------------------------
+
+import polyline from "@mapbox/polyline";
+import {
+  MAX_ATTEMPTS,
+  USER_AGENT,
+  evaluateRoute,
+  fetchRoute,
+  makeThrottle,
+  type Clock,
+  type OsrmResponse,
+  type RouteDeps,
+} from "./build-city-distances.ts";
+
+type LngLat = [number, number];
+
+function osrmOk(
+  coords: LngLat[],
+  distance: number,
+  steps: { mode: string; distance: number }[] = [{ mode: "cycling", distance }],
+): OsrmResponse {
+  return { code: "Ok", routes: [{ distance, geometry: { coordinates: coords }, legs: [{ steps }] }] };
+}
+
+/** Clock that advances only through sleep(), recording every sleep. */
+function fakeClock() {
+  const state = { t: 0, sleeps: [] as number[] };
+  const clock: Clock = {
+    now: () => state.t,
+    sleep: async (ms) => {
+      state.sleeps.push(ms);
+      state.t += ms;
+    },
+  };
+  return { clock, state };
+}
+
+/** RouteDeps whose fetch replays `responses` in order and logs call times. */
+function stubDeps(responses: (() => Response)[]) {
+  const { clock, state } = fakeClock();
+  const calls: { url: string; init?: RequestInit; at: number }[] = [];
+  const deps: RouteDeps = {
+    clock,
+    throttle: makeThrottle(1000, clock),
+    fetch: (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init, at: state.t });
+      const next = responses.shift();
+      if (!next) throw new Error("unexpected fetch");
+      return next();
+    }) as unknown as typeof fetch,
+  };
+  return { deps, calls, state };
+}
+
+const json = (body: unknown, status = 200) => () =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const ZAGREB_LL = { lat: 45.815, lon: 15.9819 };
+const LINE: LngLat[] = [[14.5058, 46.0569], [15.2, 45.95], [15.9819, 45.815]];
+
+test("evaluateRoute: Ok without ferries is accepted, rounded and round-trips", () => {
+  const out = evaluateRoute(osrmOk(LINE, 153_012.4));
+  assert.ok(out.ok);
+  assert.equal(out.route.m, 153_012);
+  const back = polyline.decode(out.route.poly).map(([lat, lng]) => [lng, lat]);
+  assert.equal(back.length, 3);
+  back.forEach((p, i) => {
+    assert.ok(Math.abs(p[0] - LINE[i][0]) < 1e-5 && Math.abs(p[1] - LINE[i][1]) < 1e-5);
+  });
+});
+
+test("evaluateRoute: simplifies at 500 m", () => {
+  // Middle point ~110 m off a straight line → dropped at 500 m tolerance.
+  const out = evaluateRoute(osrmOk([[14, 46], [14.5, 46.001], [15, 46]], 77_000));
+  assert.ok(out.ok);
+  assert.equal(polyline.decode(out.route.poly).length, 2);
+});
+
+test("evaluateRoute: a short river ferry is accepted", () => {
+  const out = evaluateRoute(
+    osrmOk(LINE, 1_219_000, [{ mode: "walking", distance: 1_211_000 }, { mode: "ferry", distance: 8_000 }]),
+  );
+  assert.ok(out.ok);
+});
+
+test("evaluateRoute: more than 20 km of ferry rejects the profile", () => {
+  const out = evaluateRoute(osrmOk(LINE, 3_000_000, [{ mode: "ferry", distance: 439_000 }]));
+  assert.deepEqual(out, { ok: false, reason: "ferry" });
+});
+
+test("evaluateRoute: ferry distance is summed across legs and steps", () => {
+  const res = osrmOk(LINE, 900_000, [{ mode: "ferry", distance: 12_000 }]);
+  res.routes![0].legs.push({ steps: [{ mode: "ferry", distance: 12_000 }] });
+  assert.deepEqual(evaluateRoute(res), { ok: false, reason: "ferry" });
+});
+
+test("evaluateRoute: NoRoute is rejected with its code", () => {
+  assert.deepEqual(evaluateRoute({ code: "NoRoute" }), { ok: false, reason: "NoRoute" });
+});
+
+test("fetchRoute: builds the OSRM URL and sends the User-Agent", async () => {
+  const { deps, calls } = stubDeps([json(osrmOk(LINE, 153_000))]);
+  const res = await fetchRoute("cycling", ZAGREB_LL, deps);
+  assert.equal(res.kind, "measured");
+  assert.equal(
+    calls[0].url,
+    "https://routing.openstreetmap.de/routed-bike/route/v1/driving/" +
+      "14.5058,46.0569;15.9819,45.815?overview=full&geometries=geojson&steps=true",
+  );
+  assert.equal((calls[0].init?.headers as Record<string, string>)["User-Agent"], USER_AGENT);
+});
+
+test("fetchRoute: walking uses routed-foot", async () => {
+  const { deps, calls } = stubDeps([json(osrmOk(LINE, 143_000))]);
+  await fetchRoute("walking", ZAGREB_LL, deps);
+  assert.match(calls[0].url, /\/routed-foot\//);
+});
+
+test("fetchRoute: HTTP 400 NoRoute is a measured rejection, not a retry", async () => {
+  const { deps, calls } = stubDeps([json({ code: "NoRoute" }, 400)]);
+  const res = await fetchRoute("cycling", ZAGREB_LL, deps);
+  assert.deepEqual(res, { kind: "measured", outcome: { ok: false, reason: "NoRoute" } });
+  assert.equal(calls.length, 1);
+});
+
+test("fetchRoute: 429 then Ok is retried", async () => {
+  const { deps, calls } = stubDeps([json({}, 429), json(osrmOk(LINE, 153_000))]);
+  const res = await fetchRoute("cycling", ZAGREB_LL, deps);
+  assert.equal(res.kind, "measured");
+  assert.equal(calls.length, 2);
+});
+
+test("fetchRoute: repeated timeouts are retried, then reported as failed", async () => {
+  const timeout = () => {
+    throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+  };
+  const { deps, calls } = stubDeps([timeout, timeout, timeout]);
+  const res = await fetchRoute("cycling", ZAGREB_LL, deps);
+  assert.equal(res.kind, "failed");
+  assert.match((res as { reason: string }).reason, /TimeoutError/);
+  assert.equal(calls.length, MAX_ATTEMPTS);
+});
+
+test("throttle: request starts are spaced at least 1 s apart", async () => {
+  const { deps, calls } = stubDeps([
+    json(osrmOk(LINE, 1)), json({}, 503), json(osrmOk(LINE, 1)), json(osrmOk(LINE, 1)),
+  ]);
+  await fetchRoute("cycling", ZAGREB_LL, deps);
+  await fetchRoute("cycling", ZAGREB_LL, deps); // 503 then Ok
+  await fetchRoute("walking", ZAGREB_LL, deps);
+  assert.equal(calls.length, 4);
+  for (let i = 1; i < calls.length; i++) {
+    assert.ok(calls[i].at - calls[i - 1].at >= 1000, `gap ${i}: ${calls[i].at - calls[i - 1].at}`);
+  }
+});
