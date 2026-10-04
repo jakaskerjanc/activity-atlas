@@ -342,6 +342,33 @@ What it does:
   you search for, sent to OpenStreetMap's Nominatim (cached in
   `data/mcp/places.json`, at most one request a second).
 
+## City distance comparisons
+
+`app/public/city-distances.json` holds a few hundred cities with real bike and foot
+route distances (and simplified route lines) from Ljubljana, used to say
+"you rode 2,500 km — that's Ljubljana → Lisbon". It is network-derived, so it
+is **committed** and not rebuilt by `pnpm run build`.
+
+To regenerate (rare):
+
+```bash
+# optional: refresh the vendored GeoNames subset
+curl -L -o /tmp/cities15000.zip https://download.geonames.org/export/dump/cities15000.zip
+unzip -o /tmp/cities15000.zip -d /tmp
+pnpm exec tsx scripts/prepare-geonames.ts /tmp/cities15000.txt
+
+pnpm run build:cities --dry-run   # stage A only: candidates per distance bucket
+pnpm run build:cities             # ~18 min; resumable, re-run after an interruption
+pnpm run build:cities --fresh     # ignore the measurement cache
+```
+
+Routes come from the public FOSSGIS OSRM server
+(`routing.openstreetmap.de`). The script follows its usage policy: one
+request at a time, at most 1 request/second, an identifying User-Agent, and
+only as an occasional one-off build — the app itself never calls it. The
+script refuses to write the file if any request failed or a distance range
+between 20 km and 6,000 km has no city within ±40 %.
+
 ## Config
 
 Add these to a root `.env` (see `.example.env`):

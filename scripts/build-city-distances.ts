@@ -8,6 +8,9 @@
 //   stage B (network) measure each with OSRM bike + foot, 1 req/s, cached
 //   stage C (pure)    validate coverage + sanity, report, write
 
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
@@ -459,4 +462,75 @@ export function formatReport(
   for (const f of stats.failed) lines.push(`FAILED ${f}`);
   for (const w of warnings) lines.push(`WARN ${w}`);
   return lines.join("\n");
+}
+
+// --- main ------------------------------------------------------------------
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const GEONAMES_PATH = resolve(__dirname, "data/geonames-cities.json");
+const CACHE_PATH = resolve(__dirname, "data/.city-distances-cache.jsonl");
+const OUT_PATH = resolve(__dirname, "../app/public/city-distances.json");
+
+async function readCacheText(): Promise<string> {
+  try {
+    return await readFile(CACHE_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw err;
+  }
+}
+
+async function main() {
+  const args = new Set(process.argv.slice(2));
+  const geo = JSON.parse(await readFile(GEONAMES_PATH, "utf8")) as GeoCity[];
+  const candidates = selectCandidates(geo);
+  console.log(`Stage A: ${candidates.length} candidates from ${geo.length} cities.`);
+
+  if (args.has("--dry-run")) {
+    const perBucket = new Map<number, string[]>();
+    for (const c of candidates) {
+      const b = bucketIndex(c.gcM)!;
+      perBucket.set(b, [...(perBucket.get(b) ?? []), c.name]);
+    }
+    for (const [b, names] of [...perBucket].sort((x, y) => x[0] - y[0]))
+      console.log(`${fmtKm(bucketLowerM(b)).padStart(9)}  ${names.length}  ${names.join(", ")}`);
+    return;
+  }
+
+  if (args.has("--fresh")) await writeFile(CACHE_PATH, "");
+  const cache = parseCache(await readCacheText());
+  const todo = candidates.length * PROFILES.length -
+    candidates.reduce((n, c) => n + PROFILES.filter((p) => cache.has(cacheKey(c.id, p))).length, 0);
+  console.log(`Stage B: ${todo} OSRM requests to make (~${Math.ceil(todo / 60)} min at 1 req/s).`);
+
+  const deps: RouteDeps = { fetch, clock: realClock, throttle: makeThrottle(MIN_REQUEST_GAP_MS, realClock) };
+  const { cities, stats } = await enrich(candidates, {
+    fetchRoute: (profile, dest) => fetchRoute(profile, dest, deps),
+    cache,
+    record: (e) => appendFile(CACHE_PATH, JSON.stringify(e) + "\n"),
+    log: (msg) => console.log(msg),
+  });
+
+  const payload = buildPayload(cities, new Date().toISOString().slice(0, 10));
+  const json = JSON.stringify(payload);
+  const holes = { cycling: coverageHoles(cities, "cycling"), walking: coverageHoles(cities, "walking") };
+  console.log("\nStage C:\n" + formatReport(stats, payload, json, holes, sanityWarnings(cities)));
+
+  const problems = blockingProblems(stats, holes);
+  if (problems.length) {
+    for (const p of problems) console.error(`ERROR ${p}`);
+    console.error(`Not writing ${OUT_PATH}.`);
+    process.exit(1);
+  }
+  await mkdir(dirname(OUT_PATH), { recursive: true });
+  await writeFile(OUT_PATH, json);
+  console.log(`Wrote ${payload.cities.length} cities to ${OUT_PATH}.`);
+}
+
+// Only run when executed directly, so tests can import the stages without I/O.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
