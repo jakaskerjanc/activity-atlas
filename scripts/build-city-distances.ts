@@ -221,9 +221,9 @@ export function makeThrottle(gapMs: number, clock: Clock): () => Promise<void> {
 }
 
 /**
- * Measure one profile. 429 / 5xx / timeout / network errors are retried with
- * backoff up to MAX_ATTEMPTS; any other HTTP answer (incl. 400 NoRoute) is a
- * measurement.
+ * Measure one profile. 200 and 400 (e.g. NoRoute) are measurements; any other
+ * status, a timeout or a network error is retried with backoff up to
+ * MAX_ATTEMPTS, then reported as failed.
  */
 export async function fetchRoute(profile: Profile, dest: LatLon, deps: RouteDeps): Promise<FetchResult> {
   let lastError = "";
@@ -235,7 +235,10 @@ export async function fetchRoute(profile: Profile, dest: LatLon, deps: RouteDeps
         headers: { "User-Agent": USER_AGENT },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (res.status === 429 || res.status >= 500) {
+      // Only 200 and 400 (OSRM's NoRoute / InvalidQuery) are answers about the
+      // route; anything else (429, 5xx, a 403 policy block…) is retried, then failed.
+      if (!res.ok && res.status !== 400) {
+        await res.body?.cancel();
         lastError = `HTTP ${res.status}`;
         continue;
       }

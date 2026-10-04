@@ -478,3 +478,11 @@ test("formatReport: lists counts, rejections, range and size", () => {
   assert.match(out, /100 km .. 2500 km/);
   assert.match(out, /gz/);
 });
+
+test("fetchRoute: a non-400 error status (e.g. JSON 403) is retried, then failed — never cached as a rejection", async () => {
+  const forbidden = json({ code: "Forbidden", message: "blocked" }, 403);
+  const { deps, calls } = stubDeps([forbidden, forbidden, forbidden]);
+  const res = await fetchRoute("cycling", ZAGREB_LL, deps);
+  assert.deepEqual(res, { kind: "failed", reason: "HTTP 403" });
+  assert.equal(calls.length, MAX_ATTEMPTS);
+});
