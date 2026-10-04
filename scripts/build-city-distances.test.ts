@@ -273,3 +273,117 @@ test("throttle: request starts are spaced at least 1 s apart", async () => {
     assert.ok(calls[i].at - calls[i - 1].at >= 1000, `gap ${i}: ${calls[i].at - calls[i - 1].at}`);
   }
 });
+
+// --- Stage B: cache + enrich -----------------------------------------------
+
+import {
+  cacheKey,
+  enrich,
+  parseCache,
+  type CacheEntry,
+  type EnrichDeps,
+  type FetchResult,
+  type RouteOutcome,
+} from "./build-city-distances.ts";
+import type { Candidate, Profile } from "./city-types.ts";
+
+const okOutcome = (m: number): RouteOutcome => ({ ok: true, route: { m, poly: "_p~iF~ps|U_ulLnnqC" } });
+const cand = (id: number): Candidate => ({ ...cityAt(id, 100 * id), gcM: 100_000 * id });
+
+/** EnrichDeps answering from `answers[`${id}:${profile}`]`, recording calls. */
+function enrichDeps(answers: Record<string, FetchResult>, cache = new Map<string, RouteOutcome>()) {
+  const calls: string[] = [];
+  const recorded: CacheEntry[] = [];
+  const deps: EnrichDeps = {
+    cache,
+    fetchRoute: async (profile: Profile, dest: Candidate) => {
+      const key = cacheKey(dest.id, profile);
+      calls.push(key);
+      return answers[key];
+    },
+    record: async (e) => {
+      recorded.push(e);
+    },
+  };
+  return { deps, calls, recorded };
+}
+
+test("enrich: both profiles accepted → city kept with both routes and cached", async () => {
+  const { deps, recorded } = enrichDeps({
+    "1:cycling": { kind: "measured", outcome: okOutcome(153_000) },
+    "1:walking": { kind: "measured", outcome: okOutcome(143_000) },
+  });
+  const { cities, stats } = await enrich([cand(1)], deps);
+  assert.equal(cities.length, 1);
+  assert.equal(cities[0].cycling?.m, 153_000);
+  assert.equal(cities[0].walking?.m, 143_000);
+  assert.ok(!("gcM" in cities[0]), "gcM must not leak onto the wire");
+  assert.equal(recorded.length, 2);
+  assert.equal(recorded[0].simplifyM, 500);
+  assert.equal(stats.kept, 1);
+});
+
+test("enrich: one profile rejected → kept with null, reason counted", async () => {
+  const { deps } = enrichDeps({
+    "1:cycling": { kind: "measured", outcome: { ok: false, reason: "ferry" } },
+    "1:walking": { kind: "measured", outcome: okOutcome(143_000) },
+  });
+  const { cities, stats } = await enrich([cand(1)], deps);
+  assert.equal(cities[0].cycling, null);
+  assert.deepEqual(stats.rejected.cycling, { ferry: 1 });
+});
+
+test("enrich: both profiles null → city dropped", async () => {
+  const { deps } = enrichDeps({
+    "1:cycling": { kind: "measured", outcome: { ok: false, reason: "NoRoute" } },
+    "1:walking": { kind: "measured", outcome: { ok: false, reason: "ferry" } },
+  });
+  const { cities, stats } = await enrich([cand(1)], deps);
+  assert.equal(cities.length, 0);
+  assert.equal(stats.dropped, 1);
+});
+
+test("enrich: cache hit makes no call and records nothing", async () => {
+  const cache = new Map([
+    [cacheKey(1, "cycling"), okOutcome(153_000)],
+    [cacheKey(1, "walking"), { ok: false, reason: "ferry" } as RouteOutcome],
+  ]);
+  const { deps, calls, recorded } = enrichDeps({}, cache);
+  const { cities, stats } = await enrich([cand(1)], deps);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(recorded, []);
+  assert.equal(cities[0].cycling?.m, 153_000);
+  assert.deepEqual(stats.rejected.walking, { ferry: 1 });
+});
+
+test("enrich: a failure is reported and not cached", async () => {
+  const { deps, recorded } = enrichDeps({
+    "1:cycling": { kind: "failed", reason: "HTTP 503" },
+    "1:walking": { kind: "measured", outcome: okOutcome(143_000) },
+  });
+  const { stats } = await enrich([cand(1)], deps);
+  assert.equal(stats.failed.length, 1);
+  assert.match(stats.failed[0], /cycling: HTTP 503/);
+  assert.deepEqual(recorded.map((e) => e.profile), ["walking"]);
+  assert.ok(!deps.cache.has(cacheKey(1, "cycling")));
+});
+
+test("parseCache: resumes past a truncated last line from an interrupted run", () => {
+  const good: CacheEntry = { id: 1, profile: "cycling", simplifyM: 500, outcome: okOutcome(1) };
+  const text = JSON.stringify(good) + "\n" + '{"id":2,"profile":"walk';
+  const cache = parseCache(text);
+  assert.equal(cache.size, 1);
+  assert.ok(cache.has(cacheKey(1, "cycling")));
+});
+
+test("parseCache: ignores entries encoded at a different simplify tolerance", () => {
+  const stale: CacheEntry = { id: 1, profile: "cycling", simplifyM: 250, outcome: okOutcome(1) };
+  assert.equal(parseCache(JSON.stringify(stale) + "\n").size, 0);
+});
+
+test("parseCache: later lines win and blank lines are skipped", () => {
+  const a: CacheEntry = { id: 1, profile: "cycling", simplifyM: 500, outcome: { ok: false, reason: "NoRoute" } };
+  const b: CacheEntry = { ...a, outcome: okOutcome(5) };
+  const cache = parseCache(`${JSON.stringify(a)}\n\n${JSON.stringify(b)}\n`);
+  assert.deepEqual(cache.get(cacheKey(1, "cycling")), okOutcome(5));
+});

@@ -10,7 +10,7 @@
 
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
-import type { Candidate, EncodedCityRoute, GeoCity, LatLon, Profile } from "./city-types.ts";
+import type { Candidate, EncodedCity, EncodedCityRoute, GeoCity, LatLon, Profile } from "./city-types.ts";
 
 export const ORIGIN = { name: "Ljubljana", lat: 46.0569, lon: 14.5058 };
 
@@ -233,4 +233,117 @@ export async function fetchRoute(profile: Profile, dest: LatLon, deps: RouteDeps
     }
   }
   return { kind: "failed", reason: lastError };
+}
+
+// --- Stage B: cache + enrichment -------------------------------------------
+
+export const PROFILES: Profile[] = ["cycling", "walking"];
+
+/** One line of the gitignored JSONL cache. Measured results only, never failures. */
+export interface CacheEntry {
+  id: number;
+  profile: Profile;
+  /** Tolerance the cached poly was encoded at; other values are ignored. */
+  simplifyM: number;
+  outcome: RouteOutcome;
+}
+
+export type RouteCache = Map<string, RouteOutcome>;
+
+export function cacheKey(id: number, profile: Profile): string {
+  return `${id}:${profile}`;
+}
+
+/** Parse the JSONL cache. Later lines win; unparsable lines are skipped. */
+export function parseCache(text: string, simplifyM: number = SIMPLIFY_M): RouteCache {
+  const cache: RouteCache = new Map();
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let e: CacheEntry;
+    try {
+      e = JSON.parse(line) as CacheEntry;
+    } catch {
+      continue; // truncated tail of an interrupted run
+    }
+    if (e.simplifyM !== simplifyM) continue;
+    cache.set(cacheKey(e.id, e.profile), e.outcome);
+  }
+  return cache;
+}
+
+export interface EnrichDeps {
+  fetchRoute(profile: Profile, dest: Candidate): Promise<FetchResult>;
+  cache: RouteCache;
+  /** Persist a fresh measurement (appends to the JSONL cache in main). */
+  record(entry: CacheEntry): Promise<void>;
+  log?(msg: string): void;
+}
+
+export interface EnrichStats {
+  candidates: number;
+  kept: number;
+  /** Cities whose both profiles were rejected. */
+  dropped: number;
+  /** Per profile: rejection reason → count. */
+  rejected: Record<Profile, Record<string, number>>;
+  /** Human-readable "<name> (<id>) <profile>: <reason>" per failed request. */
+  failed: string[];
+}
+
+function toGeo({ id, name, country, lat, lon, population, fc }: Candidate): GeoCity {
+  return { id, name, country, lat, lon, population, fc };
+}
+
+const fmtKm = (m: number) => `${Math.round(m / 1000)} km`;
+
+/** Stage B: measure every candidate (cache first), sequentially. */
+export async function enrich(
+  candidates: Candidate[],
+  deps: EnrichDeps,
+): Promise<{ cities: EncodedCity[]; stats: EnrichStats }> {
+  const stats: EnrichStats = {
+    candidates: candidates.length,
+    kept: 0,
+    dropped: 0,
+    rejected: { cycling: {}, walking: {} },
+    failed: [],
+  };
+  const cities: EncodedCity[] = [];
+  for (const [i, cand] of candidates.entries()) {
+    const routes: Record<Profile, EncodedCityRoute | null> = { cycling: null, walking: null };
+    const notes: string[] = [];
+    let failed = false;
+    for (const profile of PROFILES) {
+      const key = cacheKey(cand.id, profile);
+      let outcome = deps.cache.get(key);
+      if (!outcome) {
+        const res = await deps.fetchRoute(profile, cand);
+        if (res.kind === "failed") {
+          stats.failed.push(`${cand.name} (${cand.id}) ${profile}: ${res.reason}`);
+          notes.push(`${profile} FAILED`);
+          failed = true;
+          continue;
+        }
+        outcome = res.outcome;
+        deps.cache.set(key, outcome);
+        await deps.record({ id: cand.id, profile, simplifyM: SIMPLIFY_M, outcome });
+      }
+      if (outcome.ok) {
+        routes[profile] = outcome.route;
+        notes.push(`${profile} ${fmtKm(outcome.route.m)}`);
+      } else {
+        const r = stats.rejected[profile];
+        r[outcome.reason] = (r[outcome.reason] ?? 0) + 1;
+        notes.push(`${profile} ✗ ${outcome.reason}`);
+      }
+    }
+    deps.log?.(`[${i + 1}/${candidates.length}] ${cand.name}, ${cand.country}: ${notes.join(", ")}`);
+    if (!routes.cycling && !routes.walking) {
+      if (!failed) stats.dropped++;
+      continue;
+    }
+    cities.push({ ...toGeo(cand), ...routes });
+    stats.kept++;
+  }
+  return { cities, stats };
 }
