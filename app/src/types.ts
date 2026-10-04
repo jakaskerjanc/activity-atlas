@@ -106,3 +106,43 @@ export type ActivityFeatureCollection = GeoJSON.FeatureCollection<
   GeoJSON.LineString,
   ActivityFeatureProps
 >;
+
+// --- City distance comparisons ---------------------------------------------
+// Frontend copy of the city-distances.json wire format.
+// Keep in sync with scripts/city-types.ts (the encoder side).
+
+/** Comparison group; also the per-city route key in city-distances.json. */
+export type Profile = "cycling" | "walking";
+
+export interface EncodedCityRoute {
+  /** OSRM route distance, meters */
+  m: number;
+  /** Google-encoded polyline of the route, [lat,lng] precision-5. */
+  poly: string;
+}
+
+export interface EncodedCity {
+  /** GeoNames geonameid */
+  id: number;
+  name: string;
+  /** ISO 3166-1 alpha-2 */
+  country: string;
+  /** GeoNames feature code: PPLC national capital, PPLA regional capital, PPL… */
+  fc: string;
+  lat: number;
+  lon: number;
+  population: number;
+  cycling: EncodedCityRoute | null;
+  walking: EncodedCityRoute | null;
+}
+
+/** Root shape of app/public/city-distances.json. */
+export interface CityDistancePayload {
+  /** Wire-format version, bumped on breaking shape changes. */
+  v: number;
+  generated: string;
+  router: string;
+  simplifyM: number;
+  origin: { name: string; lat: number; lon: number };
+  cities: EncodedCity[];
+}
