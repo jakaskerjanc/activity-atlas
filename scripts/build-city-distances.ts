@@ -8,9 +8,18 @@
 //   stage B (network) measure each with OSRM bike + foot, 1 req/s, cached
 //   stage C (pure)    validate coverage + sanity, report, write
 
+import { gzipSync } from "node:zlib";
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
-import type { Candidate, EncodedCity, EncodedCityRoute, GeoCity, LatLon, Profile } from "./city-types.ts";
+import type {
+  Candidate,
+  CityDistancePayload,
+  EncodedCity,
+  EncodedCityRoute,
+  GeoCity,
+  LatLon,
+  Profile,
+} from "./city-types.ts";
 
 export const ORIGIN = { name: "Ljubljana", lat: 46.0569, lon: 14.5058 };
 
@@ -346,4 +355,108 @@ export async function enrich(
     stats.kept++;
   }
   return { cities, stats };
+}
+
+// --- Stage C: validation + output ------------------------------------------
+
+/** Wire-format version written to city-distances.json (see app/src/cities.ts). */
+export const PAYLOAD_VERSION = 1;
+const COVERAGE_MIN_M = 20_000;
+const COVERAGE_MAX_M = 6_000_000;
+const COVERAGE_PER_DECADE = 50;
+/** A target is covered by a city whose route m is within ±this fraction. */
+const COVERAGE_TOL = 0.4;
+/** Route longer than this × great-circle is reported as a strange detour. */
+const DETOUR_FACTOR = 3;
+
+/** Log grid of target distances the dataset must cover. */
+export function coverageTargets(): number[] {
+  const out: number[] = [];
+  for (let i = 0; ; i++) {
+    const t = COVERAGE_MIN_M * 10 ** (i / COVERAGE_PER_DECADE);
+    if (t >= COVERAGE_MAX_M) break;
+    out.push(t);
+  }
+  out.push(COVERAGE_MAX_M);
+  return out;
+}
+
+/** Targets with no city within ±COVERAGE_TOL — where pickCity would fall back. */
+export function coverageHoles(
+  cities: EncodedCity[],
+  profile: Profile,
+  targets: number[] = coverageTargets(),
+): number[] {
+  const ms = cities.flatMap((c) => (c[profile] ? [c[profile]!.m] : []));
+  return targets.filter((t) => !ms.some((m) => Math.abs(m - t) <= COVERAGE_TOL * t));
+}
+
+/** Non-fatal oddities: impossible (bad geocode) or strangely long routes. */
+export function sanityWarnings(cities: EncodedCity[], origin: LatLon = ORIGIN): string[] {
+  const out: string[] = [];
+  for (const c of cities) {
+    const gc = haversineM(origin, c);
+    for (const profile of PROFILES) {
+      const route = c[profile];
+      if (!route) continue;
+      const who = `${c.name}, ${c.country} (${c.id}) ${profile}`;
+      if (route.m < gc) out.push(`${who}: route ${fmtKm(route.m)} < great-circle ${fmtKm(gc)}`);
+      else if (route.m > DETOUR_FACTOR * gc)
+        out.push(`${who}: route ${fmtKm(route.m)} > ${DETOUR_FACTOR}x great-circle ${fmtKm(gc)} (detour)`);
+    }
+  }
+  return out;
+}
+
+/** Wire payload; cities sorted by cycling.m asc with cycling: null last. */
+export function buildPayload(cities: EncodedCity[], generated: string): CityDistancePayload {
+  // Infinity - Infinity is NaN, which is falsy, so ties fall through to the next key.
+  const sorted = [...cities].sort(
+    (a, b) =>
+      (a.cycling?.m ?? Infinity) - (b.cycling?.m ?? Infinity) ||
+      (a.walking?.m ?? Infinity) - (b.walking?.m ?? Infinity) ||
+      a.id - b.id,
+  );
+  return {
+    v: PAYLOAD_VERSION,
+    generated,
+    router: "osrm-fossgis",
+    simplifyM: SIMPLIFY_M,
+    origin: { name: ORIGIN.name, lat: ORIGIN.lat, lon: ORIGIN.lon },
+    cities: sorted,
+  };
+}
+
+/** Reasons not to write the output. Empty → safe to write. */
+export function blockingProblems(stats: EnrichStats, holes: Record<Profile, number[]>): string[] {
+  const out: string[] = [];
+  if (stats.failed.length)
+    out.push(`${stats.failed.length} request(s) failed; re-run to retry them (measured results are cached).`);
+  for (const profile of PROFILES)
+    if (holes[profile].length)
+      out.push(`${profile}: coverage holes at ${holes[profile].map(fmtKm).join(", ")}; tune stage A.`);
+  return out;
+}
+
+export function formatReport(
+  stats: EnrichStats,
+  payload: CityDistancePayload,
+  json: string,
+  holes: Record<Profile, number[]>,
+  warnings: string[],
+): string {
+  const lines = [
+    `candidates ${stats.candidates}, kept ${stats.kept}, dropped ${stats.dropped}, failed ${stats.failed.length}`,
+  ];
+  for (const profile of PROFILES) {
+    const ms = payload.cities.flatMap((c) => (c[profile] ? [c[profile]!.m] : []));
+    const rejected = Object.entries(stats.rejected[profile]).map(([r, n]) => `${r}: ${n}`).join(", ") || "none";
+    const range = ms.length ? `${fmtKm(Math.min(...ms))} .. ${fmtKm(Math.max(...ms))}` : "—";
+    lines.push(`${profile}: ${ms.length} routes, ${range}; rejected ${rejected}; holes ${holes[profile].length}`);
+  }
+  const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
+  lines.push(`size ${kb(Buffer.byteLength(json))} raw / ${kb(gzipSync(json).length)} gz`);
+  for (const f of stats.failed) lines.push(`FAILED ${f}`);
+  for (const w of warnings) lines.push(`WARN ${w}`);
+  return lines.join("\n");
 }

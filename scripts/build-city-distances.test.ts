@@ -387,3 +387,94 @@ test("parseCache: later lines win and blank lines are skipped", () => {
   const cache = parseCache(`${JSON.stringify(a)}\n\n${JSON.stringify(b)}\n`);
   assert.deepEqual(cache.get(cacheKey(1, "cycling")), okOutcome(5));
 });
+
+// --- Stage C ---------------------------------------------------------------
+
+import {
+  PAYLOAD_VERSION,
+  blockingProblems,
+  buildPayload,
+  coverageHoles,
+  coverageTargets,
+  formatReport,
+  sanityWarnings,
+  type EnrichStats,
+} from "./build-city-distances.ts";
+import type { EncodedCity } from "./city-types.ts";
+
+function encCity(id: number, cyclingKm: number | null, walkingKm: number | null = null, at = 100): EncodedCity {
+  const route = (km: number | null) => (km === null ? null : { m: km * 1000, poly: "" });
+  return { ...cityAt(id, at), cycling: route(cyclingKm), walking: route(walkingKm) };
+}
+
+/** Cities at 20 km × 1.5^k up to ~5,800 km: every target within ±40 % of one. */
+const LADDER = Array.from({ length: 15 }, (_, k) => encCity(k + 1, 20 * 1.5 ** k));
+
+const emptyStats = (): EnrichStats => ({
+  candidates: 0, kept: 0, dropped: 0, rejected: { cycling: {}, walking: {} }, failed: [],
+});
+
+test("coverageTargets: 20 km to 6,000 km inclusive, ~50 per decade", () => {
+  const t = coverageTargets();
+  assert.equal(t[0], 20_000);
+  assert.equal(t[t.length - 1], 6_000_000);
+  assert.ok(t.length >= 124 && t.length <= 126, `got ${t.length}`);
+});
+
+test("coverageHoles: full coverage passes", () => {
+  assert.deepEqual(coverageHoles(LADDER, "cycling"), []);
+});
+
+test("coverageHoles: a gap fails, reporting targets inside it", () => {
+  const gapped = LADDER.filter((c) => {
+    const km = c.cycling!.m / 1000;
+    return km < 300 || km > 1500;
+  });
+  const holes = coverageHoles(gapped, "cycling");
+  assert.ok(holes.length > 0);
+  assert.ok(holes.every((m) => m > 300_000 && m < 1_500_000 * 1.4));
+});
+
+test("coverageHoles: checked per profile", () => {
+  assert.equal(coverageHoles(LADDER, "walking").length, coverageTargets().length);
+});
+
+test("sanityWarnings: route shorter than great-circle, and > 3x detour", () => {
+  // cityAt(_, 117) is 117 km great-circle from the origin.
+  const w = sanityWarnings([
+    encCity(1, 100, null, 117), // shorter → warn
+    encCity(2, 400, null, 117), // > 351 km → warn
+    encCity(3, 153, 143, 117), // fine
+  ]);
+  assert.equal(w.length, 2);
+  assert.match(w[0], /C1.*cycling.*great-circle/);
+  assert.match(w[1], /C2.*cycling.*detour/);
+});
+
+test("buildPayload: header fields and cycling-asc order, null cycling last", () => {
+  const p = buildPayload([encCity(1, 300), encCity(2, null, 50), encCity(3, 100)], "2026-10-04");
+  assert.equal(p.v, PAYLOAD_VERSION);
+  assert.equal(p.router, "osrm-fossgis");
+  assert.equal(p.simplifyM, 500);
+  assert.equal(p.generated, "2026-10-04");
+  assert.deepEqual(p.origin, { name: "Ljubljana", lat: 46.0569, lon: 14.5058 });
+  assert.deepEqual(p.cities.map((c) => c.id), [3, 1, 2]);
+});
+
+test("blockingProblems: failures and holes block the write; clean run doesn't", () => {
+  assert.deepEqual(blockingProblems(emptyStats(), { cycling: [], walking: [] }), []);
+  const failed = { ...emptyStats(), failed: ["Zagreb (1) cycling: HTTP 503"] };
+  assert.equal(blockingProblems(failed, { cycling: [], walking: [] }).length, 1);
+  assert.equal(blockingProblems(emptyStats(), { cycling: [400_000], walking: [] }).length, 1);
+});
+
+test("formatReport: lists counts, rejections, range and size", () => {
+  const stats = { ...emptyStats(), candidates: 3, kept: 2, rejected: { cycling: { ferry: 2 }, walking: {} } };
+  const p = buildPayload([encCity(1, 100, 90), encCity(2, 2500, 2400)], "2026-10-04");
+  const out = formatReport(stats, p, JSON.stringify(p), { cycling: [], walking: [] }, []);
+  assert.match(out, /candidates 3/);
+  assert.match(out, /kept 2/);
+  assert.match(out, /ferry: 2/);
+  assert.match(out, /100 km .. 2500 km/);
+  assert.match(out, /gz/);
+});
