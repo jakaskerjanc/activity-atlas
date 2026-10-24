@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Live Garmin fetch -> rotate token -> commit DB. Real logic lives here so it
-# runs identically locally. DRY_RUN=1 prints the mutating actions instead.
+# Live Garmin fetch -> commit DB. The Personal API key is read from
+# GARMIN_PERSONAL_API_KEY or ~/.config/garmin/connect-personal-api-key. Real
+# logic lives here so it runs identically locally. DRY_RUN=1 prints the
+# mutating actions instead.
 set -euo pipefail
 
 DB="${DB:-data/activities.sqlite}"
@@ -10,18 +12,10 @@ run() {  # execute, or print under DRY_RUN
   if [ "$DRY_RUN" = "1" ]; then echo "DRY: $*"; else "$@"; fi
 }
 
-# 1. Fetch (fail-loud: a rejected token exits non-zero and fails the job).
+# 1. Fetch (fail-loud: a rejected key exits non-zero and fails the job).
 "${PYTHON_BIN:-python3}" -m ingest.garmin_fetch --db "$DB"
 
-# 2. Rotate FIRST — the refresh token rotates on use; once refreshed the old
-#    one is dead, so the new blob must be persisted before anything else.
-if [ -n "${GARMIN_TOKEN_OUT:-}" ] && [ -f "$GARMIN_TOKEN_OUT" ]; then
-  if [ "$(cat "$GARMIN_TOKEN_OUT")" != "${GARMIN_TOKEN:-}" ]; then
-    run gh secret set GARMIN_TOKEN < "$GARMIN_TOKEN_OUT"
-  fi
-fi
-
-# 3. Commit + push only if the DB changed -> matches deploy.yml's path filter.
+# 2. Commit + push only if the DB changed -> matches deploy.yml's path filter.
 if git diff --quiet -- "$DB"; then
   echo "no DB change"
 else
