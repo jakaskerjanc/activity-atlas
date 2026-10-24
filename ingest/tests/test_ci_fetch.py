@@ -32,8 +32,12 @@ def _stub_python(tmp_path, body):
 def test_dry_run_commits_and_pushes_when_db_changed(tmp_path):
     repo = _repo(tmp_path)
     env = {**os.environ, "DRY_RUN": "1",
-           "PYTHON_BIN": _stub_python(tmp_path,
-                                      "printf x >> data/activities.sqlite\n")}
+           "PYTHON_BIN": _stub_python(
+               tmp_path,
+               'printf NEWTOKEN > "$GARMIN_TOKEN_OUT"\n'
+               "printf x >> data/activities.sqlite\n"),
+           "GARMIN_TOKEN_OUT": str(tmp_path / "token.new"),
+           "GARMIN_TOKEN": "OLDTOKEN"}
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
     assert "DRY: git commit -m chore: garmin fetch" in out
@@ -48,6 +52,7 @@ def test_dry_run_no_commit_when_db_unchanged(tmp_path):
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
     assert "no DB change" in out
+    assert "DRY: git commit" not in out
     assert "DRY: git push" not in out
 
 
