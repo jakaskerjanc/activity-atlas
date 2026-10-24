@@ -50,6 +50,18 @@ def extract_track_from_zip(data: bytes) -> list[tuple[float, float]]:
     raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
 
 
+def has_gps_hint(item: dict) -> bool:
+    """True when the activity is worth downloading for geometry.
+
+    Older payloads carry hasPolyline; the live Personal API DTO does not, so
+    fall back to the start coordinates (null for indoor activities).
+    """
+    if item.get("hasPolyline"):
+        return True
+    return (item.get("startLatitude") is not None
+            and item.get("startLongitude") is not None)
+
+
 def list_item_to_raw(item: dict, track: list[tuple[float, float]]) -> RawActivity:
     return RawActivity(
         source="garmin",
@@ -132,7 +144,7 @@ class GarminFetcher(BaseFetcher):
         failures = 0
         for item in filter_after(items, after_epoch):
             track = []
-            if item.get("hasPolyline"):
+            if has_gps_hint(item):
                 time.sleep(self.delay_s)
                 try:
                     track = extract_track_from_zip(

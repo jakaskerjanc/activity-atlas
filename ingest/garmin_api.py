@@ -186,4 +186,5 @@ class GarminPersonalApi:
                 f"garmin_api: non-numeric activity id: {activity_id!r}"
             ) from None
         url = f"{self._base_url}{_DOWNLOAD_PATH}{activity_id}"
-        return self._get(url, Accept="application/zip")
+        # The live endpoint returns HTTP 406 for Accept: application/zip.
+        return self._get(url, Accept="*/*")

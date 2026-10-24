@@ -36,6 +36,15 @@ Sources:
 | Old detail endpoint | `/activity-service/activity/{id}/details` is **not** in the Personal API Swagger |
 | Rate limits | Not documented publicly |
 
+**Correction (2026-10-24, live probe, 386 activities).** The live
+`SummarizedActivityDTO` has **no** `hasPolyline` key (0/386 items), so the
+original gate never downloaded a file (a new-activity run stored an empty
+polyline). The fetch now honors `hasPolyline` when present and otherwise uses
+the presence of both `startLatitude` and `startLongitude` as the GPS hint: all
+81 null-start activities were indoor types, and every outdoor type had both
+coordinates. Downloading with `Accept: application/zip` returns **HTTP 406**;
+`Accept: */*` returns the ZIP, whose FIT track parses normally.
+
 The list response (`SummarizedActivityDTO`) already contains every scalar the
 pipeline maps today: `activityId`, `activityName`, `activityType.typeKey`,
 `startTimeGMT` (`YYYY-MM-DD HH:MM:SS`, UTC), `distance` (m), `duration` and

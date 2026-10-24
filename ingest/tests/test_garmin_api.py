@@ -89,13 +89,14 @@ def test_list_activities_uses_bearer_and_query_params():
     assert request.get_header("Accept") == "application/json"
 
 
-def test_download_activity_returns_bytes_and_accepts_zip():
+def test_download_activity_returns_bytes_with_wildcard_accept():
     opener = FakeOpener(b"jwt", b"PK\x03\x04zip")
     api = _api(opener)
     assert api.download_activity(123) == b"PK\x03\x04zip"
     request, _ = opener.requests[1]
     assert request.full_url == "https://api.test/download-service/files/activity/123"
-    assert "zip" in request.get_header("Accept")
+    # The live endpoint returns HTTP 406 for Accept: application/zip.
+    assert request.get_header("Accept") == "*/*"
 
 
 def test_download_activity_rejects_non_numeric_id():

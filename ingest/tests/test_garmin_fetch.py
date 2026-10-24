@@ -18,6 +18,11 @@ def _list():
         return json.load(fh)
 
 
+def _live_list():
+    """List payload shaped like the live Personal API DTO: no hasPolyline."""
+    return [{k: v for k, v in item.items() if k != "hasPolyline"} for item in _list()]
+
+
 def _fixture_bytes(name):
     with open(os.path.join(FIX, name), "rb") as fh:
         return fh.read()
@@ -134,6 +139,59 @@ def test_run_inserts_with_geometry_and_windows_on_rerun(tmp_path):
         "insert": 0, "update": 0, "merge": 0
     }
     assert client2.download_calls == []
+
+
+def test_live_dto_without_has_polyline_downloads_by_start_coordinates(tmp_path):
+    from ingest import store
+
+    items = _live_list()
+    assert all("hasPolyline" not in item for item in items)
+    db = str(tmp_path / "db.sqlite")
+    client = FakeClient(items, _zip("outdoor.fit"))
+    assert gf.GarminFetcher(db, delay_s=0, client=client).run() == {
+        "insert": 2, "update": 0, "merge": 0
+    }
+    assert client.download_calls == [5000001]
+
+    conn = store.connect(db)
+    run = store.find_by_service_id(conn, "garmin", "5000001")
+    gym = store.find_by_service_id(conn, "garmin", "5000002")
+    assert run.polyline != ""
+    assert gym.polyline == ""
+    conn.close()
+
+
+def test_legacy_has_polyline_signal_downloads_without_start_coordinates(tmp_path):
+    from ingest import store
+
+    outdoor, _ = _list()
+    legacy = {k: v for k, v in outdoor.items()
+              if k not in ("startLatitude", "startLongitude")}
+    legacy["hasPolyline"] = True
+    db = str(tmp_path / "db.sqlite")
+    client = FakeClient([legacy], _zip("outdoor.fit"))
+    assert gf.GarminFetcher(db, delay_s=0, client=client).run() == {
+        "insert": 1, "update": 0, "merge": 0
+    }
+    assert client.download_calls == [5000001]
+
+    conn = store.connect(db)
+    run = store.find_by_service_id(conn, "garmin", "5000001")
+    assert run.polyline != ""
+    conn.close()
+
+
+@pytest.mark.parametrize("item, expected", [
+    ({}, False),
+    ({"hasPolyline": True}, True),
+    ({"hasPolyline": False}, False),
+    ({"startLatitude": 46.05, "startLongitude": 14.5}, True),
+    ({"startLatitude": 46.05, "startLongitude": None}, False),
+    ({"startLatitude": None, "startLongitude": 14.5}, False),
+    ({"hasPolyline": False, "startLatitude": 46.05, "startLongitude": 14.5}, True),
+])
+def test_has_gps_hint(item, expected):
+    assert gf.has_gps_hint(item) is expected
 
 
 def test_download_failure_is_not_persisted_and_retried(tmp_path):
