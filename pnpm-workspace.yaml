@@ -1,5 +1,6 @@
 packages:
   - app
 allowBuilds:
-  better-sqlite3: true
+  # better-sqlite3 13 ships prebuilt binaries; no node-gyp build is needed.
+  better-sqlite3: false
   esbuild: true
