@@ -44,32 +44,69 @@ prefers the higher-resolution GPS source when both cover the same activity.
 Both importers write into the same `data/activities.sqlite`, which you
 should commit afterward.
 
-Ongoing incremental fetch from the Garmin Connect API (`ingest/garmin_fetch.py`)
-is a later phase — for now it's a stub.
+Ongoing incremental fetch from the Garmin Connect Personal API
+(`ingest/garmin_fetch.py`) keeps the database current after the backfill — see
+[Live Garmin fetch](#live-garmin-fetch).
 
 ## Live Garmin fetch
 
-One-time token bootstrap (interactive; needs email + password + MFA):
+`ingest/garmin_fetch.py` pulls new activities through Garmin's official
+[Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-api/)
+instead of the unofficial `garminconnect` scraper. The official API needs no
+password or MFA login and no rotating token blob — just one personal API key,
+which the client exchanges for a 24-hour bearer token on each run.
+
+### Create a Personal API key (one time)
+
+1. Open Garmin Connect → **Settings** → **Personal API Key**.
+2. Pick a lifetime: **30, 90, 180 or 365 days**.
+3. Copy the key — Garmin shows it only once.
+
+The key is not permanent. When it expires, Garmin rejects it and the fetch exits
+with code 3; create a fresh key the same way and replace the old one locally
+and in CI (see [Renewing the key](#renewing-the-key)).
+
+### Local setup
+
+Save the key in the default location:
 
 ```bash
-npm run --silent auth | gh secret set GARMIN_TOKEN   # also dumps ~/.garminconnect for local reuse
-# --silent is required: without it, npm's "> pkg@ver auth" banner leaks into
-# stdout and corrupts the piped secret (silent JSON-parse failure in CI).
+mkdir -p ~/.config/garmin
+$EDITOR ~/.config/garmin/connect-personal-api-key   # paste the key
+chmod 600 ~/.config/garmin/connect-personal-api-key
+npm run fetch:garmin
 ```
 
-Local incremental fetch (token-only; appends new activities to `data/activities.sqlite`):
+Alternatively export `GARMIN_PERSONAL_API_KEY`. Credentials resolve in this
+order: an explicit `--api-key-file PATH`, then `GARMIN_PERSONAL_API_KEY`, then
+`~/.config/garmin/connect-personal-api-key`. The fetch appends new activities
+to `data/activities.sqlite`; commit the DB afterward.
+
+### CI
+
+`.github/workflows/fetch-garmin.yml` runs daily: fetch via the Personal API →
+commit the DB if it changed → push, which retriggers `deploy.yml`. Each run
+exchanges the key for a fresh 24-hour token, so there is no token rotation and
+no `gh secret set` step during the run.
+
+**Secrets:**
+
+- `GARMIN_PERSONAL_API_KEY` — the Personal API key from above.
+- `GH_PAT` — fine-grained, this repo, **contents: write only**. The PAT push is
+  what retriggers `deploy.yml` (`GITHUB_TOKEN` pushes would not).
+
+### Renewing the key
+
+When the key expires (30/90/180/365 days after creation), the daily fetch fails
+with exit code 3. Create a new key at Garmin Connect → **Settings** →
+**Personal API Key**, update `~/.config/garmin/connect-personal-api-key` (or
+the environment variable), and replace the repository secret:
 
 ```bash
-GARMINTOKENS=$HOME/.garminconnect npm run fetch:garmin
+gh secret set GARMIN_PERSONAL_API_KEY -b"<new key>"
 ```
 
-CI (`.github/workflows/fetch-garmin.yml`) runs daily: fetch → rotate `GARMIN_TOKEN`
-(the refresh token rotates on use) → commit the DB, which retriggers deploy.
-Rerun `npm run auth` only after a password change or token revocation.
-
-**Secrets:** `GARMIN_TOKEN` (from `npm run auth`) and `GH_PAT`
-(fine-grained, this repo, **contents: write + secrets: write** — the PAT push is
-what retriggers `deploy.yml`, and secrets:write lets CI rotate the token).
+Only the expired key is replaced; nothing else rotates.
 
 ## Config
 
