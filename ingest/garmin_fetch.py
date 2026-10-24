@@ -1,6 +1,5 @@
 """Live Garmin Personal API fetch. Feeds the shared normalize/dedupe/store engine.
-See .claude/specs/2026-09-12-garmin-fetch-design.md and
-docs/2026-10-24-garmin-personal-api-design.md."""
+See docs/2026-10-24-garmin-personal-api-design.md."""
 import argparse
 import io
 import sys
@@ -46,7 +45,8 @@ def extract_track_from_zip(data: bytes) -> list[tuple[float, float]]:
         for ext, parser in parsers:
             for name in files:
                 if name.lower().endswith(ext):
-                    return parser(zf.open(name)).track
+                    with zf.open(name) as fh:
+                        return parser(fh).track
     raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
 
 
@@ -81,6 +81,13 @@ PAGE_SIZE = 100
 MAX_CONSECUTIVE_FAILURES = 3
 
 
+def auth_rejected(error: Exception):
+    """Print the shared rejected-key guidance and exit 3."""
+    print("garmin_fetch: Personal API key rejected; create a fresh key at "
+          f"https://developers.garmin.com/ ({error})", file=sys.stderr)
+    raise SystemExit(3)
+
+
 class GarminFetcher(BaseFetcher):
     source = "garmin"
 
@@ -109,9 +116,7 @@ class GarminFetcher(BaseFetcher):
                   f"GARMIN_PERSONAL_API_KEY ({e})", file=sys.stderr)
             raise SystemExit(2)
         except GarminAuthError as e:
-            print("garmin_fetch: Personal API key rejected; create a fresh key at "
-                  f"https://developers.garmin.com/ ({e})", file=sys.stderr)
-            raise SystemExit(3)
+            auth_rejected(e)
         self._client = client
         return client
 
@@ -158,7 +163,11 @@ class GarminFetcher(BaseFetcher):
                     if failures >= MAX_CONSECUTIVE_FAILURES:
                         warnings.warn("consecutive download failures; stopping run")
                         break
-                    continue  # don't store a GPS activity without its track; retry next run
+                    # Don't store a GPS activity without its track. It is retried
+                    # next run only while it stays above the global high-water
+                    # mark; a newer stored activity can move the mark past it and
+                    # the failed item is then missed.
+                    continue
             yield list_item_to_raw(item, track)
 
 
@@ -173,7 +182,11 @@ def main():
     args = ap.parse_args()
     f = GarminFetcher(args.db, simplify_tol_m=args.simplify_m, key_file=args.api_key_file)
     f.authenticate()            # fail loud on missing/rejected key
-    print(f"garmin_fetch: {f.run()}")
+    try:
+        counts = f.run()
+    except GarminAuthError as e:
+        auth_rejected(e)        # key expired between startup and the API calls
+    print(f"garmin_fetch: {counts}")
 
 
 if __name__ == "__main__":

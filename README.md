@@ -14,7 +14,8 @@ data/activities.sqlite ──▶ build-tracks.ts ──▶ app/public/tracks.jso
 ```
 
 `data/activities.sqlite` is the committed source of truth — a SQLite
-database of deduped activities from Strava and Garmin bulk exports.
+database of deduped activities from Strava and Garmin, built from bulk exports
+and kept current by the ongoing Garmin live fetch.
 
 **`build-tracks.ts`** reads that database and writes `app/public/tracks.json`,
 simplifying each route with Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default
@@ -79,7 +80,8 @@ npm run fetch:garmin
 
 Alternatively export `GARMIN_PERSONAL_API_KEY`. Credentials resolve in this
 order: an explicit `--api-key-file PATH`, then `GARMIN_PERSONAL_API_KEY`, then
-`~/.config/garmin/connect-personal-api-key`. The fetch appends new activities
+`~/.config/garmin/connect-personal-api-key`. If no key is found in any of
+those locations, the fetch exits with code 2. The fetch appends new activities
 to `data/activities.sqlite`; commit the DB afterward.
 
 ### CI
@@ -94,6 +96,10 @@ no `gh secret set` step during the run.
 - `GARMIN_PERSONAL_API_KEY` — the Personal API key from above.
 - `GH_PAT` — fine-grained, this repo, **contents: write only**. The PAT push is
   what retriggers `deploy.yml` (`GITHUB_TOKEN` pushes would not).
+
+Upgrading from the old scraper? Delete the now-unused `GARMIN_TOKEN` secret.
+`GH_PAT` needs only **contents: write**; its `secrets: write` permission is no
+longer needed.
 
 ### Renewing the key
 

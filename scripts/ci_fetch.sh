@@ -19,7 +19,7 @@ run() {  # execute, or print under DRY_RUN
 if git diff --quiet -- "$DB"; then
   echo "no DB change"
 else
-  git add "$DB"
+  run git add "$DB"
   run git commit -m "chore: garmin fetch $(date -u +%F)"
   run git push
 fi

@@ -48,7 +48,8 @@ coordinates. Downloading with `Accept: application/zip` returns **HTTP 406**;
 The list response (`SummarizedActivityDTO`) already contains every scalar the
 pipeline maps today: `activityId`, `activityName`, `activityType.typeKey`,
 `startTimeGMT` (`YYYY-MM-DD HH:MM:SS`, UTC), `distance` (m), `duration` and
-`movingDuration` (s), `elevationGain` (m), and `hasPolyline`. Unlike the bulk
+`movingDuration` (s), `elevationGain` (m), and `hasPolyline` when present
+(otherwise both start coordinates act as the GPS hint). Unlike the bulk
 export's `summarizedActivities.json` (cm / ms), these values are already in
 meters and seconds — **no scaling**.
 
@@ -64,7 +65,7 @@ Personal API key ──POST──▶ bearer token (24 h)
                               │
 GET activity list (paged, newest first) ──▶ metadata
                               │
-       hasPolyline? ──yes──▶ GET activity ZIP ──▶ FIT/TCX/GPX parser ──▶ track
+       GPS hint? ──yes──▶ GET activity ZIP ──▶ FIT/TCX/GPX parser ──▶ track
                               │
                               ▼
                     RawActivity → normalize → dedupe → store   (unchanged)
@@ -114,7 +115,9 @@ Failure modes:
 - Missing key → exit 2 with instructions.
 - Rejected/expired key → exit 3 with instructions to create a new key.
 - Other HTTP/network errors → fail the run.
-- Download/parse failure → warn, skip that activity, retry next run; three
+- Download/parse failure → warn, skip that activity, and retry it next run
+  only while it remains above the global high-water mark. A newer stored
+  activity can move the mark past it, so a failed item can be missed; three
   consecutive failures stop the run.
 - Auth error during a download → abort the run.
 
@@ -177,8 +180,8 @@ a schema, wire, and UI decision and belongs in a separate issue.
 - **First-run dedupe.** Garmin `activityId` values are unchanged, so existing
   `g:<id>` rows match exactly and no duplicates are created.
 - **Contract gate.** If the live probe shows the download does not contain
-  usable GPS for activities flagged `hasPolyline`, stop and revisit before
-  merging.
+  usable GPS for activities selected by the GPS hint (`hasPolyline` when
+  present, otherwise both start coordinates), stop and revisit before merging.
 
 ## Coordination
 

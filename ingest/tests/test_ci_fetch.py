@@ -40,9 +40,14 @@ def test_dry_run_commits_and_pushes_when_db_changed(tmp_path):
            "GARMIN_TOKEN": "OLDTOKEN"}
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
+    assert "DRY: git add data/activities.sqlite" in out
     assert "DRY: git commit -m chore: garmin fetch" in out
     assert "DRY: git push" in out
     assert "gh secret" not in out
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"], cwd=repo,
+        capture_output=True, text=True, check=True).stdout
+    assert staged == ""
 
 
 def test_dry_run_no_commit_when_db_unchanged(tmp_path):

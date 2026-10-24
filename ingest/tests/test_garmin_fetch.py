@@ -1,7 +1,9 @@
 import io
 import json
 import os
+import sys
 import zipfile
+from datetime import datetime, timezone
 
 import pytest
 
@@ -43,7 +45,7 @@ class FakeClient:
 
     def list_activities(self, start, limit):
         self.list_calls.append((start, limit))
-        return self.items if start == 0 else []
+        return self.items[start:start + limit]
 
     def download_activity(self, activity_id):
         self.download_calls.append(activity_id)
@@ -53,7 +55,8 @@ class FakeClient:
 
 
 def test_extract_track_from_zip_reads_fit():
-    assert gf.extract_track_from_zip(_zip("outdoor.fit"))
+    track = gf.extract_track_from_zip(_zip("outdoor.fit"))
+    assert len(track) == len(parse_fit(io.BytesIO(_fixture_bytes("outdoor.fit"))).track)
 
 
 def test_extract_track_from_zip_reads_tcx():
@@ -86,7 +89,7 @@ def test_extract_track_from_zip_rejects_unknown_file():
 
 def test_gmt_to_dt_is_utc():
     dt = gf.gmt_to_dt("2026-09-12 06:30:00")
-    assert dt.tzinfo is not None and dt.utcoffset().total_seconds() == 0
+    assert dt == datetime(2026, 9, 12, 6, 30, tzinfo=timezone.utc)
     assert gf.gmt_to_epoch("2026-09-12 06:30:00") == int(dt.timestamp())
 
 
@@ -130,6 +133,7 @@ def test_run_inserts_with_geometry_and_windows_on_rerun(tmp_path):
     gym = store.find_by_service_id(conn, "garmin", "5000002")
     assert run.type == "Run" and run.polyline != ""
     assert run.distance == 10006.79 and run.moving_time == 3200
+    assert gym.moving_time == 2400
     assert gym.polyline == ""
     assert client.download_calls == [5000001]
     conn.close()
@@ -139,6 +143,26 @@ def test_run_inserts_with_geometry_and_windows_on_rerun(tmp_path):
         "insert": 0, "update": 0, "merge": 0
     }
     assert client2.download_calls == []
+
+
+def test_multi_page_list_fetches_all_pages(tmp_path):
+    from ingest import store
+
+    items = [{
+        "activityId": 7000000 + n,
+        "activityType": {"typeKey": "strength_training"},
+        "startTimeGMT": f"2026-09-{10 - n:02d} 06:00:00",
+    } for n in range(5)]
+    db = str(tmp_path / "db.sqlite")
+    client = FakeClient(items, RuntimeError("must not download"))
+    fetcher = gf.GarminFetcher(db, delay_s=0, client=client, page_size=2)
+    assert fetcher.run() == {"insert": 5, "update": 0, "merge": 0}
+    assert client.list_calls == [(0, 2), (2, 2), (4, 2)]
+    assert client.download_calls == []
+
+    conn = store.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 5
+    conn.close()
 
 
 def test_live_dto_without_has_polyline_downloads_by_start_coordinates(tmp_path):
@@ -214,12 +238,57 @@ def test_download_failure_is_not_persisted_and_retried(tmp_path):
     assert gf.GarminFetcher(db, delay_s=0, client=good).run() == {
         "insert": 1, "update": 0, "merge": 0
     }
+    conn = store.connect(db)
+    assert store.find_by_service_id(conn, "garmin", "5000001").polyline != ""
+    conn.close()
+
+
+def test_three_consecutive_download_failures_stop_run(tmp_path):
+    import warnings
+    from ingest import store
+
+    base, _ = _list()
+    items = [{
+        **base,
+        "activityId": 6000000 + n,
+        "startTimeGMT": f"2026-09-{10 - n:02d} 06:00:00",
+    } for n in range(4)]
+    assert all(gf.has_gps_hint(item) for item in items)
+
+    db = str(tmp_path / "db.sqlite")
+    client = FakeClient(items, RuntimeError("boom"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert gf.GarminFetcher(db, delay_s=0, client=client).run() == {
+            "insert": 0, "update": 0, "merge": 0
+        }
+    assert client.download_calls == [6000000, 6000001, 6000002]
+
+    conn = store.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 0
+    conn.close()
 
 
 def test_auth_error_during_download_aborts(tmp_path):
     client = FakeClient(_list(), GarminAuthError("401"))
     with pytest.raises(GarminAuthError):
         gf.GarminFetcher(str(tmp_path / "db.sqlite"), delay_s=0, client=client).run()
+
+
+def test_auth_error_mid_run_exits_3(monkeypatch, tmp_path, capsys):
+    class FakeFetcher:
+        def __init__(self, *args, **kwargs): pass
+        def authenticate(self): pass
+        def run(self): raise GarminAuthError("401 mid-run")
+
+    monkeypatch.setattr(gf, "GarminFetcher", FakeFetcher)
+    monkeypatch.setattr(sys, "argv", [
+        "garmin_fetch", "--db", str(tmp_path / "db.sqlite"),
+    ])
+    with pytest.raises(SystemExit) as exc:
+        gf.main()
+    assert exc.value.code == 3
+    assert "Personal API key rejected" in capsys.readouterr().err
 
 
 def test_missing_key_exits_2(tmp_path, monkeypatch):
