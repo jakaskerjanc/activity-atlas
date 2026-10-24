@@ -97,6 +97,12 @@ no `gh secret set` step during the run.
 - `GH_PAT` — fine-grained, this repo, **contents: write only**. The PAT push is
   what retriggers `deploy.yml` (`GITHUB_TOKEN` pushes would not).
 
+Set the key from the local file without putting it in shell history:
+
+```bash
+gh secret set GARMIN_PERSONAL_API_KEY < ~/.config/garmin/connect-personal-api-key
+```
+
 Upgrading from the old scraper? Delete the now-unused `GARMIN_TOKEN` secret.
 `GH_PAT` needs only **contents: write**; its `secrets: write` permission is no
 longer needed.
@@ -109,7 +115,7 @@ with exit code 3. Create a new key at Garmin Connect → **Settings** →
 the environment variable), and replace the repository secret:
 
 ```bash
-gh secret set GARMIN_PERSONAL_API_KEY -b"<new key>"
+gh secret set GARMIN_PERSONAL_API_KEY < ~/.config/garmin/connect-personal-api-key
 ```
 
 Only the expired key is replaced; nothing else rotates.

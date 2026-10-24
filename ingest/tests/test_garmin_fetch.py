@@ -300,7 +300,7 @@ def test_missing_key_exits_2(tmp_path, monkeypatch):
     assert exc.value.code == 2
 
 
-def test_rejected_key_exits_3(tmp_path, monkeypatch):
+def test_rejected_key_exits_3(tmp_path, monkeypatch, capsys):
     class FakeApi:
         def __init__(self, **kw): pass
         def authenticate(self): raise GarminAuthError("401")
@@ -310,3 +310,6 @@ def test_rejected_key_exits_3(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         fetcher.authenticate()
     assert exc.value.code == 3
+    err = capsys.readouterr().err
+    assert "Settings -> Personal API Key" in err
+    assert "connect.garmin.com/app/settings/personalApiToken" in err

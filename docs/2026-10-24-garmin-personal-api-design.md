@@ -39,11 +39,13 @@ Sources:
 **Correction (2026-10-24, live probe, 386 activities).** The live
 `SummarizedActivityDTO` has **no** `hasPolyline` key (0/386 items), so the
 original gate never downloaded a file (a new-activity run stored an empty
-polyline). The fetch now honors `hasPolyline` when present and otherwise uses
-the presence of both `startLatitude` and `startLongitude` as the GPS hint: all
+polyline). The fetch now honors a truthy `hasPolyline`; otherwise it uses the
+presence of both `startLatitude` and `startLongitude` as the GPS hint: all
 81 null-start activities were indoor types, and every outdoor type had both
 coordinates. Downloading with `Accept: application/zip` returns **HTTP 406**;
-`Accept: */*` returns the ZIP, whose FIT track parses normally.
+`Accept: */*` returns the ZIP, whose FIT track parses normally. A deliberately
+invalid key returns **HTTP 401** from the token endpoint, confirming the
+documented exit-3 mapping.
 
 The list response (`SummarizedActivityDTO`) already contains every scalar the
 pipeline maps today: `activityId`, `activityName`, `activityType.typeKey`,

@@ -7,6 +7,7 @@ import time
 import warnings
 import zipfile
 from datetime import datetime, timezone
+from typing import NoReturn
 
 from .base import BaseFetcher
 from .model import RawActivity
@@ -81,10 +82,12 @@ PAGE_SIZE = 100
 MAX_CONSECUTIVE_FAILURES = 3
 
 
-def auth_rejected(error: Exception):
+def auth_rejected(error: Exception) -> NoReturn:
     """Print the shared rejected-key guidance and exit 3."""
-    print("garmin_fetch: Personal API key rejected; create a fresh key at "
-          f"https://developers.garmin.com/ ({error})", file=sys.stderr)
+    print("garmin_fetch: Personal API key rejected; create a fresh key in "
+          "Garmin Connect (Settings -> Personal API Key): "
+          "https://connect.garmin.com/app/settings/personalApiToken "
+          f"({error})", file=sys.stderr)
     raise SystemExit(3)
 
 
