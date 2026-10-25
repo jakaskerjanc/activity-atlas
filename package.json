@@ -20,7 +20,6 @@
     "test:all": "pnpm run test && pnpm run test:py && pnpm --filter app run test",
     "import:strava": "${PYTHON_BIN:-python3} -m ingest.strava_import",
     "import:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_import",
-    "auth": "${PYTHON_BIN:-python3} -m ingest.garmin_auth",
     "fetch:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_fetch",
     "test:py": "${PYTHON_BIN:-python3} -m pytest ingest -q"
   },

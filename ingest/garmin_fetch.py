@@ -1,16 +1,17 @@
-"""Live Garmin Connect fetch. Feeds the shared normalize/dedupe/store engine.
-See .claude/specs/2026-09-12-garmin-fetch-design.md."""
+"""Live Garmin Personal API fetch. Feeds the shared normalize/dedupe/store engine.
+See docs/2026-10-24-garmin-personal-api-design.md."""
 import argparse
-import os
-import shutil
+import io
 import sys
-import tempfile
 import time
 import warnings
+import zipfile
 from datetime import datetime, timezone
+from typing import NoReturn
 
 from .base import BaseFetcher
 from .model import RawActivity
+from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey
 from . import store
 
 
@@ -23,15 +24,43 @@ def gmt_to_epoch(s: str) -> int:
     return int(gmt_to_dt(s).timestamp())
 
 
-def extract_track(detail: dict) -> list[tuple[float, float]]:
-    """geoPolylineDTO.polyline -> [(lat, lon)]; [] when absent."""
-    pts = ((detail or {}).get("geoPolylineDTO") or {}).get("polyline") or []
-    return [(p["lat"], p["lon"]) for p in pts]
-
-
 def filter_after(items: list[dict], after_epoch: int) -> list[dict]:
     """Keep list items strictly after the high-water epoch."""
     return [i for i in items if gmt_to_epoch(i["startTimeGMT"]) > after_epoch]
+
+
+def extract_track_from_zip(data: bytes) -> list[tuple[float, float]]:
+    """Extract [(lat, lon)] from a Personal API activity ZIP download.
+
+    Prefers .fit, then .tcx, then .gpx (case-insensitive); ignores directory
+    entries and __MACOSX metadata. Raises ValueError when none is present.
+    """
+    from .parse.fit import parse_fit
+    from .parse.tcx import parse_tcx
+    from .parse.gpx import parse_gpx
+
+    parsers = ((".fit", parse_fit), (".tcx", parse_tcx), (".gpx", parse_gpx))
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        files = [i.filename for i in zf.infolist()
+                 if not i.is_dir() and not i.filename.startswith("__MACOSX/")]
+        for ext, parser in parsers:
+            for name in files:
+                if name.lower().endswith(ext):
+                    with zf.open(name) as fh:
+                        return parser(fh).track
+    raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
+
+
+def has_gps_hint(item: dict) -> bool:
+    """True when the activity is worth downloading for geometry.
+
+    Older payloads carry hasPolyline; the live Personal API DTO does not, so
+    fall back to the start coordinates (null for indoor activities).
+    """
+    if item.get("hasPolyline"):
+        return True
+    return (item.get("startLatitude") is not None
+            and item.get("startLongitude") is not None)
 
 
 def list_item_to_raw(item: dict, track: list[tuple[float, float]]) -> RawActivity:
@@ -39,65 +68,64 @@ def list_item_to_raw(item: dict, track: list[tuple[float, float]]) -> RawActivit
         source="garmin",
         source_id=str(item["activityId"]),
         name=item.get("activityName") or "",
-        type_raw=item["activityType"]["typeKey"],
+        type_raw=(item.get("activityType") or {}).get("typeKey") or "other",
         start_time=gmt_to_dt(item["startTimeGMT"]),
         distance_m=float(item.get("distance") or 0),
         moving_time_s=int(item.get("movingDuration") or item.get("duration") or 0),
         elevation_gain_m=float(item.get("elevationGain") or 0),
         track=track,
-        source_file="garmin-api",
+        source_file="garmin-personal-api",
     )
 
 
 PAGE_SIZE = 100
-MAXCHART = 1        # 0 is rejected; polyline count is independent of maxchart
-MAXPOLY = 20000     # longest track seen 3419; import-simplify thins anyway
 MAX_CONSECUTIVE_FAILURES = 3
+
+
+def auth_rejected(error: Exception) -> NoReturn:
+    """Print the shared rejected-key guidance and exit 3."""
+    print("garmin_fetch: Personal API key rejected; create a fresh key in "
+          "Garmin Connect (Settings -> Personal API Key): "
+          "https://connect.garmin.com/app/settings/personalApiToken "
+          f"({error})", file=sys.stderr)
+    raise SystemExit(3)
 
 
 class GarminFetcher(BaseFetcher):
     source = "garmin"
 
-    def __init__(self, db_path, *, delay_s: float = 1.0, client=None, **kw):
+    def __init__(self, db_path, *, delay_s: float = 1.0, client=None, key_file=None,
+                 page_size: int = PAGE_SIZE, **kw):
         super().__init__(db_path, **kw)
         self.delay_s = delay_s
-        self._client = client        # test injection; real login when None
-        self._tmpdir = None
+        self._client = client        # test injection; authenticate() when None
+        self._key_file = key_file
+        self.page_size = page_size
 
     # --- auth -------------------------------------------------------------
-    def _login(self):
-        """Token-only login. GARMIN_TOKEN (JSON blob) or GARMINTOKENS (dir).
-        Exits 2 (no creds) / 3 (rejected). No password fallback."""
-        from garminconnect import Garmin
-        blob = os.environ.get("GARMIN_TOKEN")
-        tokdir = os.environ.get("GARMINTOKENS")
-        if blob:
-            self._tmpdir = tempfile.mkdtemp()
-            with open(os.path.join(self._tmpdir, "garmin_tokens.json"), "w") as fh:
-                fh.write(blob)
-            tokdir = self._tmpdir
-        elif not tokdir:
-            print("no GARMIN_TOKEN / GARMINTOKENS set; run `npm run auth`", file=sys.stderr)
-            raise SystemExit(2)
-        g = Garmin()
+    def authenticate(self) -> GarminPersonalApi:
+        """Resolve the API client. Exits 2 (no key) / 3 (rejected key).
+
+        With an injected client just returns it — no network, and the double
+        may not even have an authenticate() of its own.
+        """
+        if self._client is not None:
+            return self._client
         try:
-            g.login(tokdir)
-        except Exception as e:
-            print(f"garmin token rejected ({e}); re-run `npm run auth` and update "
-                  "GARMIN_TOKEN", file=sys.stderr)
-            raise SystemExit(3)
-        return g
-
-    # --- thin API wrappers (overridable / injectable) --------------------
-    def _list_page(self, client, offset):
-        return client.get_activities(offset, PAGE_SIZE)
-
-    def _detail(self, client, activity_id):
-        return client.get_activity_details(activity_id, MAXCHART, MAXPOLY)
+            client = GarminPersonalApi(key_file=self._key_file)
+            client.authenticate()    # fail loud before touching the store
+        except MissingApiKey as e:
+            print("garmin_fetch: no Personal API key; pass --api-key-file or set "
+                  f"GARMIN_PERSONAL_API_KEY in the environment or .env ({e})", file=sys.stderr)
+            raise SystemExit(2)
+        except GarminAuthError as e:
+            auth_rejected(e)
+        self._client = client
+        return client
 
     # --- orchestration ----------------------------------------------------
     def activities(self):
-        client = self._client or self._login()
+        client = self.authenticate()
 
         conn = store.connect(self.db_path)
         store.init_schema(conn)
@@ -111,50 +139,57 @@ class GarminFetcher(BaseFetcher):
 
         items, offset = [], 0
         while True:
-            page = self._list_page(client, offset)
+            page = client.list_activities(offset, self.page_size)
             if not page:
                 break
             items.extend(page)
             oldest = gmt_to_epoch(page[-1]["startTimeGMT"])   # newest-first list
-            if len(page) < PAGE_SIZE or oldest <= after_epoch:
+            if len(page) < self.page_size or oldest <= after_epoch:
                 break
-            offset += PAGE_SIZE
+            offset += self.page_size
             time.sleep(self.delay_s)
 
         failures = 0
         for item in filter_after(items, after_epoch):
             track = []
-            if item.get("hasPolyline"):
+            if has_gps_hint(item):
                 time.sleep(self.delay_s)
                 try:
-                    track = extract_track(self._detail(client, item["activityId"]))
+                    track = extract_track_from_zip(
+                        client.download_activity(item["activityId"]))
                     failures = 0
+                except GarminAuthError:
+                    raise          # the key died; retrying the page won't help
                 except Exception as e:
                     failures += 1
-                    warnings.warn(f"detail fetch failed for {item['activityId']}: {e}")
+                    warnings.warn(f"download failed for {item['activityId']}: {e}")
                     if failures >= MAX_CONSECUTIVE_FAILURES:
-                        warnings.warn("consecutive detail failures; stopping run")
+                        warnings.warn("consecutive download failures; stopping run")
                         break
-                    continue  # don't store a GPS activity without its track; retry next run
+                    # Don't store a GPS activity without its track. It is retried
+                    # next run only while it stays above the global high-water
+                    # mark; a newer stored activity can move the mark past it and
+                    # the failed item is then missed.
+                    continue
             yield list_item_to_raw(item, track)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Live Garmin Connect fetch into the SQLite store.")
+    ap = argparse.ArgumentParser(
+        description="Fetch Garmin activities via the Personal API into the SQLite store.")
     ap.add_argument("--db", default="data/activities.sqlite")
     ap.add_argument("--simplify-m", type=float, default=0.5)
+    ap.add_argument("--api-key-file", default=None,
+                    help="Personal API key file (default: GARMIN_PERSONAL_API_KEY env, "
+                         "then GARMIN_PERSONAL_API_KEY in the repo-root .env)")
     args = ap.parse_args()
-    f = GarminFetcher(args.db, simplify_tol_m=args.simplify_m)
+    f = GarminFetcher(args.db, simplify_tol_m=args.simplify_m, key_file=args.api_key_file)
+    f.authenticate()            # fail loud on missing/rejected key
     try:
-        f._client = f._login()      # fail loud on missing/rejected token
-        print(f"garmin_fetch: {f.run()}")
-    finally:
-        out = os.environ.get("GARMIN_TOKEN_OUT")
-        if out and f._client is not None:
-            with open(out, "w") as fh:
-                fh.write(f._client.client.dumps())  # possibly-rotated blob CI diffs
-        if f._tmpdir:
-            shutil.rmtree(f._tmpdir, ignore_errors=True)
+        counts = f.run()
+    except GarminAuthError as e:
+        auth_rejected(e)        # key expired between startup and the API calls
+    print(f"garmin_fetch: {counts}")
 
 
 if __name__ == "__main__":

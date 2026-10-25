@@ -22,39 +22,50 @@ def _repo(tmp_path):
     return repo
 
 
-def _stub_python(tmp_path):
-    """Fake PYTHON_BIN: simulates a fetch that changes the DB and rotates the token."""
-    p = tmp_path / "pybin"
-    p.write_text(
-        "#!/usr/bin/env bash\n"
-        'printf NEWTOKEN > "$GARMIN_TOKEN_OUT"\n'
-        'printf x >> data/activities.sqlite\n'
-    )
-    p.chmod(0o755)
-    return str(p)
+def _stub_python(tmp_path, body):
+    path = tmp_path / "pybin"
+    path.write_text("#!/usr/bin/env bash\n" + body)
+    path.chmod(0o755)
+    return str(path)
 
 
-def test_dry_run_rotates_and_pushes_when_changed(tmp_path):
+def test_dry_run_commits_and_pushes_when_db_changed(tmp_path):
     repo = _repo(tmp_path)
-    env = {**os.environ,
-           "DRY_RUN": "1",
-           "PYTHON_BIN": _stub_python(tmp_path),
-           "GARMIN_TOKEN": "OLDTOKEN",
-           "GARMIN_TOKEN_OUT": str(repo / "token.new")}
+    env = {**os.environ, "DRY_RUN": "1",
+           "PYTHON_BIN": _stub_python(
+               tmp_path,
+               'printf NEWTOKEN > "$GARMIN_TOKEN_OUT"\n'
+               "printf x >> data/activities.sqlite\n"),
+           "GARMIN_TOKEN_OUT": str(tmp_path / "token.new"),
+           "GARMIN_TOKEN": "OLDTOKEN"}
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
-    assert "DRY: gh secret set GARMIN_TOKEN" in out    # token differs -> rotate
-    assert "DRY: git push" in out                       # DB changed -> push
+    assert "DRY: git add data/activities.sqlite" in out
+    assert "DRY: git commit -m chore: garmin fetch" in out
+    assert "DRY: git push" in out
+    assert "gh secret" not in out
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"], cwd=repo,
+        capture_output=True, text=True, check=True).stdout
+    assert staged == ""
 
 
-def test_dry_run_no_rotate_when_token_unchanged(tmp_path):
+def test_dry_run_no_commit_when_db_unchanged(tmp_path):
     repo = _repo(tmp_path)
-    env = {**os.environ,
-           "DRY_RUN": "1",
-           "PYTHON_BIN": _stub_python(tmp_path),
-           "GARMIN_TOKEN": "NEWTOKEN",                   # equals what the stub writes
-           "GARMIN_TOKEN_OUT": str(repo / "token.new")}
+    env = {**os.environ, "DRY_RUN": "1",
+           "PYTHON_BIN": _stub_python(tmp_path, "true\n")}
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
-    assert "DRY: gh secret set" not in out
-    assert "DRY: git push" in out                        # DB still changed
+    assert "no DB change" in out
+    assert "DRY: git commit" not in out
+    assert "DRY: git push" not in out
+
+
+def test_fetch_failure_aborts_before_commit(tmp_path):
+    repo = _repo(tmp_path)
+    env = {**os.environ, "DRY_RUN": "1",
+           "PYTHON_BIN": _stub_python(tmp_path, "exit 1\n")}
+    result = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
+                            capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "DRY: git commit" not in result.stdout

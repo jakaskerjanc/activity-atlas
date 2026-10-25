@@ -55,8 +55,8 @@ def test_parse_file_rejects_unknown_extension(tmp_path):
 
 def test_fetcher_exits_without_creds(tmp_path, monkeypatch):
     from ingest.garmin_fetch import GarminFetcher
-    monkeypatch.delenv("GARMIN_TOKEN", raising=False)
-    monkeypatch.delenv("GARMINTOKENS", raising=False)
+    monkeypatch.delenv("GARMIN_PERSONAL_API_KEY", raising=False)
     with pytest.raises(SystemExit) as exc:
-        list(GarminFetcher(str(tmp_path / "d.sqlite")).activities())
+        list(GarminFetcher(str(tmp_path / "d.sqlite"),
+                           key_file=str(tmp_path / "missing")).activities())
     assert exc.value.code == 2
