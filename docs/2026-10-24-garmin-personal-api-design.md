@@ -77,7 +77,7 @@ Files:
 
 - **New** `ingest/garmin_api.py` — stdlib-only client:
   - credential resolution: explicit key → explicit key file →
-    `GARMIN_PERSONAL_API_KEY` → `~/.config/garmin/connect-personal-api-key`
+    `GARMIN_PERSONAL_API_KEY` env → `GARMIN_PERSONAL_API_KEY` in the repo-root `.env`
   - token exchange, JSON GET, ZIP download
   - typed errors: `MissingApiKey`, `GarminAuthError`, `GarminApiError`
 - **Rewrite** `ingest/garmin_fetch.py`:
@@ -99,10 +99,11 @@ Local:
 
 1. `--api-key-file PATH`
 2. `GARMIN_PERSONAL_API_KEY`
-3. `~/.config/garmin/connect-personal-api-key` (recommended, `chmod 600`)
+3. `GARMIN_PERSONAL_API_KEY=` in the repo-root `.env` (recommended; already
+   gitignored and shared with `VITE_MAPBOX_TOKEN`)
 
 An explicitly selected key file that is missing or empty is an error; it does
-not fall back to the environment or default file.
+not fall back to the environment or `.env`.
 
 CI:
 

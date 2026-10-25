@@ -116,7 +116,7 @@ class GarminFetcher(BaseFetcher):
             client.authenticate()    # fail loud before touching the store
         except MissingApiKey as e:
             print("garmin_fetch: no Personal API key; pass --api-key-file or set "
-                  f"GARMIN_PERSONAL_API_KEY ({e})", file=sys.stderr)
+                  f"GARMIN_PERSONAL_API_KEY in the environment or .env ({e})", file=sys.stderr)
             raise SystemExit(2)
         except GarminAuthError as e:
             auth_rejected(e)
@@ -181,7 +181,7 @@ def main():
     ap.add_argument("--simplify-m", type=float, default=0.5)
     ap.add_argument("--api-key-file", default=None,
                     help="Personal API key file (default: GARMIN_PERSONAL_API_KEY env, "
-                         "then ~/.config/garmin/connect-personal-api-key)")
+                         "then GARMIN_PERSONAL_API_KEY in the repo-root .env)")
     args = ap.parse_args()
     f = GarminFetcher(args.db, simplify_tol_m=args.simplify_m, key_file=args.api_key_file)
     f.authenticate()            # fail loud on missing/rejected key

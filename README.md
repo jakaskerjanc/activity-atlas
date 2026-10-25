@@ -69,19 +69,16 @@ and in CI (see [Renewing the key](#renewing-the-key)).
 
 ### Local setup
 
-Save the key in the default location:
+Add the key to the root `.env` (gitignored; see [Config](#config)):
 
 ```bash
-mkdir -p ~/.config/garmin
-$EDITOR ~/.config/garmin/connect-personal-api-key   # paste the key
-chmod 600 ~/.config/garmin/connect-personal-api-key
-npm run fetch:garmin
+GARMIN_PERSONAL_API_KEY=<your key>
 ```
 
-Alternatively export `GARMIN_PERSONAL_API_KEY`. Credentials resolve in this
-order: an explicit `--api-key-file PATH`, then `GARMIN_PERSONAL_API_KEY`, then
-`~/.config/garmin/connect-personal-api-key`. If no key is found in any of
-those locations, the fetch exits with code 2. The fetch appends new activities
+then run `npm run fetch:garmin`. Credentials resolve in this order: an explicit
+`--api-key-file PATH`, then a `GARMIN_PERSONAL_API_KEY` environment variable,
+then `GARMIN_PERSONAL_API_KEY` in `.env`. If no key is found, the fetch exits
+with code 2. The fetch appends new activities
 to `data/activities.sqlite`; commit the DB afterward.
 
 ### CI
@@ -97,10 +94,10 @@ no `gh secret set` step during the run.
 - `GH_PAT` — fine-grained, this repo, **contents: write only**. The PAT push is
   what retriggers `deploy.yml` (`GITHUB_TOKEN` pushes would not).
 
-Set the key from the local file without putting it in shell history:
+Set the secret without putting the key in shell history:
 
 ```bash
-gh secret set GARMIN_PERSONAL_API_KEY < ~/.config/garmin/connect-personal-api-key
+gh secret set GARMIN_PERSONAL_API_KEY    # paste the key at the prompt
 ```
 
 Upgrading from the old scraper? Delete the now-unused `GARMIN_TOKEN` secret.
@@ -111,11 +108,11 @@ longer needed.
 
 When the key expires (30/90/180/365 days after creation), the daily fetch fails
 with exit code 3. Create a new key at Garmin Connect → **Settings** →
-**Personal API Key**, update `~/.config/garmin/connect-personal-api-key` (or
-the environment variable), and replace the repository secret:
+**Personal API Key**, update `GARMIN_PERSONAL_API_KEY` in `.env`, and replace
+the repository secret:
 
 ```bash
-gh secret set GARMIN_PERSONAL_API_KEY < ~/.config/garmin/connect-personal-api-key
+gh secret set GARMIN_PERSONAL_API_KEY    # paste the new key at the prompt
 ```
 
 Only the expired key is replaced; nothing else rotates.
@@ -125,6 +122,7 @@ Only the expired key is replaced; nothing else rotates.
 Add these to a root `.env` (see `.example.env`):
 
 - `VITE_MAPBOX_TOKEN`
+- `GARMIN_PERSONAL_API_KEY` — only needed for the [live Garmin fetch](#live-garmin-fetch)
 
 ## Setting up your own copy
 

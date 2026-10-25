@@ -56,13 +56,33 @@ def test_resolve_explicit_missing_file_does_not_fall_back(tmp_path, monkeypatch)
         ga.resolve_api_key(key_file=str(tmp_path / "missing"))
 
 
-def test_resolve_env_then_default_file(tmp_path, monkeypatch):
+def test_resolve_env_beats_dotenv(tmp_path, monkeypatch):
+    monkeypatch.setenv("GARMIN_PERSONAL_API_KEY", " env ")
+    monkeypatch.setattr(ga, "DOTENV_FILE", str(tmp_path / ".env"))
+    (tmp_path / ".env").write_text("GARMIN_PERSONAL_API_KEY=dotenv\n")
+    assert ga.resolve_api_key() == "env"
+
+
+def test_resolve_falls_back_to_dotenv(tmp_path, monkeypatch):
     monkeypatch.delenv("GARMIN_PERSONAL_API_KEY", raising=False)
-    monkeypatch.setattr(ga, "DEFAULT_KEY_FILE", str(tmp_path / "key"))
+    monkeypatch.setattr(ga, "DOTENV_FILE", str(tmp_path / ".env"))
     with pytest.raises(ga.MissingApiKey):
         ga.resolve_api_key()
-    (tmp_path / "key").write_text("default-key")
-    assert ga.resolve_api_key() == "default-key"
+    (tmp_path / ".env").write_text(
+        "# local secrets\n"
+        "VITE_MAPBOX_TOKEN=pk.abc\n"
+        "\n"
+        'export GARMIN_PERSONAL_API_KEY="dotenv-key"\n'
+    )
+    assert ga.resolve_api_key() == "dotenv-key"
+
+
+def test_resolve_dotenv_without_key_raises(tmp_path, monkeypatch):
+    monkeypatch.delenv("GARMIN_PERSONAL_API_KEY", raising=False)
+    monkeypatch.setattr(ga, "DOTENV_FILE", str(tmp_path / ".env"))
+    (tmp_path / ".env").write_text("VITE_MAPBOX_TOKEN=pk.abc\nGARMIN_PERSONAL_API_KEY=\n")
+    with pytest.raises(ga.MissingApiKey):
+        ga.resolve_api_key()
 
 
 def test_authenticate_posts_api_key_and_strips_token():

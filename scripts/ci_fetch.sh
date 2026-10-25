@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Live Garmin fetch -> commit DB. The Personal API key is read from
-# GARMIN_PERSONAL_API_KEY or ~/.config/garmin/connect-personal-api-key. Real
+# GARMIN_PERSONAL_API_KEY, from the environment or the repo-root .env. Real
 # logic lives here so it runs identically locally. DRY_RUN=1 prints the
 # mutating actions instead.
 set -euo pipefail

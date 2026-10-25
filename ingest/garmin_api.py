@@ -4,7 +4,8 @@ Personal API key -> bearer token (raw JWT, 24 h) -> activity list + ZIP
 downloads. The key is never logged; errors carry status/url only.
 
 Credentials resolve in this order: explicit ``api_key``, explicit ``key_file``,
-``GARMIN_PERSONAL_API_KEY`` env, then ``DEFAULT_KEY_FILE``. Set
+``GARMIN_PERSONAL_API_KEY`` env, then the same variable in the repo-root
+``.env`` (shared with Vite's ``VITE_MAPBOX_TOKEN``). Set
 ``GARMIN_PERSONAL_API_BASE_URL`` to point the client at a local/test server.
 
 Endpoints (Garmin Connect Personal API):
@@ -24,7 +25,7 @@ _LIST_PATH = "/activitylist-service/activities/search/activities"
 _DOWNLOAD_PATH = "/download-service/files/activity/"
 API_KEY_ENV = "GARMIN_PERSONAL_API_KEY"
 BASE_URL_ENV = "GARMIN_PERSONAL_API_BASE_URL"
-DEFAULT_KEY_FILE = "~/.config/garmin/connect-personal-api-key"
+DOTENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 USER_AGENT = "strava-on-maps/0.1"
 
 
@@ -62,11 +63,31 @@ def _resolve_key_file(path, source):
     return key
 
 
+def _read_dotenv_key(path):
+    """GARMIN_PERSONAL_API_KEY from a KEY=VALUE .env file; None when absent/empty."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        name, sep, value = line.partition("=")
+        if sep and name.strip() == API_KEY_ENV:
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1].strip()
+            return value or None
+    return None
+
+
 def resolve_api_key(api_key=None, *, key_file=None):
     """Return the Personal API key, honouring the documented precedence.
 
     An explicitly passed api_key/key_file must resolve: there is no fallback
-    to env or the default file when one of them is missing or empty.
+    to env or .env when one of them is missing or empty.
     """
     if api_key is not None:
         key = api_key.strip()
@@ -81,7 +102,10 @@ def resolve_api_key(api_key=None, *, key_file=None):
     if env and env.strip():
         return env.strip()
 
-    return _resolve_key_file(DEFAULT_KEY_FILE, "default key file")
+    key = _read_dotenv_key(DOTENV_FILE)
+    if key is None:
+        raise MissingApiKey(f"garmin_api: no {API_KEY_ENV} in env or {DOTENV_FILE!r}")
+    return key
 
 
 def _http_error(error, request):
