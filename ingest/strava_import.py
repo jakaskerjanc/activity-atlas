@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 from . import engine
 from .archive import Archive, open_archive
-from .export_reader import ExportReader, archive_export, now_iso
+from .export_reader import (ExportReader, archive_export, export_made_at, is_older_export,
+                            newest_export_as_of, now_iso)
 from .merge import iso
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
@@ -103,6 +104,8 @@ class StravaImporter:
         return self.archive.put_blob(data), name
 
     def run(self) -> dict[str, int]:
+        made = export_made_at(self.export_path)
+        older = is_older_export("strava", made, newest_export_as_of(self.archive, "strava"))
         export_key = archive_export(self.archive, "strava", self.export_path, self.now[:10])
         export = ExportReader(self.export_path)
         try:
@@ -123,7 +126,7 @@ class StravaImporter:
                 sha, name = self._file_blob(export, (row.get("Filename") or "").strip())
                 self.archive.put_record(SourceRecord(
                     "strava", pid, self.now, row, sha, name,
-                    {"kind": "strava_export", "export_key": export_key, "csv_sha": csv_sha}))
+                    {"kind": "strava_export", "export_key": export_key, "csv_sha": csv_sha}, made))
                 seen.add(pid)
                 starts.append(_parse_date(row["Activity Date"].strip()))
         finally:
@@ -135,7 +138,7 @@ class StravaImporter:
                        if r.provider == "strava" and r.provider_activity_id in seen]
             # Deletions first: a re-upload under a new ID can then join the
             # activity its deleted original belonged to.
-            if starts:
+            if starts and not older:   # an older export cannot say what was deleted since
                 engine.mark_missing_deleted(conn, "strava", seen, iso(min(starts)), iso(max(starts)), now=self.now)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()

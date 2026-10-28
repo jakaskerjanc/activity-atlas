@@ -46,7 +46,9 @@ parses full-resolution streams, laps and gear into the database. An unzipped
 export folder also works, for development, but then no export archive is
 stored (the importer warns). Re-running an import changes nothing. A newer
 export that lacks an activity inside its date range marks that record
-deleted; nothing is removed.
+deleted; nothing is removed. Exports are ordered by when they were made (their
+newest file's date), so importing an older export never replaces newer data or
+marks anything deleted.
 
 Run Strava first, then Garmin. Each provider record joins an existing
 activity when their time ranges overlap by at least 50% of the shorter range

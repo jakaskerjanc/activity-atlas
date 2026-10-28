@@ -1,10 +1,12 @@
+import hashlib
+
 import pytest
 from ingest.archive import LocalArchive, open_archive
-from ingest.records import SourceRecord, latest
+from ingest.records import SourceRecord, _canonical, latest
 
 
-def _rec(fetched_at="2026-10-27T10:00:00+00:00", name="Run"):
-    return SourceRecord("garmin", "900", fetched_at, {"activityName": name}, None, None, {"kind": "garmin_api"})
+def _rec(fetched_at="2026-10-27T10:00:00+00:00", name="Run", as_of=None):
+    return SourceRecord("garmin", "900", fetched_at, {"activityName": name}, None, None, {"kind": "garmin_api"}, as_of)
 
 
 def test_blobs_are_content_addressed_and_idempotent(tmp_path):
@@ -53,3 +55,31 @@ def test_put_export_reuses_key_for_identical_bytes(tmp_path):
     assert a.put_export("strava", str(src), today="2026-10-28") == first
     src.write_bytes(b"PK\x03\x04zip2")
     assert a.put_export("strava", str(src), today="2026-10-28") == "exports/strava/2026-10-28-export_123.zip"
+
+
+def test_latest_prefers_as_of_over_fetched_at():
+    a = _rec("2026-10-27T10:00:00+00:00", "A", as_of="2026-10-01T00:00:00+00:00")
+    b = _rec("2026-10-20T10:00:00+00:00", "B")
+    assert latest([a, b]) == [b]
+
+
+def test_record_without_as_of_keeps_plan1_hash():
+    r = _rec()
+    plan1 = {"provider": "garmin", "provider_activity_id": "900", "summary": {"activityName": "Run"},
+             "file_sha256": None, "file_name": None, "origin": {"kind": "garmin_api"}}
+    assert r.content_sha() == hashlib.sha256(_canonical(plan1)).hexdigest()
+    assert b"as_of" not in r.to_json()
+    loaded = SourceRecord.from_json(_canonical({**plan1, "fetched_at": "2026-10-27T10:00:00+00:00"}))
+    assert loaded == r and loaded.as_of is None
+    with_as_of = _rec(as_of="2026-10-01T00:00:00+00:00")
+    assert SourceRecord.from_json(with_as_of.to_json()) == with_as_of
+    assert with_as_of.content_sha() != r.content_sha()
+
+
+def test_put_record_compares_with_newest_by_recency(tmp_path):
+    a = LocalArchive(str(tmp_path))
+    b = _rec("2026-10-20T10:00:00+00:00", "B")
+    older = _rec("2026-10-28T10:00:00+00:00", "A", as_of="2026-10-01T00:00:00+00:00")
+    assert a.put_record(b) is True
+    assert a.put_record(older) is True
+    assert latest(a.list_records()) == [b]
