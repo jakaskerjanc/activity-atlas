@@ -12,7 +12,7 @@ import sqlite3
 
 from .codec import CHANNEL_SCALES
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SchemaMismatch(Exception):
@@ -163,9 +163,22 @@ CREATE TABLE daily_series (
   channel TEXT NOT NULL,
   sample_count INTEGER NOT NULL,
   encoding INTEGER NOT NULL,
+  utc_offset_s INTEGER,
+  time BLOB,
   data BLOB,
   PRIMARY KEY (date, channel)
 );
+
+CREATE TABLE wellness_inputs (
+  provider TEXT NOT NULL,
+  source TEXT NOT NULL,
+  key TEXT NOT NULL,
+  date TEXT NOT NULL,
+  blob_sha256 TEXT NOT NULL,
+  file_name TEXT,
+  PRIMARY KEY (provider, source, key, date)
+);
+CREATE INDEX idx_wellness_inputs_date ON wellness_inputs(date);
 
 CREATE TABLE raw_files (
   sha256 TEXT PRIMARY KEY,

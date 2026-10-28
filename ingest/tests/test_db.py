@@ -4,10 +4,10 @@ from ingest import db
 
 def test_init_sets_version_and_tables():
     conn = db.connect(":memory:"); db.init_schema(conn)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"activities", "activity_sources", "activity_overrides", "streams", "laps", "gear",
-            "activity_gear", "daily_stats", "daily_series", "raw_files"} <= names
+            "activity_gear", "daily_stats", "daily_series", "raw_files", "wellness_inputs"} <= names
 
 
 def test_activities_keeps_build_tracks_columns():
@@ -32,4 +32,4 @@ def test_open_db_flags_older_v2(tmp_path):
 
 def test_open_db_initialises_new_file(tmp_path):
     conn = db.open_db(str(tmp_path / "new.sqlite"))
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION

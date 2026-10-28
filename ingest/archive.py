@@ -4,6 +4,7 @@ byte, and source records. Layout under the root:
     raw/<sha256>
     exports/<provider>/<YYYY-MM-DD>-<name>
     records/<provider>/<provider_activity_id>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
+    wellness/<provider>/<source>/<key>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
 
 Only the local-folder backend exists here; R2 arrives in Plan 3.
 """
@@ -14,7 +15,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .records import SourceRecord, recency
+from .records import SourceRecord, WellnessRecord, latest_wellness, recency
 
 DEFAULT_URL = "file://data/archive"
 
@@ -26,6 +27,8 @@ class Archive(Protocol):
     def put_export(self, provider: str, src_path: str, *, today: str) -> str: ...
     def put_record(self, rec: SourceRecord) -> bool: ...
     def list_records(self) -> list[SourceRecord]: ...
+    def put_wellness(self, rec: WellnessRecord) -> bool: ...
+    def list_wellness(self) -> list[WellnessRecord]: ...
 
 
 def _safe(part: str) -> str:
@@ -126,14 +129,14 @@ class LocalArchive:
         return True
 
     @staticmethod
-    def _read_records(path: str) -> list[SourceRecord]:
+    def _read_records(path: str, cls=SourceRecord) -> list:
         if not os.path.isdir(path):
             return []
         out = []
         for name in sorted(os.listdir(path)):
             if name.endswith(".json") and not name.startswith(".tmp-"):
                 with open(os.path.join(path, name), "rb") as f:
-                    out.append(SourceRecord.from_json(f.read()))
+                    out.append(cls.from_json(f.read()))
         return out
 
     def list_records(self) -> list[SourceRecord]:
@@ -144,6 +147,27 @@ class LocalArchive:
         for provider in sorted(os.listdir(base)):
             for pid in sorted(os.listdir(os.path.join(base, provider))):
                 out.extend(self._read_records(os.path.join(base, provider, pid)))
+        return out
+
+    def put_wellness(self, rec: WellnessRecord) -> bool:
+        d = f"wellness/{_safe(rec.provider)}/{_safe(rec.source)}/{_safe(rec.key)}"
+        stored = self._read_records(self._path(d), WellnessRecord)
+        if stored and latest_wellness(stored)[0].content_sha() == rec.content_sha():
+            return False
+        data = rec.to_json()
+        self._write(f"{d}/{_stamp(rec.fetched_at)}-{rec.content_sha()[:12]}.json",
+                    lambda f: f.write(data))
+        return True
+
+    def list_wellness(self) -> list[WellnessRecord]:
+        base = self._path("wellness")
+        if not os.path.isdir(base):
+            return []
+        out = []
+        for provider in sorted(os.listdir(base)):
+            for source in sorted(os.listdir(os.path.join(base, provider))):
+                for key in sorted(os.listdir(os.path.join(base, provider, source))):
+                    out.extend(self._read_records(os.path.join(base, provider, source, key), WellnessRecord))
         return out
 
 

@@ -3,10 +3,11 @@ import warnings
 
 import pytest
 
-from ingest import db, engine, merge
+from ingest import db, engine, merge, wellness
 from ingest.archive import LocalArchive
 from ingest.garmin_import import GarminImporter
 from ingest.rebuild import rebuild
+from ingest.records import WellnessRecord
 from ingest.strava_import import StravaImporter
 from ingest.tests.factories import fixture_bytes
 from ingest.tests.test_garmin_import import _garmin_zip
@@ -98,7 +99,7 @@ def test_writer_rebuilds_older_v2_and_refuses_v1(tmp_path, capsys):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         conn = engine.open_for_write(dbp, arch, now=NOW)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     conn.close()
     assert _identity(dbp) == ident
 
@@ -133,3 +134,18 @@ def test_rebuild_refuses_to_drop_activities_missing_from_archive(tmp_path):
         warnings.simplefilter("ignore")
         rebuild(dbp, LocalArchive(str(tmp_path / "typo")), now=NOW, force=True)
     assert _snapshot(dbp) == []
+
+
+def test_rebuild_keeps_wellness_tables(tmp_path):
+    dbp, arch = str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
+    sha = arch.put_blob(fixture_bytes("monitoring.fit"))
+    rec = WellnessRecord("garmin", "monitoring_fit", sha, NOW, sha, "m.fit", {"kind": "garmin_export"})
+    arch.put_wellness(rec)
+    conn = engine.open_for_write(dbp, arch, now=NOW)
+    wellness.apply_wellness(conn, arch, [rec])
+    conn.commit(); conn.close()
+    stats, series = _snapshot(dbp, "daily_stats", "date"), _snapshot(dbp, "daily_series", "date, channel")
+    assert len(stats) == 1 and len(series) == 3
+    rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
+    assert _snapshot(dbp, "daily_stats", "date") == stats
+    assert _snapshot(dbp, "daily_series", "date, channel") == series

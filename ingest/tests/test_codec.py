@@ -25,3 +25,7 @@ def test_wire_format_is_zlib_int64_deltas_against_last_present_value():
 def test_unknown_channel_rejected():
     with pytest.raises(KeyError):
         codec.encode("vo2", [1.0])
+
+def test_respiration_round_trip():
+    vals = [18.58, None, 16.75]
+    assert codec.decode("respiration", codec.encode("respiration", vals)) == vals

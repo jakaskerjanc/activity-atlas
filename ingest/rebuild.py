@@ -1,15 +1,16 @@
 """Rebuild the database from the archive. Only the identity columns of
 activity_sources and the activity_overrides rows are carried over from the
 current database; everything else is re-derived, so activity IDs never
-change. Records without an identity row go through the matcher as new."""
+change. Records without an identity row go through the matcher as new.
+Wellness records are re-applied after the activities."""
 import argparse
 import os
 import warnings
 
-from . import db, engine
+from . import db, engine, wellness
 from .archive import Archive, open_archive
 from .export_reader import now_iso
-from .records import latest
+from .records import latest, latest_wellness
 
 _KEPT_SOURCE_COLS = ("provider", "provider_activity_id", "activity_id", "pinned", "deleted_at", "first_seen")
 
@@ -52,6 +53,7 @@ def rebuild(db_path: str, archive: Archive, *, now: str, force: bool = False) ->
             f"VALUES ({','.join('?' * len(_KEPT_SOURCE_COLS))})", sources)
         conn.executemany("INSERT INTO activity_overrides (activity_id, hidden) VALUES (?, ?)", overrides)
         counts = engine.apply_records(conn, archive, records, now=now)
+        wellness.apply_wellness(conn, archive, latest_wellness(archive.list_wellness()))
         conn.commit()
     finally:
         conn.close()
