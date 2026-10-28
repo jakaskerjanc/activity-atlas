@@ -7,11 +7,11 @@ import gzip
 import io
 import os
 import warnings
-import zipfile
 from datetime import datetime, timezone
 
 from . import db, engine
 from .archive import Archive, open_archive
+from .export_reader import ExportReader, archive_export, now_iso
 from .merge import iso
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
@@ -80,56 +80,14 @@ def record_to_source(rec: SourceRecord, parsed: ParsedFile | None) -> SourceActi
 engine.register("strava_export", record_to_source)
 
 
-class _Export:
-    """Read-only view of an export zip or folder, by member path."""
-
-    def __init__(self, path: str):
-        self.path = path
-        self.is_zip = os.path.isfile(path)
-        if self.is_zip:
-            self._zf = zipfile.ZipFile(path)
-            self.names = [n for n in self._zf.namelist() if not n.endswith("/")]
-        else:
-            self.names = sorted(
-                os.path.relpath(os.path.join(d, f), path).replace(os.sep, "/")
-                for d, _, files in os.walk(path) for f in files)
-
-    def read(self, name: str) -> bytes:
-        if self.is_zip:
-            return self._zf.read(name)
-        with open(os.path.join(self.path, *name.split("/")), "rb") as f:
-            return f.read()
-
-    def find(self, suffix: str) -> str | None:
-        """The shortest member path ending in `suffix` (on a path boundary)."""
-        suffix = suffix.strip().lstrip("/")
-        hits = [n for n in self.names if n == suffix or n.endswith("/" + suffix)]
-        return min(hits, key=lambda n: (len(n), n)) if hits else None
-
-    def close(self):
-        if self.is_zip:
-            self._zf.close()
-
-
-def archive_export(archive: Archive, provider: str, path: str, today: str) -> str | None:
-    if os.path.isfile(path):
-        return archive.put_export(provider, path, today=today)
-    warnings.warn("directory input: no export archive stored")
-    return None
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
 class StravaImporter:
     def __init__(self, export_path: str, db_path: str, archive: Archive, *, now: str | None = None):
         self.export_path = export_path
         self.db_path = db_path
         self.archive = archive
-        self.now = now or _now()
+        self.now = now or now_iso()
 
-    def _file_blob(self, export: _Export, fname: str):
+    def _file_blob(self, export: ExportReader, fname: str):
         """(sha, name without .gz) of the activity file, or (None, None)."""
         member = export.find(fname) if fname else None
         if member is None:
@@ -146,7 +104,7 @@ class StravaImporter:
 
     def run(self) -> dict[str, int]:
         export_key = archive_export(self.archive, "strava", self.export_path, self.now[:10])
-        export = _Export(self.export_path)
+        export = ExportReader(self.export_path)
         try:
             csv_member = export.find("activities.csv")
             if csv_member is None:
