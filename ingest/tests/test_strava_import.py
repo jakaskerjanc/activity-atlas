@@ -143,3 +143,23 @@ def test_duplicate_distance_columns_last_wins(tmp_path):
     with pytest.warns(UserWarning):
         StravaImporter(_zip(tmp_path, csv_text, {}), dbp, arch).run()
     assert _activity_for(db.connect(dbp), "strava", "111")["distance"] == 10250.5
+
+
+def test_reupload_with_new_id_joins_the_same_activity(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    old = _row(111, "Aug 1, 2026, 6:30:00 AM", "Walk", "Walk", elapsed="3600")
+    new = _row(112, "Aug 1, 2026, 6:30:00 AM", "Walk", "Walk", elapsed="3600")
+    other = _row(333, "Aug 3, 2026, 6:30:00 AM", "C", "Run")
+    StravaImporter(_zip(tmp_path, HEADER + old + other, {}, "e1.zip"), dbp, arch, now="2026-10-01T10:00:00+00:00").run()
+    conn = db.connect(dbp)
+    first = _activity_for(conn, "strava", "111")["id"]
+    conn.execute("INSERT INTO activity_overrides (activity_id, hidden) VALUES (?, 1)", (first,))
+    conn.commit(); conn.close()
+    counts = StravaImporter(_zip(tmp_path, HEADER + new + other, {}, "e2.zip"), dbp, arch,
+                            now="2026-10-20T10:00:00+00:00").run()
+    assert counts["insert"] == 0
+    conn = db.connect(dbp)
+    act = _activity_for(conn, "strava", "112")
+    assert act["id"] == first
+    assert act["visible"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 2

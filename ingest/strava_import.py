@@ -133,9 +133,11 @@ class StravaImporter:
         try:
             records = [r for r in latest(self.archive.list_records())
                        if r.provider == "strava" and r.provider_activity_id in seen]
-            counts = engine.apply_records(conn, self.archive, records, now=self.now)
+            # Deletions first: a re-upload under a new ID can then join the
+            # activity its deleted original belonged to.
             if starts:
                 engine.mark_missing_deleted(conn, "strava", seen, iso(min(starts)), iso(max(starts)), now=self.now)
+            counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
         finally:
             conn.close()
