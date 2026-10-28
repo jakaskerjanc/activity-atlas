@@ -75,6 +75,21 @@ importers and the fetch run a rebuild by themselves when the database has an
 older v2 schema. They refuse a v1 database (exit code 4): import fresh exports
 into a new database instead.
 
+## Manual fixes
+
+When the matcher gets an activity wrong, fix it by hand:
+
+```bash
+npm run activity -- merge <keep-id> <other-id>          # one activity, recorded twice
+npm run activity -- split <id> garmin:<garmin-activity-id>   # two activities merged by mistake
+npm run activity -- hide <id>                           # keep it, but leave it off the site
+npm run activity -- unhide <id>
+```
+
+Each command takes `--db PATH` (default `data/activities.sqlite`). Merged and
+split sources are pinned, so later imports, fetches and rebuilds keep them as
+you set them. Hidden activities stay in the database.
+
 ## Live Garmin fetch
 
 `ingest/garmin_fetch.py` pulls new activities through Garmin's official
