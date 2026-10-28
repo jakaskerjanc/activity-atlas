@@ -149,3 +149,27 @@ def test_fit_record_without_timestamp_is_skipped(monkeypatch):
     p = parse_fit(io.BytesIO(b""))
     assert p.streams["hr"] == [100, 110, 120]
     assert p.streams["time"] == [0.0, 5.0, 2.0]
+
+
+def test_parse_monitoring_fixture():
+    from datetime import datetime
+    from ingest.parse.monitoring import MONITORING_FILE_TYPES, parse_monitoring
+
+    def unix(iso):
+        return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+
+    with open(os.path.join(FIX, "monitoring.fit"), "rb") as f:
+        data = f.read()
+    assert parse_fit(io.BytesIO(data), geometry=False).file_type in MONITORING_FILE_TYPES
+    m = parse_monitoring(data)
+    assert m.utc_offset_s == 7200
+    hr, stress, resp = m.series["hr"], m.series["stress"], m.series["respiration"]
+    assert len(hr) == 193
+    assert hr[0] == (unix("2026-04-10T22:25:00Z"), 74)
+    assert hr[-1] == (unix("2026-04-11T03:30:00Z"), 58)
+    assert len(stress) == 304
+    assert stress[0] == (unix("2026-04-10T22:25:00Z"), 31)
+    assert len(resp) == 305
+    assert resp[0] == (unix("2026-04-10T22:26:00Z"), 18.58)
+    assert m.resting == {"2026-04-11": {"resting_heart_rate": 57,
+                                        "current_day_resting_heart_rate": 59}}
