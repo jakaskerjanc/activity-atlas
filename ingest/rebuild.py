@@ -27,8 +27,20 @@ def _kept_state(db_path: str):
     return sources, overrides
 
 
-def rebuild(db_path: str, archive: Archive, *, now: str) -> dict[str, int]:
+def rebuild(db_path: str, archive: Archive, *, now: str, force: bool = False) -> dict[str, int]:
+    """Kept source rows with no record in the archive would lose all their
+    data (a wrong or empty archive path wipes every activity), so the rebuild
+    stops before touching the database unless ``force`` is set."""
     sources, overrides = _kept_state(db_path)
+    records = latest(archive.list_records())
+    have = {(r.provider, r.provider_activity_id) for r in records}
+    orphans = [s for s in sources if (s[0], s[1]) not in have]
+    if orphans:
+        msg = f"{len(orphans)} kept source rows have no record in the archive"
+        if not force:
+            raise SystemExit(f"rebuild: {msg}; check the archive path, or pass --force to keep "
+                             "their identity without data")
+        warnings.warn(f"{msg}; their identity is kept but they carry no data")
     tmp = db_path + ".rebuild"
     if os.path.exists(tmp):
         os.remove(tmp)
@@ -39,13 +51,7 @@ def rebuild(db_path: str, archive: Archive, *, now: str) -> dict[str, int]:
             f"INSERT INTO activity_sources ({','.join(_KEPT_SOURCE_COLS)}) "
             f"VALUES ({','.join('?' * len(_KEPT_SOURCE_COLS))})", sources)
         conn.executemany("INSERT INTO activity_overrides (activity_id, hidden) VALUES (?, ?)", overrides)
-        records = latest(archive.list_records())
         counts = engine.apply_records(conn, archive, records, now=now)
-        have = {(r.provider, r.provider_activity_id) for r in records}
-        orphans = [s for s in sources if (s[0], s[1]) not in have]
-        if orphans:
-            warnings.warn(f"{len(orphans)} kept source rows have no record in the archive; "
-                          "their identity is kept but they carry no data")
         conn.commit()
     finally:
         conn.close()
@@ -57,8 +63,10 @@ def main():
     ap = argparse.ArgumentParser(description="Rebuild the database from the archive, keeping activity IDs.")
     ap.add_argument("--db", default="data/activities.sqlite")
     ap.add_argument("--archive", default=None, help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
+    ap.add_argument("--force", action="store_true",
+                    help="rebuild even if some activities have no record in the archive (they lose their data)")
     args = ap.parse_args()
-    print(f"rebuild: {rebuild(args.db, open_archive(args.archive), now=now_iso())}")
+    print(f"rebuild: {rebuild(args.db, open_archive(args.archive), now=now_iso(), force=args.force)}")
 
 
 if __name__ == "__main__":
