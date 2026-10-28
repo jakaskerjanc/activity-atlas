@@ -39,9 +39,13 @@ npm run import:strava -- <path-to-strava-export>
 npm run import:garmin -- <path-to-garmin-export>
 ```
 
-Run Strava first, then Garmin — the Garmin importer dedupes against
-already-imported Strava activities (±90 s start time, ±5% distance) and
-prefers the higher-resolution GPS source when both cover the same activity.
+Run Strava first, then Garmin. Each provider record joins an existing
+activity when their time ranges overlap by at least 50% of the shorter range
+(or, when either side has no elapsed time, when their starts are within
+±180 s). A match is rejected when both sides have GPS and their distances
+differ by more than 20%. Two records from the same provider never merge, and a
+type mismatch only logs a warning. Strava's values win on merged activities;
+Garmin fills the gaps.
 Both importers write into the same `data/activities.sqlite`, which you
 should commit afterward.
 
