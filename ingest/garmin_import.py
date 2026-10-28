@@ -3,6 +3,7 @@ archive the export, the summarized-activity JSON and each matched activity
 FIT, write a source record per summary, then apply them through the engine.
 Monitoring FITs become wellness records, applied after the activities."""
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -20,7 +21,7 @@ from .normalize import canonical_type
 from .parse import ParsedFile
 from .parse.fit import parse_fit
 from .parse.monitoring import MONITORING_FILE_TYPES
-from .records import SourceRecord, WellnessRecord, latest
+from .records import SourceRecord, WellnessRecord, latest, latest_wellness
 
 # Summary fields scaled to SI. activityId, name, activityType, startTimeGmt,
 # distance, duration, movingDuration and elevationGain are verified against a
@@ -106,8 +107,10 @@ class GarminImporter:
 
     def _scan_fits(self, export: ExportReader):
         """([(epoch_start, name, bytes)] for every activity-type FIT in UploadedFiles,
-        [WellnessRecord] for every monitoring FIT, archived as it is found)."""
-        index, monitoring = [], []
+        [WellnessRecord] for every monitoring FIT). Monitoring FITs are archived
+        here, once per distinct content: identical bytes under several names
+        keep the smallest name, and content already recorded is not rewritten."""
+        index, monitoring_raw = [], {}   # monitoring_raw: sha -> (basename, bytes)
         for zname in export.names:
             if not (os.path.basename(zname).startswith("UploadedFiles_") and zname.endswith(".zip")):
                 continue
@@ -115,24 +118,35 @@ class GarminImporter:
                 for name in zf.namelist():
                     if not name.lower().endswith(".fit"):
                         continue
-                    raw = zf.read(name)
+                    raw, base = zf.read(name), os.path.basename(name)
                     try:
                         file_type = parse_fit(io.BytesIO(raw), geometry=False).file_type
-                        if file_type in MONITORING_FILE_TYPES:
-                            sha = self.archive.put_blob(raw)
-                            rec = WellnessRecord("garmin", MONITORING_FIT, sha, self.now, sha,
-                                                 os.path.basename(name), {"kind": "garmin_export"})
-                            self.archive.put_wellness(rec)
-                            monitoring.append(rec)
-                            continue
-                        if file_type != "activity":
-                            continue
-                        start = parse_fit(io.BytesIO(raw)).start_time
+                        start = parse_fit(io.BytesIO(raw)).start_time if file_type == "activity" else None
                     except Exception:   # unreadable FIT: not matchable, skip it
                         continue
-                    if start is not None:
-                        index.append((start.timestamp(), os.path.basename(name), raw))
-        return index, monitoring
+                    if file_type in MONITORING_FILE_TYPES:
+                        sha = hashlib.sha256(raw).hexdigest()
+                        if sha not in monitoring_raw or base < monitoring_raw[sha][0]:
+                            monitoring_raw[sha] = (base, raw)
+                    elif start is not None:
+                        index.append((start.timestamp(), base, raw))
+        return index, self._put_monitoring(monitoring_raw)
+
+    def _put_monitoring(self, monitoring_raw):
+        """A monitoring key is a content hash, so a stored record is never stale:
+        reuse it instead of writing another."""
+        stored = {r.key: r for r in latest_wellness(
+            r for r in self.archive.list_wellness() if r.provider == "garmin" and r.source == MONITORING_FIT)}
+        out = []
+        for sha, (base, raw) in sorted(monitoring_raw.items()):
+            if sha in stored:
+                out.append(stored[sha])
+                continue
+            self.archive.put_blob(raw)
+            rec = WellnessRecord("garmin", MONITORING_FIT, sha, self.now, sha, base, {"kind": "garmin_export"})
+            self.archive.put_wellness(rec)
+            out.append(rec)
+        return out
 
     def _fit_for(self, start_epoch: float, index):
         hits = [(abs(epoch - start_epoch), name, raw) for epoch, name, raw in index
