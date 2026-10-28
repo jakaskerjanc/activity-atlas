@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import os
@@ -148,6 +149,13 @@ def _downloads():
     return {5000001: _zip("outdoor.fit"), 5000002: _zip("indoor.fit")}
 
 
+def _zip_with_only_text():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("readme.txt", "no activity here")
+    return buf.getvalue()
+
+
 NO_FILE = GarminApiError("no file", status=404)
 
 
@@ -292,9 +300,17 @@ def test_recheck_missing_activity_is_marked_deleted(tmp_path):
 
 
 def test_activity_outside_window_is_not_deleted(tmp_path):
+    import warnings
+
     _fetcher(tmp_path, FakeClient(_list(), _downloads()), NOW_IN).run()
-    counts = _fetcher(tmp_path, FakeClient([], _downloads()), "2026-11-30T10:00:00+00:00").run()
-    assert counts["deleted"] == 0
+    # A non-empty list rules out the empty-list guard: only the window protects these.
+    fresh = {"activityId": 5000003, "activityName": "Fresh", "activityType": {"typeKey": "strength_training"},
+             "startTimeGMT": "2026-11-25 06:00:00", "duration": 1800.0}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        counts = _fetcher(tmp_path, FakeClient([fresh], {5000003: NO_FILE}),
+                          "2026-11-30T10:00:00+00:00").run()
+    assert counts["deleted"] == 0 and counts["insert"] == 1
     assert _by_id(tmp_path, "5000001")["visible"] == 1 and _by_id(tmp_path, "5000002")["visible"] == 1
 
 
@@ -317,7 +333,7 @@ def test_manual_activity_without_file_is_stored_and_not_retried(tmp_path):
     } for n in range(3)]
     items = manual + _list()[:1]
     download = {m["activityId"]: NO_FILE for m in manual[:2]}
-    download[manual[2]["activityId"]] = ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
+    download[manual[2]["activityId"]] = _zip_with_only_text()
     download[5000001] = _zip("outdoor.fit")
 
     first = FakeClient(items, download)
@@ -330,6 +346,30 @@ def test_manual_activity_without_file_is_stored_and_not_retried(tmp_path):
     second = FakeClient(items, download)
     assert _fetcher(tmp_path, second, "2026-09-21T10:00:00+00:00").run()["insert"] == 0
     assert second.download_calls == []
+
+
+def test_zip_without_activity_file_is_stored_without_file_and_not_retried(tmp_path):
+    zipped = _zip_with_only_text()
+    items = _list()[:1]
+
+    first = FakeClient(items, zipped)
+    assert _fetcher(tmp_path, first, NOW_IN).run()["insert"] == 1
+    (rec,) = LocalArchive(str(tmp_path / "arch")).list_records()
+    assert rec.file_sha256 is None and rec.origin["zip_sha"] == hashlib.sha256(zipped).hexdigest()
+    assert _by_id(tmp_path, "5000001")["polyline"] == ""
+
+    second = FakeClient(items, zipped)
+    assert _fetcher(tmp_path, second, "2026-09-21T10:00:00+00:00").run()["insert"] == 0
+    assert second.download_calls == []
+
+
+def test_value_error_from_download_is_a_failure_not_a_missing_file(tmp_path):
+    client = FakeClient(_list()[:1], ValueError("bad id"))
+    with pytest.warns(UserWarning, match="download failed for 5000001: bad id"):
+        counts = _fetcher(tmp_path, client, NOW_IN).run()
+    assert counts["insert"] == 0
+    assert _by_id(tmp_path, "5000001") is None
+    assert _record_files(tmp_path, 5000001) == []
 
 
 def test_failed_redownload_keeps_previous_record(tmp_path):

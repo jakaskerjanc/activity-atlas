@@ -109,11 +109,6 @@ RECHECK_DAYS = 30
 MAX_CONSECUTIVE_FAILURES = 3
 
 
-def has_no_file(error: Exception) -> bool:
-    """True when a download failed because the activity has no file."""
-    return isinstance(error, ValueError) or (isinstance(error, GarminApiError) and error.status == 404)
-
-
 def auth_rejected(error: Exception) -> NoReturn:
     """Print the shared rejected-key guidance and exit 3."""
     print("garmin_fetch: Personal API key rejected; create a fresh key in "
@@ -202,21 +197,25 @@ class GarminFetcher:
             try:
                 data = client.download_activity(item["activityId"])
                 origin["zip_sha"] = self.archive.put_blob(data)
-                file_name, raw = extract_activity_file(data)
-                file_sha = self.archive.put_blob(raw)
+                try:
+                    file_name, raw = extract_activity_file(data)
+                except ValueError:
+                    raw = None     # the ZIP holds no activity file
+                if raw is not None:
+                    file_sha = self.archive.put_blob(raw)
                 failures = 0
             except GarminAuthError:
                 raise          # the key died; retrying the page won't help
             except Exception as e:
-                if not has_no_file(e):
+                if not (isinstance(e, GarminApiError) and e.status == 404):
                     failures += 1
                     warnings.warn(f"download failed for {item['activityId']}: {e}")
                     if failures >= MAX_CONSECUTIVE_FAILURES:
                         warnings.warn("consecutive download failures; stopping run")
                         break
                     continue
-                # A manual activity has no file (404), or its ZIP holds none.
-                # Keep it without streams; its unchanged DTO won't retry it.
+                # A manual activity has no file (404). Keep it without streams;
+                # its unchanged DTO won't retry it.
                 failures = 0
             rec = SourceRecord("garmin", str(item["activityId"]), self.now, item,
                                file_sha, file_name, origin)
