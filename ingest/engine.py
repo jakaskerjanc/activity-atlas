@@ -2,10 +2,11 @@
 importers, the Garmin fetch and rebuilds: parse file -> normalize to
 SourceActivity -> match -> recompute."""
 import importlib
+import sys
 import warnings
 from typing import Callable, Iterable
 
-from . import matcher, merge
+from . import db, matcher, merge
 from .archive import Archive
 from .model import SourceActivity
 from .parse import ParsedFile
@@ -114,3 +115,18 @@ def mark_missing_deleted(conn, provider: str, seen_ids: set[str], start: str, en
     for aid in sorted(touched):
         merge.recompute_activity(conn, aid)
     return len(missing)
+
+
+def open_for_write(db_path: str, archive: Archive, *, now: str):
+    """Open the database for a writer: an older v2 schema is rebuilt from the
+    archive first; a v1 database stops the run with exit code 4."""
+    from .rebuild import rebuild
+    try:
+        return db.open_db(db_path)
+    except db.NeedsRebuild:
+        rebuild(db_path, archive, now=now)
+        return db.open_db(db_path)
+    except db.SchemaMismatch:
+        print(f"v1 database at {db_path}: import fresh exports into a new database (see migration)",
+              file=sys.stderr)
+        raise SystemExit(4)
