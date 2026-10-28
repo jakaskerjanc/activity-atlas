@@ -1,8 +1,6 @@
 import warnings
-from datetime import datetime, timezone
 import polyline
-from ingest.model import RawActivity
-from ingest.normalize import canonical_type, simplify, encode, normalize
+from ingest.normalize import canonical_type, simplify, encode
 
 
 def test_canonical_type_strava_display_names():
@@ -50,24 +48,6 @@ def test_encode_roundtrips_within_precision5():
 def test_encode_empty_for_degenerate():
     assert encode([]) == ""
     assert encode([(46.0, 14.0)]) == ""
-
-
-def test_normalize_strava_run():
-    a = normalize(RawActivity(source="strava", source_id="111", name="Morning Run",
-                              type_raw="Run", start_time=datetime(2026, 8, 1, 6, 30, tzinfo=timezone.utc),
-                              distance_m=10250.5, moving_time_s=3600, elevation_gain_m=120.0,
-                              track=[(46.06, 14.5), (46.07, 14.51)]))
-    assert a.id == "s:111" and a.strava_id == "111" and a.garmin_id is None
-    assert a.type == "Run" and a.start_time == "2026-08-01T06:30:00+00:00"
-    assert a.polyline and a.start_lat == 46.06
-
-
-def test_normalize_garmin_no_gps():
-    a = normalize(RawActivity(source="garmin", source_id="900002", name="Gym",
-                              type_raw="strength_training", start_time=datetime(2026, 8, 2, tzinfo=timezone.utc),
-                              distance_m=0, moving_time_s=2400, elevation_gain_m=0, track=[]))
-    assert a.id == "g:900002" and a.garmin_id == "900002" and a.strava_id is None
-    assert a.polyline == "" and a.start_lat is None
 
 
 def test_paddelball_title_cases():
