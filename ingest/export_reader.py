@@ -12,20 +12,25 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-_ZIP_NO_DATE = (1980, 1, 1, 0, 0, 0)
+def _member_time(date_time: tuple) -> datetime | None:
+    """A member's DOS timestamp as UTC; None when it is zip's "no date"
+    (1980-01-01 00:00:00) or not a real date (e.g. a zeroed field)."""
+    if date_time == (1980, 1, 1, 0, 0, 0):
+        return None
+    try:
+        return datetime(*date_time, tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def export_made_at(path: str) -> str | None:
     """When an export zip was made: its newest member time, read as UTC.
-    None for a folder, or a zip that carries no dates."""
+    None for a folder, or a zip that carries no usable dates."""
     if not os.path.isfile(path):
         return None
     with zipfile.ZipFile(path) as zf:
-        stamps = [i.date_time for i in zf.infolist()]
-    newest = max(stamps, default=_ZIP_NO_DATE)
-    if newest == _ZIP_NO_DATE:
-        return None
-    return datetime(*newest, tzinfo=timezone.utc).isoformat()
+        times = [t for i in zf.infolist() if (t := _member_time(i.date_time))]
+    return max(times).isoformat() if times else None
 
 
 def newest_export_as_of(archive: Archive, provider: str) -> str | None:

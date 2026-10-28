@@ -128,9 +128,9 @@ class GarminImporter:
         return min(hits, key=lambda h: (h[0], h[1]))[1:] if hits else (None, None)
 
     def run(self) -> dict[str, int]:
+        export_key = archive_export(self.archive, "garmin", self.export_path, self.now[:10])
         made = export_made_at(self.export_path)
         older = is_older_export("garmin", made, newest_export_as_of(self.archive, "garmin"))
-        export_key = archive_export(self.archive, "garmin", self.export_path, self.now[:10])
         seen, starts = set(), []
         with ExportReader(self.export_path) as export:
             summaries = self._summaries(export)

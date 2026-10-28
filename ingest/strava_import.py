@@ -104,9 +104,9 @@ class StravaImporter:
         return self.archive.put_blob(data), name
 
     def run(self) -> dict[str, int]:
+        export_key = archive_export(self.archive, "strava", self.export_path, self.now[:10])
         made = export_made_at(self.export_path)
         older = is_older_export("strava", made, newest_export_as_of(self.archive, "strava"))
-        export_key = archive_export(self.archive, "strava", self.export_path, self.now[:10])
         export = ExportReader(self.export_path)
         try:
             csv_member = export.find("activities.csv")
