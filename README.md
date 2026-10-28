@@ -90,8 +90,9 @@ GARMIN_PERSONAL_API_KEY=<your key>
 then run `npm run fetch:garmin`. Credentials resolve in this order: an explicit
 `--api-key-file PATH`, then a `GARMIN_PERSONAL_API_KEY` environment variable,
 then `GARMIN_PERSONAL_API_KEY` in `.env`. If no key is found, the fetch exits
-with code 2. The fetch appends new activities
-to `data/activities.sqlite`; commit the DB afterward.
+with code 2. The fetch stores every list page, activity ZIP and activity file
+in the archive (`ARCHIVE_URL`, `--archive`), then adds the new activities to
+`data/activities.sqlite`; commit the DB afterward.
 
 ### CI
 
@@ -163,11 +164,12 @@ or Delete Your Account → Download Request) and/or Garmin Connect (Account
 Settings → Export Your Data), then run the importers:
 
 ```bash
-npm run import:strava -- <path-to-strava-export>
-npm run import:garmin -- <path-to-garmin-export>
+npm run import:strava -- <strava-export.zip>
+npm run import:garmin -- <garmin-export.zip>
 ```
 
-This creates/updates `data/activities.sqlite`, which you should commit.
+This archives the exports under `data/archive/` (gitignored) and
+creates/updates `data/activities.sqlite`, which you should commit.
 
 ### 4. Push secrets to GitHub Actions
 

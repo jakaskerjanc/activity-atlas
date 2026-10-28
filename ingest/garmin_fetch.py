@@ -1,7 +1,10 @@
-"""Live Garmin Personal API fetch. Feeds the shared normalize/dedupe/store engine.
-See docs/2026-10-24-garmin-personal-api-design.md."""
+"""Live Garmin Personal API fetch. Archives every list page, activity ZIP and
+activity file, writes a source record per activity, and applies them through
+the engine. See docs/2026-10-24-garmin-personal-api-design.md."""
 import argparse
 import io
+import json
+import os
 import sys
 import time
 import warnings
@@ -9,10 +12,14 @@ import zipfile
 from datetime import datetime, timezone
 from typing import NoReturn
 
-from .base import BaseFetcher
-from .model import RawActivity
+from . import db, engine
+from .archive import Archive, open_archive
+from .export_reader import now_iso
 from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey
-from . import store
+from .model import REPORTED_KEYS, SourceActivity
+from .normalize import canonical_type
+from .parse import ParsedFile
+from .records import SourceRecord
 
 
 def gmt_to_dt(s: str) -> datetime:
@@ -29,25 +36,19 @@ def filter_after(items: list[dict], after_epoch: int) -> list[dict]:
     return [i for i in items if gmt_to_epoch(i["startTimeGMT"]) > after_epoch]
 
 
-def extract_track_from_zip(data: bytes) -> list[tuple[float, float]]:
-    """Extract [(lat, lon)] from a Personal API activity ZIP download.
+def extract_activity_file(data: bytes) -> tuple[str, bytes]:
+    """(basename, bytes) of the activity file in a Personal API activity ZIP.
 
     Prefers .fit, then .tcx, then .gpx (case-insensitive); ignores directory
     entries and __MACOSX metadata. Raises ValueError when none is present.
     """
-    from .parse.fit import parse_fit
-    from .parse.tcx import parse_tcx
-    from .parse.gpx import parse_gpx
-
-    parsers = ((".fit", parse_fit), (".tcx", parse_tcx), (".gpx", parse_gpx))
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         files = [i.filename for i in zf.infolist()
                  if not i.is_dir() and not i.filename.startswith("__MACOSX/")]
-        for ext, parser in parsers:
+        for ext in (".fit", ".tcx", ".gpx"):
             for name in files:
                 if name.lower().endswith(ext):
-                    with zf.open(name) as fh:
-                        return parser(fh).track
+                    return os.path.basename(name), zf.read(name)
     raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
 
 
@@ -63,19 +64,56 @@ def has_gps_hint(item: dict) -> bool:
             and item.get("startLongitude") is not None)
 
 
-def list_item_to_raw(item: dict, track: list[tuple[float, float]]) -> RawActivity:
-    return RawActivity(
-        source="garmin",
-        source_id=str(item["activityId"]),
-        name=item.get("activityName") or "",
-        type_raw=(item.get("activityType") or {}).get("typeKey") or "other",
-        start_time=gmt_to_dt(item["startTimeGMT"]),
-        distance_m=float(item.get("distance") or 0),
-        moving_time_s=int(item.get("movingDuration") or item.get("duration") or 0),
-        elevation_gain_m=float(item.get("elevationGain") or 0),
-        track=track,
-        source_file="garmin-personal-api",
+# DTO fields in metres and seconds (no scaling). activityName,
+# activityType.typeKey, startTimeGMT, startTimeLocal, distance, duration,
+# movingDuration and elevationGain are verified; elevationLoss, averageHR,
+# maxHR and calories are mapped when present but their names are unverified.
+_REPORTED = {"elevation_gain_m": "elevationGain", "elevation_loss_m": "elevationLoss",
+             "avg_hr": "averageHR", "max_hr": "maxHR", "calories": "calories"}
+
+
+def _num(item: dict, key: str) -> float | None:
+    v = item.get(key)
+    return float(v) if isinstance(v, (int, float)) else None
+
+
+def record_to_source(rec: SourceRecord, parsed: ParsedFile | None) -> SourceActivity:
+    """DTO values first, then the activity file's own summary."""
+    item = rec.summary
+    file_summary = parsed.summary if parsed else {}
+
+    def value(key, own):
+        return own if own is not None else file_summary.get(key)
+
+    start = gmt_to_dt(item["startTimeGMT"])
+    offset = parsed.utc_offset_s if parsed else None
+    if item.get("startTimeLocal"):
+        offset = int((gmt_to_dt(item["startTimeLocal"]) - start).total_seconds())
+    elapsed, moving = _num(item, "duration"), _num(item, "movingDuration")
+    reported = {k: file_summary.get(k) for k in REPORTED_KEYS}
+    for key, field in _REPORTED.items():
+        reported[key] = value(key, _num(item, field))
+    return SourceActivity(
+        provider="garmin",
+        provider_activity_id=rec.provider_activity_id,
+        name=item.get("activityName") or "Untitled",
+        type=canonical_type((item.get("activityType") or {}).get("typeKey") or "other"),
+        start_time=start,
+        elapsed_s=value("elapsed_s", elapsed),
+        moving_s=value("moving_s", moving if moving is not None else elapsed),
+        distance_m=value("distance_m", _num(item, "distance")),
+        utc_offset_s=offset,
+        reported=reported,
+        hr_zones=parsed.hr_zones if parsed else None,
+        gear=[],
+        summary=item,
+        file_sha256=rec.file_sha256,
+        parsed=parsed,
+        fetched_at=rec.fetched_at,
     )
+
+
+engine.register("garmin_api", record_to_source)
 
 
 PAGE_SIZE = 100
@@ -91,16 +129,16 @@ def auth_rejected(error: Exception) -> NoReturn:
     raise SystemExit(3)
 
 
-class GarminFetcher(BaseFetcher):
-    source = "garmin"
-
-    def __init__(self, db_path, *, delay_s: float = 1.0, client=None, key_file=None,
-                 page_size: int = PAGE_SIZE, **kw):
-        super().__init__(db_path, **kw)
+class GarminFetcher:
+    def __init__(self, db_path: str, archive: Archive, *, delay_s: float = 1.0, client=None,
+                 key_file=None, page_size: int = PAGE_SIZE, now: str | None = None):
+        self.db_path = db_path
+        self.archive = archive
         self.delay_s = delay_s
         self._client = client        # test injection; authenticate() when None
         self._key_file = key_file
         self.page_size = page_size
+        self.now = now or now_iso()
 
     # --- auth -------------------------------------------------------------
     def authenticate(self) -> GarminPersonalApi:
@@ -124,39 +162,44 @@ class GarminFetcher(BaseFetcher):
         return client
 
     # --- orchestration ----------------------------------------------------
-    def activities(self):
-        client = self.authenticate()
+    @staticmethod
+    def high_water(conn) -> str | None:
+        """Newest stored Garmin record start. Only Garmin's own records count,
+        so a newer Strava activity cannot hide a Garmin one that matches it."""
+        row = conn.execute("SELECT MAX(start_time) FROM activity_sources WHERE provider='garmin'").fetchone()
+        return row[0] if row and row[0] else None
 
-        conn = store.connect(self.db_path)
-        store.init_schema(conn)
-        hw = self.high_water(conn)
-        conn.close()
-        # NOTE: high_water is MAX(start_time) across ALL sources. A newly-appearing
-        # Garmin activity older than a newer other-source row would fall at/below
-        # after_epoch and be skipped. Low-probability (daily cadence; strava fetch is
-        # a stub) and spec-conformant; documented as an accepted limitation.
-        after_epoch = int(datetime.fromisoformat(hw).timestamp()) if hw else 0
-
+    def _list(self, client, after_epoch: int) -> list[tuple[dict, str]]:
+        """[(item, sha of its list page)], newest first, archiving every page."""
         items, offset = [], 0
         while True:
             page = client.list_activities(offset, self.page_size)
             if not page:
                 break
-            items.extend(page)
+            # the client returns parsed JSON; store it re-serialized, losslessly
+            sha = self.archive.put_blob(json.dumps(page, ensure_ascii=False).encode("utf-8"))
+            items.extend((item, sha) for item in page)
             oldest = gmt_to_epoch(page[-1]["startTimeGMT"])   # newest-first list
             if len(page) < self.page_size or oldest <= after_epoch:
                 break
             offset += self.page_size
             time.sleep(self.delay_s)
+        return items
 
-        failures = 0
-        for item in filter_after(items, after_epoch):
-            track = []
+    def _records(self, client, after_epoch: int) -> list[SourceRecord]:
+        records, failures = [], 0
+        for item, list_sha in self._list(client, after_epoch):
+            if gmt_to_epoch(item["startTimeGMT"]) <= after_epoch:
+                continue
+            origin = {"kind": "garmin_api", "list_sha": list_sha, "zip_sha": None}
+            file_sha = file_name = None
             if has_gps_hint(item):
                 time.sleep(self.delay_s)
                 try:
-                    track = extract_track_from_zip(
-                        client.download_activity(item["activityId"]))
+                    data = client.download_activity(item["activityId"])
+                    origin["zip_sha"] = self.archive.put_blob(data)
+                    file_name, raw = extract_activity_file(data)
+                    file_sha = self.archive.put_blob(raw)
                     failures = 0
                 except GarminAuthError:
                     raise          # the key died; retrying the page won't help
@@ -166,24 +209,41 @@ class GarminFetcher(BaseFetcher):
                     if failures >= MAX_CONSECUTIVE_FAILURES:
                         warnings.warn("consecutive download failures; stopping run")
                         break
-                    # Don't store a GPS activity without its track. It is retried
-                    # next run only while it stays above the global high-water
-                    # mark; a newer stored activity can move the mark past it and
-                    # the failed item is then missed.
+                    # Don't store a GPS activity without its file. It is retried
+                    # next run only while it stays above the Garmin high-water
+                    # mark; a newer stored Garmin activity moves the mark past it
+                    # and the failed item is then missed.
                     continue
-            yield list_item_to_raw(item, track)
+            rec = SourceRecord("garmin", str(item["activityId"]), self.now, item,
+                               file_sha, file_name, origin)
+            self.archive.put_record(rec)
+            records.append(rec)
+        return records
+
+    def run(self) -> dict[str, int]:
+        client = self.authenticate()
+        conn = db.open_db(self.db_path)
+        try:
+            hw = self.high_water(conn)
+            after_epoch = int(datetime.fromisoformat(hw).timestamp()) if hw else 0
+            records = self._records(client, after_epoch)
+            counts = engine.apply_records(conn, self.archive, records, now=self.now)
+            conn.commit()
+        finally:
+            conn.close()
+        return counts
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Fetch Garmin activities via the Personal API into the SQLite store.")
+        description="Fetch Garmin activities via the Personal API into the archive and database.")
     ap.add_argument("--db", default="data/activities.sqlite")
-    ap.add_argument("--simplify-m", type=float, default=0.5)
+    ap.add_argument("--archive", default=None, help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
     ap.add_argument("--api-key-file", default=None,
                     help="Personal API key file (default: GARMIN_PERSONAL_API_KEY env, "
                          "then GARMIN_PERSONAL_API_KEY in the repo-root .env)")
     args = ap.parse_args()
-    f = GarminFetcher(args.db, simplify_tol_m=args.simplify_m, key_file=args.api_key_file)
+    f = GarminFetcher(args.db, open_archive(args.archive), key_file=args.api_key_file)
     f.authenticate()            # fail loud on missing/rejected key
     try:
         counts = f.run()
