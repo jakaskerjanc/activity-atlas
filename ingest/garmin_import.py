@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 
 from . import engine
 from .archive import Archive, open_archive
-from .export_reader import ExportReader, archive_export, now_iso
+from .export_reader import (ExportReader, archive_export, export_made_at, is_older_export,
+                            newest_export_as_of, now_iso)
 from .merge import iso
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
@@ -127,6 +128,8 @@ class GarminImporter:
         return min(hits, key=lambda h: (h[0], h[1]))[1:] if hits else (None, None)
 
     def run(self) -> dict[str, int]:
+        made = export_made_at(self.export_path)
+        older = is_older_export("garmin", made, newest_export_as_of(self.archive, "garmin"))
         export_key = archive_export(self.archive, "garmin", self.export_path, self.now[:10])
         seen, starts = set(), []
         with ExportReader(self.export_path) as export:
@@ -139,7 +142,7 @@ class GarminImporter:
                 sha = self.archive.put_blob(raw) if raw is not None else None
                 self.archive.put_record(SourceRecord(
                     "garmin", pid, self.now, s, sha, name,
-                    {"kind": "garmin_export", "export_key": export_key, "summary_sha": summary_sha}))
+                    {"kind": "garmin_export", "export_key": export_key, "summary_sha": summary_sha}, made))
                 seen.add(pid)
                 starts.append(datetime.fromtimestamp(start_epoch, tz=timezone.utc))
 
@@ -149,7 +152,7 @@ class GarminImporter:
                        if r.provider == "garmin" and r.provider_activity_id in seen]
             # Deletions first: a re-upload under a new ID can then join the
             # activity its deleted original belonged to.
-            if starts:
+            if starts and not older:   # an older export cannot say what was deleted since
                 engine.mark_missing_deleted(conn, "garmin", seen, iso(min(starts)), iso(max(starts)), now=self.now)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()

@@ -14,7 +14,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .records import SourceRecord
+from .records import SourceRecord, recency
 
 DEFAULT_URL = "file://data/archive"
 
@@ -117,7 +117,7 @@ class LocalArchive:
         d = self._record_dir(rec.provider, rec.provider_activity_id)
         stored = self._read_records(self._path(d))
         if stored:
-            newest = max(stored, key=lambda r: (r.fetched_at, r.content_sha()))
+            newest = max(stored, key=recency)
             if newest.content_sha() == rec.content_sha():
                 return False
         data = rec.to_json()

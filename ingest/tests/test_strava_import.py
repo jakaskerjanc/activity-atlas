@@ -7,6 +7,7 @@ import pytest
 
 from ingest import db
 from ingest.archive import LocalArchive
+from ingest.export_reader import export_made_at
 from ingest.strava_import import StravaImporter, _parse_date
 from ingest.tests.factories import fixture_bytes
 
@@ -23,13 +24,13 @@ RUN = _row(111, "Feb 18, 2026, 4:06:36 PM", "Morning Walk", "Walk", "activities/
 GYM = _row(222, "Aug 2, 2026, 5:00:00 PM", "Strength", "Weight Training", elapsed="2400", distance="0")
 
 
-def _zip(tmp_path, csv_text, members=None, name="export_1.zip"):
+def _zip(tmp_path, csv_text, members=None, name="export_1.zip", made=(2026, 1, 1, 0, 0, 0)):
     path = tmp_path / name
     members = {"activities/111.fit.gz": gzip.compress(fixture_bytes("outdoor.fit"))} if members is None else members
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("activities.csv", csv_text)
+        zf.writestr(zipfile.ZipInfo("activities.csv", date_time=made), csv_text)
         for k, v in members.items():
-            zf.writestr(k, v)
+            zf.writestr(zipfile.ZipInfo(k, date_time=made), v)
     return str(path)
 
 
@@ -163,3 +164,37 @@ def test_reupload_with_new_id_joins_the_same_activity(tmp_path):
     assert act["id"] == first
     assert act["visible"] == 0
     assert conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0] == 2
+
+
+def test_export_made_at_reads_newest_member_time(tmp_path):
+    path = tmp_path / "e.zip"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(zipfile.ZipInfo("a.txt", date_time=(2026, 10, 19, 7, 0, 0)), "a")
+        zf.writestr(zipfile.ZipInfo("b.txt", date_time=(2026, 10, 20, 8, 0, 0)), "b")
+    assert export_made_at(str(path)) == "2026-10-20T08:00:00+00:00"
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    assert export_made_at(str(folder)) is None
+
+
+def test_export_made_at_ignores_zips_without_dates(tmp_path):
+    assert export_made_at(_zip(tmp_path, HEADER, {}, made=(1980, 1, 1, 0, 0, 0))) is None
+
+
+def test_older_export_does_not_roll_back_or_undelete(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    r111 = lambda name: _row(111, "Feb 18, 2026, 4:06:36 PM", name, "Walk", "activities/111.fit.gz", hr="150")
+    r222 = _row(222, "Aug 2, 2026, 5:00:00 PM", "Strength", "Weight Training", elapsed="2400", distance="0")
+    r333 = _row(333, "Aug 3, 2026, 5:00:00 PM", "Other", "Weight Training", elapsed="2400", distance="0")
+    e_old = _zip(tmp_path, HEADER + r111("Old") + r222 + r333, name="old.zip", made=(2026, 9, 1, 0, 0, 0))
+    e_new = _zip(tmp_path, HEADER + r111("Edited") + r333, name="new.zip", made=(2026, 10, 20, 0, 0, 0))
+    StravaImporter(e_old, dbp, arch, now="2026-10-21T10:00:00+00:00").run()
+    StravaImporter(e_new, dbp, arch, now="2026-10-22T10:00:00+00:00").run()
+    conn = db.connect(dbp)
+    deleted_at = conn.execute("SELECT deleted_at FROM activity_sources WHERE provider_activity_id='222'").fetchone()[0]
+    assert deleted_at is not None
+    with pytest.warns(UserWarning, match="older than an export already imported"):
+        StravaImporter(e_old, dbp, arch, now="2026-10-23T10:00:00+00:00").run()
+    conn = db.connect(dbp)
+    assert _activity_for(conn, "strava", "111")["name"] == "Edited"
+    assert conn.execute("SELECT deleted_at FROM activity_sources WHERE provider_activity_id='222'").fetchone()[0] == deleted_at

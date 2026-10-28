@@ -12,6 +12,39 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+_ZIP_NO_DATE = (1980, 1, 1, 0, 0, 0)
+
+
+def export_made_at(path: str) -> str | None:
+    """When an export zip was made: its newest member time, read as UTC.
+    None for a folder, or a zip that carries no dates."""
+    if not os.path.isfile(path):
+        return None
+    with zipfile.ZipFile(path) as zf:
+        stamps = [i.date_time for i in zf.infolist()]
+    newest = max(stamps, default=_ZIP_NO_DATE)
+    if newest == _ZIP_NO_DATE:
+        return None
+    return datetime(*newest, tzinfo=timezone.utc).isoformat()
+
+
+def newest_export_as_of(archive: Archive, provider: str) -> str | None:
+    """The latest as_of among the provider's archived export records."""
+    kind = f"{provider}_export"
+    stamps = [r.as_of for r in archive.list_records()
+              if r.provider == provider and r.origin.get("kind") == kind and r.as_of]
+    return max(stamps, default=None)
+
+
+def is_older_export(provider: str, made: str | None, newest: str | None) -> bool:
+    """True (with a warning) when this export predates one already imported."""
+    if not (made and newest and made < newest):
+        return False
+    warnings.warn(f"{provider} export made {made} is older than an export already imported ({newest}): "
+                  "its records are archived but do not replace newer ones, and it marks nothing deleted")
+    return True
+
+
 class ExportReader:
     """Read-only view of an export zip or folder, by '/'-separated member path."""
 

@@ -18,7 +18,8 @@ def _outdoor_start_ms():
     return int(outdoor().start_time.timestamp() * 1000)
 
 
-def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip"):
+def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", made=(2026, 1, 1, 0, 0, 0),
+                with_gym=True):
     summaries = [[
         {"activityId": 900001, "name": "Match Run", "activityType": "running",
          "startTimeGmt": _outdoor_start_ms(), "distance": run_distance_cm, "duration": 3700000,
@@ -27,10 +28,16 @@ def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip"):
          "startTimeGmt": 1785998400000, "distance": 0, "duration": 2400000,
          "movingDuration": None, "elevationGain": None},
     ]]
+    if not with_gym:
+        # a later activity widens the date range so the missing gym falls inside it
+        summaries[0][1] = {"activityId": 900003, "name": "Late Walk", "activityType": "walking",
+                           "startTimeGmt": 1786998400000, "distance": 100000, "duration": 1800000,
+                           "movingDuration": 1800000, "elevationGain": None}
     path = tmp_path / name
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("DI_CONNECT/DI-Connect-Fitness/u_1_summarizedActivities.json", json.dumps(summaries))
-        zf.writestr("DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip",
+        zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Fitness/u_1_summarizedActivities.json", date_time=made),
+                    json.dumps(summaries))
+        zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip", date_time=made),
                     fixture_bytes("garmin_uploaded.zip"))
     return str(path)
 
@@ -82,3 +89,17 @@ def test_directory_input(tmp_path):
     dbp, arch = str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
     with pytest.warns(UserWarning, match="directory input"):
         assert GarminImporter(str(root), dbp, arch, now=NOW).run()["insert"] == 2
+
+
+def test_older_garmin_export_marks_nothing_deleted(tmp_path):
+    dbp, arch = str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
+    older = _garmin_zip(tmp_path, name="older.zip", made=(2026, 9, 1, 0, 0, 0))
+    newer = _garmin_zip(tmp_path, name="newer.zip", made=(2026, 10, 20, 0, 0, 0), with_gym=False)
+    GarminImporter(older, dbp, arch, now="2026-10-21T10:00:00+00:00").run()
+    GarminImporter(newer, dbp, arch, now="2026-10-22T10:00:00+00:00").run()
+    gym = "SELECT deleted_at FROM activity_sources WHERE provider='garmin' AND provider_activity_id='900002'"
+    deleted_at = db.connect(dbp).execute(gym).fetchone()[0]
+    assert deleted_at is not None
+    with pytest.warns(UserWarning, match="older than an export already imported"):
+        GarminImporter(older, dbp, arch, now="2026-10-23T10:00:00+00:00").run()
+    assert db.connect(dbp).execute(gym).fetchone()[0] == deleted_at
