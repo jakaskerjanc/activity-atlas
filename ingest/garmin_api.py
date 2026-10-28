@@ -118,6 +118,23 @@ def _http_error(error, request):
     return GarminApiError(message, status=status, url=url)
 
 
+def parse_activity_list(body, url):
+    """Decode an activity-list response body; it must be a JSON list."""
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise GarminApiError(
+            f"garmin_api: invalid JSON from {url}: {exc}", url=url
+        ) from exc
+    if not isinstance(payload, list):
+        raise GarminApiError(
+            f"garmin_api: expected a JSON list of activities from {url}, "
+            f"got {type(payload).__name__}",
+            url=url,
+        )
+    return payload
+
+
 class GarminPersonalApi:
     """Bearer-token client for the Garmin Personal API.
 
@@ -182,24 +199,22 @@ class GarminPersonalApi:
         )
         return self._request(request)
 
+    def get_raw(self, path, params=None):
+        """GET ``path`` (plus ``params`` as a query string); the body, unchanged."""
+        url = self._base_url + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        return self._get(url, Accept="application/json")
+
+    def list_activities_raw(self, start=0, limit=100):
+        """One page of the activity list, exactly as the API sent it."""
+        return self.get_raw(_LIST_PATH, {"start": start, "limit": limit})
+
     def list_activities(self, start=0, limit=100):
         """Fetch one page of SummarizedActivityDTO items (m/s units, newest first)."""
         query = urllib.parse.urlencode({"start": start, "limit": limit})
         url = f"{self._base_url}{_LIST_PATH}?{query}"
-        body = self._get(url, Accept="application/json")
-        try:
-            payload = json.loads(body)
-        except ValueError as exc:
-            raise GarminApiError(
-                f"garmin_api: invalid JSON from {url}: {exc}", url=url
-            ) from exc
-        if not isinstance(payload, list):
-            raise GarminApiError(
-                f"garmin_api: expected a JSON list of activities from {url}, "
-                f"got {type(payload).__name__}",
-                url=url,
-            )
-        return payload
+        return parse_activity_list(self.list_activities_raw(start, limit), url)
 
     def download_activity(self, activity_id):
         """Download one activity's original-file ZIP and return its bytes."""

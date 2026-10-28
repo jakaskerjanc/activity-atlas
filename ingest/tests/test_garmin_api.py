@@ -109,6 +109,43 @@ def test_list_activities_uses_bearer_and_query_params():
     assert request.get_header("Accept") == "application/json"
 
 
+def test_get_raw_builds_url_and_returns_body():
+    body_a, body_b = b'{"hrv": [1, 2]}\n', b' [ ] '
+    opener = FakeOpener(b"jwt", body_a, body_b)
+    api = _api(opener)
+    assert api.get_raw("/hrv-service/hrv/2026-10-27") == body_a
+    assert api.get_raw("/wellness-service/wellness/dailyHeartRate",
+                       {"date": "2026-10-27"}) == body_b
+    plain, with_params = opener.requests[1][0], opener.requests[2][0]
+    assert plain.full_url == "https://api.test/hrv-service/hrv/2026-10-27"
+    assert with_params.full_url == (
+        "https://api.test/wellness-service/wellness/dailyHeartRate?date=2026-10-27"
+    )
+    for request in (plain, with_params):
+        assert request.get_header("Authorization") == "Bearer jwt"
+        assert request.get_header("Accept") == "application/json"
+
+
+def test_get_raw_returns_empty_body_as_empty_bytes():
+    assert _api(FakeOpener(b"jwt", b"")).get_raw("/x") == b""
+
+
+def test_get_raw_maps_http_errors():
+    with pytest.raises(ga.GarminAuthError) as auth:
+        _api(FakeOpener(b"jwt", _http_error(403))).get_raw("/x")
+    assert auth.value.status == 403
+    with pytest.raises(ga.GarminApiError) as other:
+        _api(FakeOpener(b"jwt", _http_error(404))).get_raw("/x")
+    assert other.value.status == 404 and not isinstance(other.value, ga.GarminAuthError)
+
+
+def test_list_activities_raw_returns_bytes_unchanged():
+    body = b'[ {"activityId": 1} ]'
+    opener = FakeOpener(b"jwt", body)
+    assert _api(opener).list_activities_raw(0, 100) == body
+    assert opener.requests[1][0].full_url.endswith("?start=0&limit=100")
+
+
 def test_download_activity_returns_bytes_with_wildcard_accept():
     opener = FakeOpener(b"jwt", b"PK\x03\x04zip")
     api = _api(opener)

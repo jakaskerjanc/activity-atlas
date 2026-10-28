@@ -46,9 +46,9 @@ class FakeClient:
         self.items, self.download = items, download
         self.list_calls, self.download_calls = [], []
 
-    def list_activities(self, start, limit):
+    def list_activities_raw(self, start, limit):
         self.list_calls.append((start, limit))
-        return self.items[start:start + limit]
+        return json.dumps(self.items[start:start + limit], indent=1).encode()
 
     def download_activity(self, activity_id):
         self.download_calls.append(activity_id)
@@ -326,6 +326,8 @@ def test_fetch_archives_list_page_zip_and_file(tmp_path):
     blobs = {p.name for p in (tmp_path / "arch" / "raw").iterdir()}
     assert len(blobs) == 3                                  # list page, zip, fit
     import hashlib
+    page = json.dumps(_list(), indent=1).encode()
+    assert hashlib.sha256(page).hexdigest() in blobs        # the page as received
     assert hashlib.sha256(zipped).hexdigest() in blobs
     assert hashlib.sha256(_fixture_bytes("outdoor.fit")).hexdigest() in blobs
     recs = {r.provider_activity_id: r for r in arch.list_records()}
@@ -338,6 +340,21 @@ def test_fetch_archives_list_page_zip_and_file(tmp_path):
     conn = dbm.connect(str(tmp_path / "db.sqlite"))
     kinds = {r[0]: r[1] for r in conn.execute("SELECT sha256, kind FROM raw_files")}
     assert kinds[run.origin["list_sha"]] == "api_response" and kinds[run.file_sha256] == "activity_file"
+
+
+def test_list_pages_are_archived_byte_for_byte(tmp_path):
+    items = [{
+        "activityId": 7000000 + n,
+        "activityType": {"typeKey": "strength_training"},
+        "startTimeGMT": f"2026-09-{10 - n:02d} 06:00:00",
+    } for n in range(3)]
+    client = FakeClient(items, RuntimeError("must not download"))
+    _fetcher(tmp_path, client, page_size=2).run()
+    arch = LocalArchive(str(tmp_path / "arch"))
+    shas = {r.provider_activity_id: r.origin["list_sha"] for r in arch.list_records()}
+    pages = [json.dumps(items[:2], indent=1).encode(), json.dumps(items[2:], indent=1).encode()]
+    assert arch.get_blob(shas["7000000"]) == arch.get_blob(shas["7000001"]) == pages[0]
+    assert arch.get_blob(shas["7000002"]) == pages[1]
 
 
 def test_fetch_merges_with_existing_strava_activity(tmp_path):

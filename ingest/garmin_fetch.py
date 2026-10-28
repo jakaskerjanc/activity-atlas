@@ -3,7 +3,6 @@ activity file, writes a source record per activity, and applies them through
 the engine. See docs/2026-10-24-garmin-personal-api-design.md."""
 import argparse
 import io
-import json
 import os
 import sys
 import time
@@ -15,7 +14,7 @@ from typing import NoReturn
 from . import engine
 from .archive import Archive, open_archive
 from .export_reader import now_iso
-from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey
+from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey, parse_activity_list
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
 from .parse import ParsedFile
@@ -173,11 +172,11 @@ class GarminFetcher:
         """[(item, sha of its list page)], newest first, archiving every page."""
         items, offset = [], 0
         while True:
-            page = client.list_activities(offset, self.page_size)
+            body = client.list_activities_raw(offset, self.page_size)
+            page = parse_activity_list(body, f"list page at offset {offset}")
             if not page:
                 break
-            # the client returns parsed JSON; store it re-serialized, losslessly
-            sha = self.archive.put_blob(json.dumps(page, ensure_ascii=False).encode("utf-8"))
+            sha = self.archive.put_blob(body)
             items.extend((item, sha) for item in page)
             oldest = gmt_to_epoch(page[-1]["startTimeGMT"])   # newest-first list
             if len(page) < self.page_size or oldest <= after_epoch:
