@@ -19,7 +19,7 @@ def _outdoor_start_ms():
 
 
 def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", made=(2026, 1, 1, 0, 0, 0),
-                with_gym=True, monitoring=False):
+                with_gym=True, monitoring=False, monitoring_names=("monitoring.fit",)):
     summaries = [[
         {"activityId": 900001, "name": "Match Run", "activityType": "running",
          "startTimeGmt": _outdoor_start_ms(), "distance": run_distance_cm, "duration": 3700000,
@@ -48,7 +48,8 @@ def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", mad
         if monitoring:
             inner = io.BytesIO()
             with zipfile.ZipFile(inner, "w") as mz:
-                mz.writestr("monitoring.fit", fixture_bytes("monitoring.fit"))
+                for fit_name in monitoring_names:
+                    mz.writestr(fit_name, fixture_bytes("monitoring.fit"))
             zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part2.zip",
                                         date_time=made), inner.getvalue())
     return str(path)
@@ -117,6 +118,42 @@ def test_import_stores_monitoring_fits_as_wellness(tmp_path):
     assert _wellness_files(arch_dir) == files
     conn = db.connect(dbp)
     assert [conn.execute(f"SELECT * FROM {t} ORDER BY 1, 2").fetchall() for t in tables] == before
+
+
+def test_identical_monitoring_bytes_under_several_names_write_one_record(tmp_path):
+    dbp, arch_dir = str(tmp_path / "db.sqlite"), tmp_path / "arch"
+    arch = LocalArchive(str(arch_dir))
+    tables = ("daily_stats", "daily_series", "wellness_inputs")
+
+    def snapshot():
+        conn = db.connect(dbp)
+        try:
+            return [conn.execute(f"SELECT * FROM {t} ORDER BY 1, 2").fetchall() for t in tables]
+        finally:
+            conn.close()
+
+    two_names = _garmin_zip(tmp_path, monitoring=True, monitoring_names=("u_3.fit", "monitoring.fit"))
+    GarminImporter(two_names, dbp, arch, now="2026-10-26T10:00:00+00:00").run()
+    files, before = _wellness_files(arch_dir), snapshot()
+    assert len(files) == 1 and before[1]
+    for day in ("27", "28"):
+        GarminImporter(two_names, dbp, arch, now=f"2026-10-{day}T10:00:00+00:00").run()
+    assert _wellness_files(arch_dir) == files and snapshot() == before
+
+    third = _garmin_zip(tmp_path, name="third.zip", made=(2026, 10, 20, 0, 0, 0), monitoring=True,
+                        monitoring_names=("extra.fit",))
+    GarminImporter(third, dbp, arch, now="2026-10-29T10:00:00+00:00").run()
+    assert _wellness_files(arch_dir) == files and snapshot() == before
+
+
+def test_archive_failure_while_storing_monitoring_fit_propagates(tmp_path, monkeypatch):
+    arch = LocalArchive(str(tmp_path / "arch"))
+
+    def boom(rec):
+        raise OSError("disk full")
+    monkeypatch.setattr(arch, "put_wellness", boom)
+    with pytest.raises(OSError, match="disk full"):
+        GarminImporter(_garmin_zip(tmp_path, monitoring=True), str(tmp_path / "db.sqlite"), arch, now=NOW).run()
 
 
 def test_directory_input(tmp_path):
