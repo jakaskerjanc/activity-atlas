@@ -1,48 +1,145 @@
+import gzip
 import os
-import shutil
+import zipfile
 from datetime import timezone
 
+import pytest
+
+from ingest import db
+from ingest.archive import LocalArchive
 from ingest.strava_import import StravaImporter, _parse_date
-from ingest import store
+from ingest.tests.factories import fixture_bytes
 
-FIX = os.path.join(os.path.dirname(__file__), "fixtures")
+HEADER = ("Activity ID,Activity Date,Activity Name,Activity Type,Elapsed Time,Distance,Moving Time,"
+          "Elevation Gain,Elevation Loss,Average Heart Rate,Max Heart Rate,Average Cadence,Max Cadence,"
+          "Average Watts,Max Watts,Calories,Activity Gear,Filename\n")
 
 
-def _make_root(tmp_path, csv_text):
+def _row(aid, date, name, typ, file="", elapsed="3700", distance="4662.8", hr=""):
+    return f'{aid},"{date}",{name},{typ},{elapsed},{distance},3600,120.0,,{hr},,,,,,,,{file}\n'
+
+
+RUN = _row(111, "Feb 18, 2026, 4:06:36 PM", "Morning Walk", "Walk", "activities/111.fit.gz", hr="150")
+GYM = _row(222, "Aug 2, 2026, 5:00:00 PM", "Strength", "Weight Training", elapsed="2400", distance="0")
+
+
+def _zip(tmp_path, csv_text, members=None, name="export_1.zip"):
+    path = tmp_path / name
+    members = {"activities/111.fit.gz": gzip.compress(fixture_bytes("outdoor.fit"))} if members is None else members
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("activities.csv", csv_text)
+        for k, v in members.items():
+            zf.writestr(k, v)
+    return str(path)
+
+
+def _activity_for(conn, provider, pid):
+    return conn.execute(
+        "SELECT a.* FROM activities a JOIN activity_sources s ON s.activity_id = a.id "
+        "WHERE s.provider=? AND s.provider_activity_id=?", (provider, pid)).fetchone()
+
+
+def _setup(tmp_path):
+    return str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
+
+
+def _record_files(tmp_path):
+    return sorted(p for p in (tmp_path / "arch" / "records").rglob("*.json"))
+
+
+def test_zip_import_archives_export_and_maps_csv(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    zip_path = _zip(tmp_path, HEADER + RUN + GYM)
+    counts = StravaImporter(zip_path, dbp, arch, now="2026-10-27T10:00:00+00:00").run()
+    assert counts == {"insert": 2, "update": 0, "merge": 0}
+    stored = list((tmp_path / "arch" / "exports" / "strava").iterdir())
+    assert [p.name for p in stored] == ["2026-10-27-export_1.zip"]
+    assert stored[0].read_bytes() == open(zip_path, "rb").read()
+    conn = db.connect(dbp)
+    run = _activity_for(conn, "strava", "111")
+    assert run["avg_hr"] == 150 and run["has_hr"] == 1 and run["polyline"] != ""   # CSV beats file's 97
+    assert run["utc_offset_s"] == 3600 and run["calories"] == 330                   # from the FIT
+    gym = _activity_for(conn, "strava", "222")
+    assert gym["type"] == "WeightTraining" and gym["polyline"] == "" and gym["has_hr"] == 0
+    kinds = {r[0] for r in conn.execute("SELECT kind FROM raw_files")}
+    assert {"activity_file", "export_member"} <= kinds
+
+
+def test_missing_mapped_headers_warn_once(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    csv_text = ("Activity ID,Activity Date,Activity Name,Activity Type,Filename\n"
+                '222,"Aug 2, 2026, 5:00:00 PM",Strength,Weight Training,\n')
+    with pytest.warns(UserWarning) as rec:
+        StravaImporter(_zip(tmp_path, csv_text, {}), dbp, arch).run()
+    header_warnings = [w for w in rec if "absent" in str(w.message)]
+    assert len(header_warnings) == 1
+    msg = str(header_warnings[0].message)
+    assert "Average Heart Rate" in msg and "Elevation Loss" in msg and "Activity Name" not in msg
+
+
+def test_corrupt_file_keeps_activity_without_streams(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    row = _row(111, "Aug 1, 2026, 6:30:00 AM", "Run", "Run", "activities/111.fit")
+    with pytest.warns(UserWarning, match="unreadable activity file"):
+        counts = StravaImporter(_zip(tmp_path, HEADER + row + GYM, {"activities/111.fit": b"garbage"}), dbp, arch).run()
+    assert counts["insert"] == 2
+    run = _activity_for(db.connect(dbp), "strava", "111")
+    assert run is not None and run["streams_sha256"] is None and run["name"] == "Run"
+
+
+def test_reimport_is_idempotent(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    zip_path = _zip(tmp_path, HEADER + RUN + GYM)
+    StravaImporter(zip_path, dbp, arch, now="2026-10-27T10:00:00+00:00").run()
+    files = _record_files(tmp_path)
+    conn = db.connect(dbp)
+    before = [tuple(r) for r in conn.execute("SELECT * FROM activities ORDER BY id")]
+    conn.close()
+    counts = StravaImporter(zip_path, dbp, arch, now="2026-10-28T10:00:00+00:00").run()
+    assert counts == {"insert": 0, "update": 2, "merge": 0}
+    assert _record_files(tmp_path) == files
+    conn = db.connect(dbp)
+    assert [tuple(r) for r in conn.execute("SELECT * FROM activities ORDER BY id")] == before
+
+
+def test_newer_export_missing_activity_marks_it_deleted(tmp_path):
+    dbp, arch = _setup(tmp_path)
+    r1 = _row(111, "Aug 1, 2026, 6:30:00 AM", "A", "Run")
+    r2 = _row(222, "Aug 2, 2026, 6:30:00 AM", "B", "Run")
+    r3 = _row(333, "Aug 3, 2026, 6:30:00 AM", "C", "Run")
+    StravaImporter(_zip(tmp_path, HEADER + r1 + r2, {}, "e1.zip"), dbp, arch, now="2026-10-01T10:00:00+00:00").run()
+    StravaImporter(_zip(tmp_path, HEADER + r1 + r3, {}, "e2.zip"), dbp, arch, now="2026-10-20T10:00:00+00:00").run()
+    conn = db.connect(dbp)
+    src = conn.execute("SELECT deleted_at FROM activity_sources WHERE provider_activity_id='222'").fetchone()
+    assert src["deleted_at"] == "2026-10-20T10:00:00+00:00"
+    assert _activity_for(conn, "strava", "222")["visible"] == 0
+    assert _activity_for(conn, "strava", "111")["visible"] == 1
+
+
+def test_directory_input_warns_no_export_stored(tmp_path):
+    dbp, arch = _setup(tmp_path)
     root = tmp_path / "strava"
     (root / "activities").mkdir(parents=True)
-    shutil.copy(os.path.join(FIX, "sample.gpx"), root / "activities" / "111.gpx")
-    (root / "activities.csv").write_text(csv_text, encoding="utf-8")
-    return str(root)
+    (root / "activities" / "111.gpx").write_bytes(fixture_bytes("sample.gpx"))
+    (root / "activities.csv").write_text(HEADER + _row(111, "Aug 1, 2026, 6:30:00 AM", "Run", "Run", "activities/111.gpx"))
+    with pytest.warns(UserWarning, match="directory input: no export archive stored"):
+        counts = StravaImporter(str(root), dbp, arch).run()
+    assert counts["insert"] == 1
+    assert not (tmp_path / "arch" / "exports").exists()
+    assert _activity_for(db.connect(dbp), "strava", "111")["polyline"] != ""
 
 
 def test_parse_date_am_pm_is_utc():
     assert _parse_date("Aug 1, 2026, 6:30:00 AM").tzinfo == timezone.utc
 
 
-def test_stats_from_csv_geometry_from_file(tmp_path):
-    csv_text = (
-        "Activity ID,Activity Date,Activity Name,Activity Type,Elapsed Time,Distance,Moving Time,Elevation Gain,Filename\n"
-        '111,"Aug 1, 2026, 6:30:00 AM",Morning Run,Run,3700,10250.5,3600,120.0,activities/111.gpx\n'
-        '222,"Aug 2, 2026, 5:00:00 PM",Strength,Weight Training,2400,0,2400,0,\n'
-    )
-    db = str(tmp_path / "db.sqlite")
-    assert StravaImporter(_make_root(tmp_path, csv_text), db).run()["insert"] == 2
-    conn = store.connect(db)
-    run = store.find_by_service_id(conn, "strava", "111")
-    assert run.type == "Run" and run.distance == 10250.5 and run.moving_time == 3600
-    assert run.polyline != ""
-    gym = store.find_by_service_id(conn, "strava", "222")
-    assert gym.type == "WeightTraining" and gym.polyline == ""
-
-
 def test_duplicate_distance_columns_last_wins(tmp_path):
     # Real Strava exports repeat Distance; DictReader keeps the last = meters.
+    dbp, arch = _setup(tmp_path)
     csv_text = (
         "Activity ID,Activity Date,Activity Name,Activity Type,Distance,Moving Time,Elevation Gain,Distance,Filename\n"
         '111,"Aug 1, 2026, 6:30:00 AM",Run,Run,10.25,3600,120.0,10250.5,\n'
     )
-    db = str(tmp_path / "db.sqlite")
-    StravaImporter(_make_root(tmp_path, csv_text), db).run()
-    conn = store.connect(db)
-    assert store.find_by_service_id(conn, "strava", "111").distance == 10250.5
+    with pytest.warns(UserWarning):
+        StravaImporter(_zip(tmp_path, csv_text, {}), dbp, arch).run()
+    assert _activity_for(db.connect(dbp), "strava", "111")["distance"] == 10250.5

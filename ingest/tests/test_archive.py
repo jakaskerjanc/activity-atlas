@@ -44,3 +44,12 @@ def test_open_archive_defaults_and_rejects_unknown(monkeypatch, tmp_path):
     assert isinstance(open_archive(), LocalArchive)
     with pytest.raises(ValueError):
         open_archive("s3://x")
+
+
+def test_put_export_reuses_key_for_identical_bytes(tmp_path):
+    src = tmp_path / "export_123.zip"; src.write_bytes(b"PK\x03\x04zip")
+    a = LocalArchive(str(tmp_path / "arch"))
+    first = a.put_export("strava", str(src), today="2026-10-27")
+    assert a.put_export("strava", str(src), today="2026-10-28") == first
+    src.write_bytes(b"PK\x03\x04zip2")
+    assert a.put_export("strava", str(src), today="2026-10-28") == "exports/strava/2026-10-28-export_123.zip"
