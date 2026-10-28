@@ -1,6 +1,7 @@
 """Import a Garmin bulk export (zip, or an unzipped folder for development):
 archive the export, the summarized-activity JSON and each matched activity
-FIT, write a source record per summary, then apply them through the engine."""
+FIT, write a source record per summary, then apply them through the engine.
+Monitoring FITs become wellness records, applied after the activities."""
 import argparse
 import io
 import json
@@ -9,6 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 
 from . import engine
+from .wellness import MONITORING_FIT, apply_wellness
 from .archive import Archive, open_archive
 from .export_reader import (ExportReader, archive_export, export_made_at, is_older_export,
                             newest_export_as_of, now_iso)
@@ -17,7 +19,8 @@ from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
 from .parse import ParsedFile
 from .parse.fit import parse_fit
-from .records import SourceRecord, latest
+from .parse.monitoring import MONITORING_FILE_TYPES
+from .records import SourceRecord, WellnessRecord, latest
 
 # Summary fields scaled to SI. activityId, name, activityType, startTimeGmt,
 # distance, duration, movingDuration and elevationGain are verified against a
@@ -101,9 +104,10 @@ class GarminImporter:
                 out.extend((s, sha) for s in _iter_summaries(json.loads(data)))
         return out
 
-    def _fit_index(self, export: ExportReader):
-        """[(epoch_start, name, bytes)] for every activity-type FIT in UploadedFiles."""
-        index = []
+    def _scan_fits(self, export: ExportReader):
+        """([(epoch_start, name, bytes)] for every activity-type FIT in UploadedFiles,
+        [WellnessRecord] for every monitoring FIT, archived as it is found)."""
+        index, monitoring = [], []
         for zname in export.names:
             if not (os.path.basename(zname).startswith("UploadedFiles_") and zname.endswith(".zip")):
                 continue
@@ -113,14 +117,22 @@ class GarminImporter:
                         continue
                     raw = zf.read(name)
                     try:
-                        if parse_fit(io.BytesIO(raw), geometry=False).file_type != "activity":
+                        file_type = parse_fit(io.BytesIO(raw), geometry=False).file_type
+                        if file_type in MONITORING_FILE_TYPES:
+                            sha = self.archive.put_blob(raw)
+                            rec = WellnessRecord("garmin", MONITORING_FIT, sha, self.now, sha,
+                                                 os.path.basename(name), {"kind": "garmin_export"})
+                            self.archive.put_wellness(rec)
+                            monitoring.append(rec)
+                            continue
+                        if file_type != "activity":
                             continue
                         start = parse_fit(io.BytesIO(raw)).start_time
                     except Exception:   # unreadable FIT: not matchable, skip it
                         continue
                     if start is not None:
                         index.append((start.timestamp(), os.path.basename(name), raw))
-        return index
+        return index, monitoring
 
     def _fit_for(self, start_epoch: float, index):
         hits = [(abs(epoch - start_epoch), name, raw) for epoch, name, raw in index
@@ -134,7 +146,7 @@ class GarminImporter:
         seen, starts = set(), []
         with ExportReader(self.export_path) as export:
             summaries = self._summaries(export)
-            index = self._fit_index(export)
+            index, monitoring = self._scan_fits(export)
             for s, summary_sha in summaries:
                 pid = str(s["activityId"])
                 start_epoch = int(s["startTimeGmt"]) / 1000
@@ -155,6 +167,7 @@ class GarminImporter:
             if starts and not older:   # an older export cannot say what was deleted since
                 engine.mark_missing_deleted(conn, "garmin", seen, iso(min(starts)), iso(max(starts)), now=self.now)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
+            counts["wellness_days"] = apply_wellness(conn, self.archive, monitoring)
             conn.commit()
         finally:
             conn.close()

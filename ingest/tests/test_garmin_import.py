@@ -19,7 +19,7 @@ def _outdoor_start_ms():
 
 
 def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", made=(2026, 1, 1, 0, 0, 0),
-                with_gym=True):
+                with_gym=True, monitoring=False):
     summaries = [[
         {"activityId": 900001, "name": "Match Run", "activityType": "running",
          "startTimeGmt": _outdoor_start_ms(), "distance": run_distance_cm, "duration": 3700000,
@@ -33,12 +33,24 @@ def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", mad
         summaries[0][1] = {"activityId": 900003, "name": "Late Walk", "activityType": "walking",
                            "startTimeGmt": 1786998400000, "distance": 100000, "duration": 1800000,
                            "movingDuration": 1800000, "elevationGain": None}
+    # the fixture zip also holds a monitoring FIT; only `monitoring=True` should add one
+    part1 = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(fixture_bytes("garmin_uploaded.zip"))) as src, zipfile.ZipFile(part1, "w") as dst:
+        for member in src.namelist():
+            if member != "u_3.fit":
+                dst.writestr(member, src.read(member))
     path = tmp_path / name
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Fitness/u_1_summarizedActivities.json", date_time=made),
                     json.dumps(summaries))
         zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip", date_time=made),
-                    fixture_bytes("garmin_uploaded.zip"))
+                    part1.getvalue())
+        if monitoring:
+            inner = io.BytesIO()
+            with zipfile.ZipFile(inner, "w") as mz:
+                mz.writestr("monitoring.fit", fixture_bytes("monitoring.fit"))
+            zf.writestr(zipfile.ZipInfo("DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part2.zip",
+                                        date_time=made), inner.getvalue())
     return str(path)
 
 
@@ -50,7 +62,7 @@ def test_iter_summaries_flattens_nested():
 def test_matches_fit_and_scales_units(tmp_path):
     dbp, arch = str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
     counts = GarminImporter(_garmin_zip(tmp_path), dbp, arch, now=NOW).run()
-    assert counts == {"insert": 2, "update": 0, "merge": 0}
+    assert counts == {"insert": 2, "update": 0, "merge": 0, "wellness_days": 0}
     assert [p.name for p in (tmp_path / "arch" / "exports" / "garmin").iterdir()] == ["2026-10-27-garmin_export.zip"]
     conn = db.connect(dbp)
     run = _activity_for(conn, "garmin", "900001")
@@ -73,13 +85,38 @@ def test_strava_then_garmin_merge_with_strava_name(tmp_path):
                    dbp, arch, now=NOW).run()
     with pytest.warns(UserWarning, match="types differ"):
         counts = GarminImporter(_garmin_zip(tmp_path, run_distance_cm=466285), dbp, arch, now=NOW).run()
-    assert counts == {"insert": 1, "update": 0, "merge": 1}
+    assert counts == {"insert": 1, "update": 0, "merge": 1, "wellness_days": 0}
     conn = db.connect(dbp)
     a = _activity_for(conn, "garmin", "900001")
     assert a["id"] == _activity_for(conn, "strava", "111")["id"] and a["name"] == "Morning Walk"
     shas = {r[0] for r in conn.execute("SELECT file_sha256 FROM activity_sources WHERE activity_id=?", (a["id"],))}
     assert len(shas) == 1 and a["streams_sha256"] in shas
     assert conn.execute("SELECT COUNT(*) FROM streams").fetchone()[0] == 1
+
+
+def _wellness_files(arch_dir):
+    return sorted((arch_dir / "wellness").rglob("*.json"))
+
+
+def test_import_stores_monitoring_fits_as_wellness(tmp_path):
+    dbp, arch_dir = str(tmp_path / "db.sqlite"), tmp_path / "arch"
+    arch = LocalArchive(str(arch_dir))
+    zpath = _garmin_zip(tmp_path, monitoring=True)
+    assert GarminImporter(zpath, dbp, arch, now=NOW).run()["wellness_days"] == 1
+    conn = db.connect(dbp)
+    hr = conn.execute("SELECT sample_count FROM daily_series WHERE date='2026-04-11' AND channel='hr'").fetchone()
+    assert hr[0] == 193
+    files = _wellness_files(arch_dir)
+    assert len(files) == 1
+    assert conn.execute("SELECT COUNT(*) FROM raw_files WHERE kind='monitoring_fit'").fetchone()[0] == 1
+    tables = ("daily_stats", "daily_series", "wellness_inputs")
+    before = [conn.execute(f"SELECT * FROM {t} ORDER BY 1, 2").fetchall() for t in tables]
+    conn.close()
+
+    GarminImporter(zpath, dbp, arch, now="2026-10-28T10:00:00+00:00").run()
+    assert _wellness_files(arch_dir) == files
+    conn = db.connect(dbp)
+    assert [conn.execute(f"SELECT * FROM {t} ORDER BY 1, 2").fetchall() for t in tables] == before
 
 
 def test_directory_input(tmp_path):
