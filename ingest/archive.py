@@ -39,6 +39,14 @@ def _stamp(fetched_at: str) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _file_sha(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 class LocalArchive:
     def __init__(self, root: str):
         self.root = root
@@ -78,10 +86,29 @@ class LocalArchive:
         return os.path.exists(self._path(f"raw/{_safe(sha256)}"))
 
     def put_export(self, provider: str, src_path: str, *, today: str) -> str:
+        """Store the export byte for byte. An identical export already stored
+        keeps its key, so re-importing it later writes no new records."""
+        existing = self._same_export(provider, src_path)
+        if existing:
+            return existing
         key = f"exports/{_safe(provider)}/{today}-{os.path.basename(src_path)}"
         with open(src_path, "rb") as src:
             self._write(key, lambda f: shutil.copyfileobj(src, f))
         return key
+
+    def _same_export(self, provider: str, src_path: str) -> str | None:
+        d = self._path(f"exports/{_safe(provider)}")
+        if not os.path.isdir(d):
+            return None
+        size, digest = os.path.getsize(src_path), None
+        for name in sorted(os.listdir(d)):
+            path = os.path.join(d, name)
+            if name.startswith(".tmp-") or os.path.getsize(path) != size:
+                continue
+            digest = digest or _file_sha(src_path)
+            if _file_sha(path) == digest:
+                return f"exports/{provider}/{name}"
+        return None
 
     def _record_dir(self, provider: str, pid: str) -> str:
         return f"records/{_safe(provider)}/{_safe(pid)}"

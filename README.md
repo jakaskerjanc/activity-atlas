@@ -32,12 +32,21 @@ committed DB.
 ## Populating the database
 
 Activities get into `data/activities.sqlite` via a one-shot backfill from
-bulk data exports (not committed — only the resulting DB is):
+bulk data exports. Pass each export **zip** as downloaded:
 
 ```bash
-npm run import:strava -- <path-to-strava-export>
-npm run import:garmin -- <path-to-garmin-export>
+npm run import:strava -- <strava-export.zip>
+npm run import:garmin -- <garmin-export.zip>
 ```
+
+Each import first stores the zip byte for byte, plus every file it reads
+(activity files, `activities.csv`, `*summarizedActivities.json`), in the
+archive at `ARCHIVE_URL` (default `file://data/archive`, gitignored). It then
+parses full-resolution streams, laps and gear into the database. An unzipped
+export folder also works, for development, but then no export archive is
+stored (the importer warns). Re-running an import changes nothing. A newer
+export that lacks an activity inside its date range marks that record
+deleted; nothing is removed.
 
 Run Strava first, then Garmin. Each provider record joins an existing
 activity when their time ranges overlap by at least 50% of the shorter range
@@ -45,9 +54,8 @@ activity when their time ranges overlap by at least 50% of the shorter range
 ±180 s). A match is rejected when both sides have GPS and their distances
 differ by more than 20%. Two records from the same provider never merge, and a
 type mismatch only logs a warning. Strava's values win on merged activities;
-Garmin fills the gaps.
-Both importers write into the same `data/activities.sqlite`, which you
-should commit afterward.
+Garmin fills the gaps. Both importers write into the same
+`data/activities.sqlite`, which you should commit afterward.
 
 Ongoing incremental fetch from the Garmin Connect Personal API
 (`ingest/garmin_fetch.py`) keeps the database current after the backfill — see

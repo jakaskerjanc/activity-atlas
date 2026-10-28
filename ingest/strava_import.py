@@ -1,12 +1,34 @@
+"""Import a Strava bulk export (zip, or an unzipped folder for development):
+archive the export and every file read, write a source record per CSV row,
+then apply them through the engine."""
 import argparse
 import csv
+import gzip
+import io
 import os
+import warnings
+import zipfile
 from datetime import datetime, timezone
 
-from .base import BaseImporter
-from .model import RawActivity
+from . import db, engine
+from .archive import Archive, open_archive
+from .merge import iso
+from .model import REPORTED_KEYS, SourceActivity
+from .normalize import canonical_type
+from .parse import ParsedFile
+from .records import SourceRecord, latest
 
 _DATE_FMTS = ("%b %d, %Y, %I:%M:%S %p", "%b %d, %Y, %H:%M:%S")
+
+CSV_FIELDS = {"Activity ID": "id", "Activity Date": "start", "Activity Name": "name",
+    "Activity Type": "type", "Elapsed Time": "elapsed_s", "Moving Time": "moving_s",
+    "Distance": "distance_m", "Elevation Gain": "elevation_gain_m",
+    "Elevation Loss": "elevation_loss_m", "Average Heart Rate": "avg_hr",
+    "Max Heart Rate": "max_hr", "Average Cadence": "avg_cadence", "Max Cadence": "max_cadence",
+    "Average Watts": "avg_power", "Max Watts": "max_power", "Calories": "calories",
+    "Activity Gear": "gear", "Filename": "file"}
+
+_CSV_KEY = {v: k for k, v in CSV_FIELDS.items()}
 
 
 def _parse_date(s: str) -> datetime:
@@ -18,58 +40,157 @@ def _parse_date(s: str) -> datetime:
     raise ValueError(f"unrecognized Strava date: {s!r}")
 
 
-def _num(s, default=0.0) -> float:
+def _num(s) -> float | None:
     try:
         return float(s)
     except (TypeError, ValueError):
-        return default
+        return None
 
 
-class StravaImporter(BaseImporter):
-    source = "strava"
+def record_to_source(rec: SourceRecord, parsed: ParsedFile | None) -> SourceActivity:
+    """CSV values first, then the activity file's own summary."""
+    row = rec.summary
+    file_summary = parsed.summary if parsed else {}
 
-    def __init__(self, export_root, db_path, **kw):
-        super().__init__(db_path, **kw)
-        self.root = export_root
+    def value(key):
+        csv_value = _num(row.get(_CSV_KEY[key])) if key in _CSV_KEY else None
+        return csv_value if csv_value is not None else file_summary.get(key)
 
-    def activities(self):
-        with open(os.path.join(self.root, "activities.csv"), newline="", encoding="utf-8") as f:
+    gear = (row.get("Activity Gear") or "").strip()
+    return SourceActivity(
+        provider="strava",
+        provider_activity_id=rec.provider_activity_id,
+        name=(row.get("Activity Name") or "Untitled").strip(),
+        type=canonical_type((row.get("Activity Type") or "Workout").strip()),
+        start_time=_parse_date(row["Activity Date"].strip()),
+        elapsed_s=value("elapsed_s"),
+        moving_s=value("moving_s"),
+        distance_m=value("distance_m"),
+        utc_offset_s=parsed.utc_offset_s if parsed else None,
+        reported={k: value(k) for k in REPORTED_KEYS},
+        hr_zones=parsed.hr_zones if parsed else None,
+        gear=[gear] if gear else [],
+        summary=row,
+        file_sha256=rec.file_sha256,
+        parsed=parsed,
+        fetched_at=rec.fetched_at,
+    )
+
+
+engine.register("strava_export", record_to_source)
+
+
+class _Export:
+    """Read-only view of an export zip or folder, by member path."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.is_zip = os.path.isfile(path)
+        if self.is_zip:
+            self._zf = zipfile.ZipFile(path)
+            self.names = [n for n in self._zf.namelist() if not n.endswith("/")]
+        else:
+            self.names = sorted(
+                os.path.relpath(os.path.join(d, f), path).replace(os.sep, "/")
+                for d, _, files in os.walk(path) for f in files)
+
+    def read(self, name: str) -> bytes:
+        if self.is_zip:
+            return self._zf.read(name)
+        with open(os.path.join(self.path, *name.split("/")), "rb") as f:
+            return f.read()
+
+    def find(self, suffix: str) -> str | None:
+        """The shortest member path ending in `suffix` (on a path boundary)."""
+        suffix = suffix.strip().lstrip("/")
+        hits = [n for n in self.names if n == suffix or n.endswith("/" + suffix)]
+        return min(hits, key=lambda n: (len(n), n)) if hits else None
+
+    def close(self):
+        if self.is_zip:
+            self._zf.close()
+
+
+def archive_export(archive: Archive, provider: str, path: str, today: str) -> str | None:
+    if os.path.isfile(path):
+        return archive.put_export(provider, path, today=today)
+    warnings.warn("directory input: no export archive stored")
+    return None
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+class StravaImporter:
+    def __init__(self, export_path: str, db_path: str, archive: Archive, *, now: str | None = None):
+        self.export_path = export_path
+        self.db_path = db_path
+        self.archive = archive
+        self.now = now or _now()
+
+    def _file_blob(self, export: _Export, fname: str):
+        """(sha, name without .gz) of the activity file, or (None, None)."""
+        member = export.find(fname) if fname else None
+        if member is None:
+            if fname:
+                warnings.warn(f"activity file {fname} not found in export")
+            return None, None
+        data, name = export.read(member), os.path.basename(member)
+        if name.lower().endswith(".gz"):
+            try:
+                data, name = gzip.decompress(data), name[:-3]
+            except (OSError, EOFError) as e:
+                warnings.warn(f"cannot gunzip {member}: {e}; storing it as is")
+        return self.archive.put_blob(data), name
+
+    def run(self) -> dict[str, int]:
+        export_key = archive_export(self.archive, "strava", self.export_path, self.now[:10])
+        export = _Export(self.export_path)
+        try:
+            csv_member = export.find("activities.csv")
+            if csv_member is None:
+                raise SystemExit(f"no activities.csv in {self.export_path}")
+            csv_bytes = export.read(csv_member)
+            csv_sha = self.archive.put_blob(csv_bytes)
             # DictReader keeps the LAST of any duplicate column -> meters/seconds.
-            for row in csv.DictReader(f):
-                yield self._to_raw(row)
+            reader = csv.DictReader(io.StringIO(csv_bytes.decode("utf-8-sig"), newline=""))
+            absent = [h for h in CSV_FIELDS if h not in (reader.fieldnames or [])]
+            if absent:
+                warnings.warn(f"activities.csv: mapped headers absent: {', '.join(absent)}")
+            seen, starts = set(), []
+            for row in reader:
+                row = {k: v for k, v in row.items() if k is not None}
+                pid = row["Activity ID"].strip()
+                sha, name = self._file_blob(export, (row.get("Filename") or "").strip())
+                self.archive.put_record(SourceRecord(
+                    "strava", pid, self.now, row, sha, name,
+                    {"kind": "strava_export", "export_key": export_key, "csv_sha": csv_sha}))
+                seen.add(pid)
+                starts.append(_parse_date(row["Activity Date"].strip()))
+        finally:
+            export.close()
 
-    def _to_raw(self, row) -> RawActivity:
-        track = []
-        fname = (row.get("Filename") or "").strip()
-        if fname:
-            path = os.path.join(self.root, fname)
-            if os.path.exists(path):
-                name, fo = self.open_activity_file(path)
-                try:
-                    track = self.parse_file(name, fo).track
-                finally:
-                    fo.close()
-        return RawActivity(
-            source="strava",
-            source_id=row["Activity ID"].strip(),
-            name=(row.get("Activity Name") or "Untitled").strip(),
-            type_raw=(row.get("Activity Type") or "Workout").strip(),
-            start_time=_parse_date(row["Activity Date"].strip()),
-            distance_m=_num(row.get("Distance")),
-            moving_time_s=int(_num(row.get("Moving Time"))),
-            elevation_gain_m=_num(row.get("Elevation Gain")),
-            track=track,
-            source_file=fname or None,
-        )
+        conn = db.open_db(self.db_path)
+        try:
+            records = [r for r in latest(self.archive.list_records())
+                       if r.provider == "strava" and r.provider_activity_id in seen]
+            counts = engine.apply_records(conn, self.archive, records, now=self.now)
+            if starts:
+                engine.mark_missing_deleted(conn, "strava", seen, iso(min(starts)), iso(max(starts)), now=self.now)
+            conn.commit()
+        finally:
+            conn.close()
+        return counts
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Import a Strava bulk export into the SQLite store.")
-    ap.add_argument("export_root", help="unzipped Strava export dir (contains activities.csv)")
+    ap = argparse.ArgumentParser(description="Import a Strava bulk export into the archive and database.")
+    ap.add_argument("export", help="Strava export zip (or an unzipped export folder, for development)")
     ap.add_argument("--db", default="data/activities.sqlite")
-    ap.add_argument("--simplify-m", type=float, default=0.5)
+    ap.add_argument("--archive", default=None, help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
     args = ap.parse_args()
-    print(f"strava_import: {StravaImporter(args.export_root, args.db, simplify_tol_m=args.simplify_m).run()}")
+    print(f"strava_import: {StravaImporter(args.export, args.db, open_archive(args.archive)).run()}")
 
 
 if __name__ == "__main__":
