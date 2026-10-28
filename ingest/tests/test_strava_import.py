@@ -181,6 +181,16 @@ def test_export_made_at_ignores_zips_without_dates(tmp_path):
     assert export_made_at(_zip(tmp_path, HEADER, {}, made=(1980, 1, 1, 0, 0, 0))) is None
 
 
+def test_export_made_at_ignores_invalid_dos_dates(tmp_path):
+    path = _zip(tmp_path, HEADER, {"b.txt": b"b"}, made=(1980, 0, 0, 0, 0, 0))
+    assert export_made_at(path) is None
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.writestr(zipfile.ZipInfo("c.txt", date_time=(2026, 10, 20, 8, 0, 0)), "c")
+    assert export_made_at(path) == "2026-10-20T08:00:00+00:00"
+    StravaImporter(path, str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch")),
+                   now="2026-10-27T10:00:00+00:00").run()
+
+
 def test_older_export_does_not_roll_back_or_undelete(tmp_path):
     dbp, arch = _setup(tmp_path)
     r111 = lambda name: _row(111, "Feb 18, 2026, 4:06:36 PM", name, "Walk", "activities/111.fit.gz", hr="150")
