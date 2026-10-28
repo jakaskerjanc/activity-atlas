@@ -121,3 +121,25 @@ def test_cli_split_parses_provider_ref(tmp_path, monkeypatch, capsys):
     new = capsys.readouterr().out.strip().split()[-1]
     conn = db.connect(dbp)
     assert _aid(conn, "garmin", "900001") == new
+
+
+def _visible(conn, aid):
+    return conn.execute("SELECT visible FROM activities WHERE id=?", (aid,)).fetchone()[0]
+
+
+def test_split_of_hidden_activity_keeps_both_hidden(tmp_path):
+    dbp, _ = _imported(tmp_path)
+    conn = db.connect(dbp)
+    merged = _aid(conn, "strava", "111")
+    activity_cli.set_hidden(conn, merged, True)
+    new = activity_cli.split(conn, merged, "garmin", "900001")
+    assert _visible(conn, merged) == 0 and _visible(conn, new) == 0
+
+
+def test_merge_with_hidden_activity_stays_hidden(tmp_path):
+    dbp, _ = _imports(tmp_path)
+    conn = db.connect(dbp)
+    keep, other = _aid(conn, "strava", "222"), _aid(conn, "garmin", "900002")
+    activity_cli.set_hidden(conn, other, True)
+    activity_cli.merge(conn, keep, other)
+    assert _visible(conn, keep) == 0

@@ -11,12 +11,25 @@ def _require_activity(conn, activity_id: str) -> None:
         raise ValueError(f"no activity {activity_id}")
 
 
+def _hidden(conn, activity_id: str) -> bool:
+    row = conn.execute("SELECT hidden FROM activity_overrides WHERE activity_id=?", (activity_id,)).fetchone()
+    return bool(row and row["hidden"])
+
+
+def _hide(conn, activity_id: str) -> None:
+    conn.execute("INSERT INTO activity_overrides (activity_id, hidden) VALUES (?, 1) "
+                 "ON CONFLICT(activity_id) DO UPDATE SET hidden=1", (activity_id,))
+
+
 def merge(conn, keep_id: str, other_id: str) -> None:
-    """Move every source of other_id to keep_id, pin them, drop other_id."""
+    """Move every source of other_id to keep_id, pin them, drop other_id.
+    If either activity was hidden, the merged one stays hidden."""
     if keep_id == other_id:
         raise ValueError("cannot merge an activity with itself")
     _require_activity(conn, keep_id)
     _require_activity(conn, other_id)
+    if _hidden(conn, other_id):
+        _hide(conn, keep_id)
     conn.execute("UPDATE activity_sources SET activity_id=? WHERE activity_id=?", (keep_id, other_id))
     conn.execute("UPDATE activity_sources SET pinned=1 WHERE activity_id=?", (keep_id,))
     for table, col in (("activities", "id"), ("activity_overrides", "activity_id"),
@@ -26,8 +39,8 @@ def merge(conn, keep_id: str, other_id: str) -> None:
 
 
 def split(conn, activity_id: str, provider: str, provider_activity_id: str) -> str:
-    """Give one source its own new activity; pin the sources of both.
-    Returns the new activity's ID."""
+    """Give one source its own new activity; pin the sources of both. A
+    hidden activity's split-off part is hidden too. Returns the new ID."""
     row = conn.execute("SELECT 1 FROM activity_sources WHERE activity_id=? AND provider=? "
                        "AND provider_activity_id=?", (activity_id, provider, provider_activity_id)).fetchone()
     if row is None:
@@ -39,6 +52,8 @@ def split(conn, activity_id: str, provider: str, provider_activity_id: str) -> s
     conn.execute("UPDATE activity_sources SET activity_id=? WHERE provider=? AND provider_activity_id=?",
                  (new_id, provider, provider_activity_id))
     conn.execute("UPDATE activity_sources SET pinned=1 WHERE activity_id IN (?, ?)", (activity_id, new_id))
+    if _hidden(conn, activity_id):
+        _hide(conn, new_id)
     merging.recompute_activity(conn, activity_id)
     merging.recompute_activity(conn, new_id)
     return new_id
