@@ -41,6 +41,7 @@ class FakeClient:
     def __init__(self, items, download):
         self.items, self.download = items, download
         self.list_calls, self.download_calls = [], []
+        self.wellness, self.wellness_calls = {}, []      # path -> bytes | Exception | callable(params)
 
     def list_activities_raw(self, start, limit):
         self.list_calls.append((start, limit))
@@ -52,6 +53,13 @@ class FakeClient:
         if isinstance(result, Exception):
             raise result
         return result
+
+    def get_raw(self, path, params=None):
+        self.wellness_calls.append((path, params))
+        result = self.wellness.get(path, b"")
+        if isinstance(result, Exception):
+            raise result
+        return result(params) if callable(result) else result
 
 
 def _track(data):
@@ -156,6 +164,7 @@ def _zip_with_only_text():
     return buf.getvalue()
 
 
+WELLNESS_PATH = "/usersummary-service/v2/dailysummaries"
 NO_FILE = GarminApiError("no file", status=404)
 
 
@@ -183,7 +192,7 @@ def _count(tmp_path):
 
 def test_run_inserts_with_geometry_and_windows_on_rerun(tmp_path):
     client = FakeClient(_list(), {5000001: _zip("outdoor.fit"), 5000002: NO_FILE})
-    assert _fetcher(tmp_path, client).run() == {"insert": 2, "update": 0, "merge": 0, "deleted": 0}
+    assert _fetcher(tmp_path, client).run() == {"insert": 2, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
 
     run, gym = _by_id(tmp_path, "5000001"), _by_id(tmp_path, "5000002")
     assert run["type"] == "Run" and run["polyline"] != ""
@@ -193,13 +202,13 @@ def test_run_inserts_with_geometry_and_windows_on_rerun(tmp_path):
     assert client.download_calls == [5000001, 5000002]
 
     client2 = FakeClient(_list(), {5000001: _zip("outdoor.fit"), 5000002: NO_FILE})
-    assert _fetcher(tmp_path, client2).run() == {"insert": 0, "update": 0, "merge": 0, "deleted": 0}
+    assert _fetcher(tmp_path, client2).run() == {"insert": 0, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert client2.download_calls == []
 
 
 def test_run_downloads_every_new_activity_including_indoor(tmp_path):
     client = FakeClient(_list(), _downloads())
-    assert _fetcher(tmp_path, client).run() == {"insert": 2, "update": 0, "merge": 0, "deleted": 0}
+    assert _fetcher(tmp_path, client).run() == {"insert": 2, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert client.download_calls == [5000001, 5000002]
     gym = _by_id(tmp_path, "5000002")
     assert gym["has_hr"] == 1 and gym["polyline"] == ""
@@ -214,7 +223,7 @@ def test_multi_page_list_fetches_all_pages(tmp_path):
     } for n in range(5)]
     client = FakeClient(items, NO_FILE)
     assert _fetcher(tmp_path, client, page_size=2).run() == {
-        "insert": 5, "update": 0, "merge": 0, "deleted": 0}
+        "insert": 5, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert client.list_calls == [(0, 2), (2, 2), (4, 2)]
     assert client.download_calls == [7000000 + n for n in range(5)]
     assert _count(tmp_path) == 5
@@ -226,13 +235,13 @@ def test_download_failure_is_not_persisted_and_retried(tmp_path):
     bad = FakeClient(_list(), {5000001: RuntimeError("boom"), 5000002: _zip("indoor.fit")})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert _fetcher(tmp_path, bad).run() == {"insert": 1, "update": 0, "merge": 0, "deleted": 0}
+        assert _fetcher(tmp_path, bad).run() == {"insert": 1, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert _by_id(tmp_path, "5000001") is None
     assert _by_id(tmp_path, "5000002") is not None
     assert _record_files(tmp_path, 5000001) == []
 
     good = FakeClient(_list(), _downloads())
-    assert _fetcher(tmp_path, good).run() == {"insert": 1, "update": 0, "merge": 0, "deleted": 0}
+    assert _fetcher(tmp_path, good).run() == {"insert": 1, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert good.download_calls == [5000001]
     assert _by_id(tmp_path, "5000001")["polyline"] != ""
 
@@ -251,7 +260,7 @@ def test_three_consecutive_download_failures_stop_run(tmp_path):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         assert _fetcher(tmp_path, client).run() == {
-            "insert": 0, "update": 0, "merge": 0, "deleted": 0}
+            "insert": 0, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert client.download_calls == [6000000, 6000001, 6000002]
     assert _count(tmp_path) == 0
 
@@ -263,7 +272,7 @@ def test_recheck_unchanged_dto_downloads_nothing(tmp_path):
 
     second = FakeClient(_list(), _downloads())
     counts = _fetcher(tmp_path, second, "2026-09-21T10:00:00+00:00").run()
-    assert counts == {"insert": 0, "update": 0, "merge": 0, "deleted": 0}
+    assert counts == {"insert": 0, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert second.download_calls == []
     assert _record_files(tmp_path, 5000001) + _record_files(tmp_path, 5000002) == files
 
@@ -338,7 +347,7 @@ def test_manual_activity_without_file_is_stored_and_not_retried(tmp_path):
 
     first = FakeClient(items, download)
     assert _fetcher(tmp_path, first, NOW_IN).run() == {
-        "insert": 4, "update": 0, "merge": 0, "deleted": 0}
+        "insert": 4, "update": 0, "merge": 0, "deleted": 0, "wellness_days": 0}
     assert len(first.download_calls) == 4
     assert _count(tmp_path) == 4
     assert _by_id(tmp_path, "5000001")["polyline"] != ""
@@ -414,6 +423,48 @@ def test_auth_error_mid_run_exits_3(monkeypatch, tmp_path, capsys):
     assert "Personal API key rejected" in capsys.readouterr().err
 
 
+def test_wellness_auth_error_keeps_activities(tmp_path):
+    client = FakeClient(_list(), _downloads())
+    client.wellness[WELLNESS_PATH] = GarminAuthError("401")
+    with pytest.raises(GarminAuthError):
+        _fetcher(tmp_path, client).run()
+    assert _count(tmp_path) == 2
+
+
+def test_run_applies_wellness_after_the_activities(tmp_path):
+    client = FakeClient(_list(), _downloads())
+    client.wellness[WELLNESS_PATH] = lambda p: (
+        b'[{"calendarDate": "2026-10-27", "totalSteps": 9000}]' if p["startDate"] == "2026-10-27" else b"")
+    assert _fetcher(tmp_path, client).run()["wellness_days"] == 1
+    conn = dbm.connect(str(tmp_path / "db.sqlite"))
+    try:
+        assert conn.execute("SELECT steps FROM daily_stats WHERE date='2026-10-27'").fetchone()[0] == 9000
+    finally:
+        conn.close()
+
+
+def test_wellness_since_reaches_the_endpoints(tmp_path):
+    client = FakeClient(_list(), _downloads())
+    _fetcher(tmp_path, client, wellness_since="2026-10-20").run()
+    starts = {p["startDate"] for path, p in client.wellness_calls if path == WELLNESS_PATH}
+    assert min(starts) == "2026-10-20" and len(starts) == 8
+
+
+def test_main_passes_wellness_since(monkeypatch, tmp_path):
+    seen = {}
+
+    class FakeFetcher:
+        def __init__(self, *args, **kwargs): seen.update(kwargs)
+        def authenticate(self): pass
+        def run(self): return {}
+
+    monkeypatch.setattr(gf, "GarminFetcher", FakeFetcher)
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite"),
+                                      "--wellness-since", "2026-10-01"])
+    gf.main()
+    assert seen["wellness_since"] == "2026-10-01"
+
+
 def test_missing_key_exits_2(tmp_path, monkeypatch):
     monkeypatch.delenv("GARMIN_PERSONAL_API_KEY", raising=False)
     fetcher = gf.GarminFetcher(str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch")),
@@ -484,6 +535,6 @@ def test_fetch_merges_with_existing_strava_activity(tmp_path):
     StravaImporter(_strava_zip(tmp_path, HEADER + row, {}), str(tmp_path / "db.sqlite"),
                    LocalArchive(str(tmp_path / "arch")), now="2026-10-27T09:00:00+00:00").run()
     client = FakeClient(_list(), {5000001: _zip("outdoor.fit"), 5000002: NO_FILE})
-    assert _fetcher(tmp_path, client).run() == {"insert": 1, "update": 0, "merge": 1, "deleted": 0}
+    assert _fetcher(tmp_path, client).run() == {"insert": 1, "update": 0, "merge": 1, "deleted": 0, "wellness_days": 0}
     assert _count(tmp_path) == 2                                    # merged run + gym
     assert _by_id(tmp_path, "5000001")["name"] == "Strava Run"

@@ -15,11 +15,13 @@ from typing import NoReturn
 from . import engine, merge
 from .archive import Archive, open_archive
 from .export_reader import now_iso
+from .garmin_wellness import fetch_wellness
 from .garmin_api import GarminApiError, GarminAuthError, GarminPersonalApi, MissingApiKey, parse_activity_list
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
 from .parse import ParsedFile
 from .records import SourceRecord
+from .wellness import apply_wellness
 
 
 def gmt_to_dt(s: str) -> datetime:
@@ -120,7 +122,8 @@ def auth_rejected(error: Exception) -> NoReturn:
 
 class GarminFetcher:
     def __init__(self, db_path: str, archive: Archive, *, delay_s: float = 1.0, client=None,
-                 key_file=None, page_size: int = PAGE_SIZE, now: str | None = None):
+                 key_file=None, page_size: int = PAGE_SIZE, now: str | None = None,
+                 wellness_since: str | None = None):
         self.db_path = db_path
         self.archive = archive
         self.delay_s = delay_s
@@ -128,6 +131,7 @@ class GarminFetcher:
         self._key_file = key_file
         self.page_size = page_size
         self.now = now or now_iso()
+        self.wellness_since = wellness_since
 
     # --- auth -------------------------------------------------------------
     def authenticate(self) -> GarminPersonalApi:
@@ -253,9 +257,14 @@ class GarminFetcher:
             deleted = self._mark_deleted(conn, items)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
+            # after the commit, so a wellness failure leaves the activities stored
+            wellness = fetch_wellness(client, self.archive, conn, now=self.now,
+                                      since=self.wellness_since, delay_s=self.delay_s)
+            wellness_days = apply_wellness(conn, self.archive, wellness)
+            conn.commit()
         finally:
             conn.close()
-        return {**counts, "deleted": deleted}
+        return {**counts, "deleted": deleted, "wellness_days": wellness_days}
 
 
 def main():
@@ -266,8 +275,12 @@ def main():
     ap.add_argument("--api-key-file", default=None,
                     help="Personal API key file (default: GARMIN_PERSONAL_API_KEY env, "
                          "then GARMIN_PERSONAL_API_KEY in the repo-root .env)")
+    ap.add_argument("--wellness-since", default=None, metavar="YYYY-MM-DD",
+                    help="fetch wellness data from this date (backfill); default: the last "
+                         "stored day minus 7, or the last 30 days on the first run")
     args = ap.parse_args()
-    f = GarminFetcher(args.db, open_archive(args.archive), key_file=args.api_key_file)
+    f = GarminFetcher(args.db, open_archive(args.archive), key_file=args.api_key_file,
+                      wellness_since=args.wellness_since)
     f.authenticate()            # fail loud on missing/rejected key
     try:
         counts = f.run()
