@@ -135,6 +135,19 @@ in the archive (`ARCHIVE_URL`, `--archive`), then adds the new activities to
 the database (`--db`; see the warning in
 [Populating the database](#populating-the-database) about not committing it).
 
+Each run also re-checks the last 30 days of the Garmin list:
+
+- An activity whose listing changed (a rename, say) is downloaded again and
+  updated in place; one whose listing is unchanged is not downloaded.
+- An activity in that window that Garmin no longer lists is marked deleted, not
+  removed. It comes back if Garmin lists it again. A run that finds no
+  activities at all in the window marks nothing deleted.
+- Every activity's file is downloaded, indoor ones included. An activity
+  without a file (a manual entry, say) is kept without streams and not retried.
+- A download that fails writes nothing: an activity already stored keeps its
+  previous record, and a new one is retried on the next run while it is still
+  inside the window.
+
 ### CI
 
 `.github/workflows/fetch-garmin.yml` runs daily: fetch via the Personal API →
