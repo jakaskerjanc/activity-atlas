@@ -54,8 +54,14 @@ activity when their time ranges overlap by at least 50% of the shorter range
 ±180 s). A match is rejected when both sides have GPS and their distances
 differ by more than 20%. Two records from the same provider never merge, and a
 type mismatch only logs a warning. Strava's values win on merged activities;
-Garmin fills the gaps. Both importers write into the same
-`data/activities.sqlite`, which you should commit afterward.
+Garmin fills the gaps. Both importers write into the same database.
+
+**Do not commit the new database.** It holds full-resolution GPS, heart rate
+and the raw export rows (including private notes). Until the storage cutover,
+the committed `data/activities.sqlite` stays the old v1 database that the
+site and the daily fetch use, and every new writer refuses it (exit code 4).
+Point `--db` at a scratch path instead, for example
+`--db data/v2.sqlite`.
 
 Ongoing incremental fetch from the Garmin Connect Personal API
 (`ingest/garmin_fetch.py`) keeps the database current after the backfill — see
@@ -67,7 +73,10 @@ Ongoing incremental fetch from the Garmin Connect Personal API
 npm run rebuild -- [--db data/activities.sqlite] [--archive file://data/archive]
 ```
 
-Rebuilds the database from the archive's source records. Each activity keeps
+Rebuilds the database from the archive's source records. If any activity in
+the database has no record in the archive (a wrong `--archive` path, for
+example), the rebuild stops without changing anything; `--force` rebuilds
+anyway and those activities lose their data. Each activity keeps
 its ID: the rebuild carries over only the identity of each provider record
 (which activity it belongs to, manual pins, deletions) and the hidden flags,
 and re-derives everything else. Rebuilding twice gives the same rows. The
@@ -121,7 +130,8 @@ then run `npm run fetch:garmin`. Credentials resolve in this order: an explicit
 then `GARMIN_PERSONAL_API_KEY` in `.env`. If no key is found, the fetch exits
 with code 2. The fetch stores every list page, activity ZIP and activity file
 in the archive (`ARCHIVE_URL`, `--archive`), then adds the new activities to
-`data/activities.sqlite`; commit the DB afterward.
+the database (`--db`; see the warning in
+[Populating the database](#populating-the-database) about not committing it).
 
 ### CI
 
@@ -197,8 +207,9 @@ npm run import:strava -- <strava-export.zip>
 npm run import:garmin -- <garmin-export.zip>
 ```
 
-This archives the exports under `data/archive/` (gitignored) and
-creates/updates `data/activities.sqlite`, which you should commit.
+Add `--db data/v2.sqlite` to both commands. This archives the exports under
+`data/archive/` (gitignored) and creates the new database. Don't commit it
+(see [Populating the database](#populating-the-database)).
 
 ### 4. Push secrets to GitHub Actions
 

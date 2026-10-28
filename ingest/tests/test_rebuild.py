@@ -118,3 +118,18 @@ def test_rebuild_without_existing_db_assigns_new_ids(tmp_path):
         counts = rebuild(fresh, arch, now=NOW)
     assert counts == {"insert": 3, "update": 0, "merge": 1}
     assert len(_snapshot(fresh)) == 3
+
+
+def test_rebuild_refuses_to_drop_activities_missing_from_archive(tmp_path):
+    dbp, arch = _imported(tmp_path)
+    before = _snapshot(dbp)
+    with pytest.raises(SystemExit) as exc:
+        rebuild(dbp, LocalArchive(str(tmp_path / "typo")), now=NOW)
+    assert "no record in the archive" in str(exc.value)
+    assert _snapshot(dbp) == before
+    assert not (tmp_path / "db.sqlite.rebuild").exists()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        rebuild(dbp, LocalArchive(str(tmp_path / "typo")), now=NOW, force=True)
+    assert _snapshot(dbp) == []
