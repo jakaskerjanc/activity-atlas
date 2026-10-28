@@ -1,0 +1,128 @@
+"""The archive of originals: content-addressed blobs, export zips byte for
+byte, and source records. Layout under the root:
+
+    raw/<sha256>
+    exports/<provider>/<YYYY-MM-DD>-<name>
+    records/<provider>/<provider_activity_id>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
+
+Only the local-folder backend exists here; R2 arrives in Plan 3.
+"""
+import hashlib
+import os
+import shutil
+import tempfile
+from datetime import datetime, timezone
+from typing import Protocol
+
+from .records import SourceRecord
+
+DEFAULT_URL = "file://data/archive"
+
+
+class Archive(Protocol):
+    def put_blob(self, data: bytes) -> str: ...
+    def get_blob(self, sha256: str) -> bytes: ...
+    def has_blob(self, sha256: str) -> bool: ...
+    def put_export(self, provider: str, src_path: str, *, today: str) -> str: ...
+    def put_record(self, rec: SourceRecord) -> bool: ...
+    def list_records(self) -> list[SourceRecord]: ...
+
+
+def _safe(part: str) -> str:
+    if not part or part in (".", "..") or "/" in part or os.sep in part:
+        raise ValueError(f"unsafe archive key part: {part!r}")
+    return part
+
+
+def _stamp(fetched_at: str) -> str:
+    dt = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+    return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+class LocalArchive:
+    def __init__(self, root: str):
+        self.root = root
+
+    def _path(self, key: str) -> str:
+        return os.path.join(self.root, *key.split("/"))
+
+    def _write(self, key: str, write) -> None:
+        """Write via a temp file + os.replace so an interrupted run never
+        leaves a partial file under the final key."""
+        path = self._path(key)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                write(f)
+            os.replace(tmp, path)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+
+    def put_blob(self, data: bytes) -> str:
+        sha = hashlib.sha256(data).hexdigest()
+        if not self.has_blob(sha):
+            self._write(f"raw/{sha}", lambda f: f.write(data))
+        return sha
+
+    def get_blob(self, sha256: str) -> bytes:
+        try:
+            with open(self._path(f"raw/{_safe(sha256)}"), "rb") as f:
+                return f.read()
+        except FileNotFoundError:
+            raise KeyError(sha256) from None
+
+    def has_blob(self, sha256: str) -> bool:
+        return os.path.exists(self._path(f"raw/{_safe(sha256)}"))
+
+    def put_export(self, provider: str, src_path: str, *, today: str) -> str:
+        key = f"exports/{_safe(provider)}/{today}-{os.path.basename(src_path)}"
+        with open(src_path, "rb") as src:
+            self._write(key, lambda f: shutil.copyfileobj(src, f))
+        return key
+
+    def _record_dir(self, provider: str, pid: str) -> str:
+        return f"records/{_safe(provider)}/{_safe(pid)}"
+
+    def put_record(self, rec: SourceRecord) -> bool:
+        d = self._record_dir(rec.provider, rec.provider_activity_id)
+        stored = self._read_records(self._path(d))
+        if stored:
+            newest = max(stored, key=lambda r: (r.fetched_at, r.content_sha()))
+            if newest.content_sha() == rec.content_sha():
+                return False
+        data = rec.to_json()
+        self._write(f"{d}/{_stamp(rec.fetched_at)}-{rec.content_sha()[:12]}.json",
+                    lambda f: f.write(data))
+        return True
+
+    @staticmethod
+    def _read_records(path: str) -> list[SourceRecord]:
+        if not os.path.isdir(path):
+            return []
+        out = []
+        for name in sorted(os.listdir(path)):
+            if name.endswith(".json") and not name.startswith(".tmp-"):
+                with open(os.path.join(path, name), "rb") as f:
+                    out.append(SourceRecord.from_json(f.read()))
+        return out
+
+    def list_records(self) -> list[SourceRecord]:
+        base = self._path("records")
+        if not os.path.isdir(base):
+            return []
+        out = []
+        for provider in sorted(os.listdir(base)):
+            for pid in sorted(os.listdir(os.path.join(base, provider))):
+                out.extend(self._read_records(os.path.join(base, provider, pid)))
+        return out
+
+
+def open_archive(url: str | None = None) -> Archive:
+    """url → env ARCHIVE_URL → file://data/archive. Only file:// for now."""
+    url = url or os.environ.get("ARCHIVE_URL") or DEFAULT_URL
+    if not url.startswith("file://"):
+        raise ValueError(f"unsupported archive URL: {url} (only file:// until Plan 3)")
+    return LocalArchive(url[len("file://"):])
