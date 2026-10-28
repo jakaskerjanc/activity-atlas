@@ -67,6 +67,28 @@ def test_duplicate_inputs_on_one_date_merge_without_duplicates(arch, mon):
     assert times == sorted(set(times))
 
 
+def test_several_fits_on_one_date_agree_on_resting_hr_and_raw(arch, mon, monkeypatch):
+    later = "f" * 64
+    assert mon.key < later
+    monkeypatch.setattr(wellness, "_PARSERS", dict(wellness._PARSERS))
+    real = wellness._PARSERS["monitoring_fit"]
+
+    def parser(data, rec):
+        parts = real(data, rec)
+        if rec.key == later:
+            parts[DAY].stats = {"resting_hr": 61}
+            parts[DAY].raw = {"resting_heart_rate": None, "current_day_resting_heart_rate": 61}
+        return parts
+
+    wellness.register("monitoring_fit", parser)
+    conn = fresh()
+    apply_wellness(conn, arch, [_put(arch, fixture_bytes("monitoring.fit"), key=later), mon])
+    stats = conn.execute("SELECT resting_hr, raw FROM daily_stats WHERE date=?", (DAY,)).fetchone()
+    assert stats["resting_hr"] == 59
+    assert json.loads(stats["raw"])["monitoring_fit"] == {"resting_heart_rate": 57,
+                                                         "current_day_resting_heart_rate": 59}
+
+
 def test_reapply_changes_nothing(arch, mon):
     conn = fresh()
     apply_wellness(conn, arch, [mon])
