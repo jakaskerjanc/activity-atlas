@@ -45,12 +45,18 @@ def _dig(obj, *path):
     return obj
 
 
+def _number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _pick(payload, mapping: dict[str, tuple]) -> dict:
-    """Column -> value for every mapped field present in the payload."""
+    """Column -> value for every mapped field present in the payload with the
+    column's type (a string for hrv_status, else a number); anything else is
+    left out rather than bound into SQLite."""
     stats = {}
     for column, path in mapping.items():
         value = _dig(payload, *path)
-        if value is not None:
+        if isinstance(value, str) if column == "hrv_status" else _number(value):
             stats[column] = value
     return stats
 
@@ -73,7 +79,7 @@ def _daily_summary_stats(payload, date: str) -> dict:
 
 def _weight_stats(payload, date: str) -> dict:
     grams = _dig(payload, "dateWeightList", 0, "weight")
-    return {"weight_kg": grams / 1000} if isinstance(grams, (int, float)) else {}
+    return {"weight_kg": grams / 1000} if _number(grams) else {}
 
 
 def _parser(source: str, stats: Callable[[object, str], dict]):
@@ -143,7 +149,15 @@ def fetch_wellness(client, archive: Archive, conn, *, now: str, since: str | Non
             failures[source] = 0
             if not body:
                 continue
-            rec = WellnessRecord("garmin", source, date, now, archive.put_blob(body), None,
+            sha = archive.put_blob(body)
+            try:
+                json.loads(body)
+            except ValueError:
+                # a later non-JSON 200 must not replace the day's stored input
+                warnings.warn(f"wellness endpoint {source} returned invalid JSON for {date}; "
+                              "archived, not applied")
+                continue
+            rec = WellnessRecord("garmin", source, date, now, sha, None,
                                  {"kind": "garmin_api", "path": path})
             archive.put_wellness(rec)
             records.append(rec)
