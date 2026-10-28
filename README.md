@@ -152,6 +152,28 @@ Each run also re-checks the last 30 days of the Garmin list:
   previous record, and a new one is retried on the next run while it is still
   inside the window.
 
+### Wellness endpoints
+
+After the activities are stored, each run also fetches one response per day
+from these Personal API endpoints and stores it in the archive and the
+database's `daily_stats` (wellness is stored, never published): `daily_summary`,
+`sleep`, `hrv`, `body_battery`, `stress`, `steps`, `heart_rate`, `spo2` and
+`weight`. The responses of `daily_summary`, `sleep`, `hrv`, `weight` and `spo2`
+also fill typed `daily_stats` columns; the others are kept raw only.
+
+- The window starts 7 days before the last stored day and ends today. On the
+  first run it is the last 30 days; until an endpoint has returned data, every
+  run fetches those 30 days again.
+- `--wellness-since YYYY-MM-DD` starts the window at that date instead, for a
+  backfill.
+- An endpoint that fails 3 times in a row is skipped for the rest of the run
+  (with a warning). A rejected key still exits with code 3, after the
+  activities have been stored.
+- The typed field names (`restingHeartRate`, `dailySleepDTO.sleepTimeSeconds`
+  and so on) follow the unofficial `garminconnect` payloads and are unverified
+  until measured against real responses. The raw responses are always archived,
+  so a corrected mapping only needs a rebuild.
+
 ### CI
 
 `.github/workflows/fetch-garmin.yml` runs daily: fetch via the Personal API →
