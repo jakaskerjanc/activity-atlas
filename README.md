@@ -50,6 +50,10 @@ deleted; nothing is removed. Exports are ordered by when they were made (their
 newest file's date), so importing an older export never replaces newer data or
 marks anything deleted.
 
+The Garmin import also stores the export's monitoring FITs (all-day heart
+rate, stress, respiration and resting HR) as wellness data in the same
+database. That data is not published.
+
 Run Strava first, then Garmin. Each provider record joins an existing
 activity when their time ranges overlap by at least 50% of the shorter range
 (or, when either side has no elapsed time, when their starts are within
