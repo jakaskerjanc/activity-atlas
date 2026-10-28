@@ -38,7 +38,10 @@ class DayPart:
     utc_offset_s: int | None
 
 
-DayParser = Callable[[bytes, WellnessRecord], dict[str, DayPart]]   # local date -> part
+# local date -> part. A parser may depend only on the bytes and the record's
+# provider, source, key and file_name: an input stored by an earlier call is
+# re-parsed from a stub record with an empty fetched_at and origin.
+DayParser = Callable[[bytes, WellnessRecord], dict[str, DayPart]]
 
 _PARSERS: dict[str, DayParser] = {}
 
@@ -117,14 +120,19 @@ def _recompute_day(conn, day: str, parts: list[tuple[str, DayPart]], columns: li
         for col, v in p.stats.items():
             if stats[col] is None:
                 stats[col] = v
+    # several inputs of one source merge like the stats: the earlier input
+    # wins per field and a None never overwrites a value
     raw: dict[str, object] = {}
     for source, p in parts:
         if p.raw is None:
             continue
         if isinstance(raw.get(source), dict) and isinstance(p.raw, dict):
-            raw[source] = {**raw[source], **p.raw}
+            merged = raw[source]
+            for k, v in p.raw.items():
+                if merged.get(k) is None:
+                    merged[k] = v
         else:
-            raw.setdefault(source, p.raw)
+            raw.setdefault(source, dict(p.raw) if isinstance(p.raw, dict) else p.raw)
     conn.execute(f"INSERT INTO daily_stats (date, {', '.join(columns)}, raw) "
                  f"VALUES ({', '.join('?' * (len(columns) + 2))})",
                  (day, *(stats[c] for c in columns),
