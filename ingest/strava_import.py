@@ -9,7 +9,7 @@ import os
 import warnings
 from datetime import datetime, timezone
 
-from . import db, engine
+from . import engine
 from .archive import Archive, open_archive
 from .export_reader import ExportReader, archive_export, now_iso
 from .merge import iso
@@ -129,7 +129,7 @@ class StravaImporter:
         finally:
             export.close()
 
-        conn = db.open_db(self.db_path)
+        conn = engine.open_for_write(self.db_path, self.archive, now=self.now)
         try:
             records = [r for r in latest(self.archive.list_records())
                        if r.provider == "strava" and r.provider_activity_id in seen]

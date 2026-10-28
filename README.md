@@ -61,6 +61,20 @@ Ongoing incremental fetch from the Garmin Connect Personal API
 (`ingest/garmin_fetch.py`) keeps the database current after the backfill — see
 [Live Garmin fetch](#live-garmin-fetch).
 
+## Rebuild
+
+```bash
+npm run rebuild -- [--db data/activities.sqlite] [--archive file://data/archive]
+```
+
+Rebuilds the database from the archive's source records. Each activity keeps
+its ID: the rebuild carries over only the identity of each provider record
+(which activity it belongs to, manual pins, deletions) and the hidden flags,
+and re-derives everything else. Rebuilding twice gives the same rows. The
+importers and the fetch run a rebuild by themselves when the database has an
+older v2 schema. They refuse a v1 database (exit code 4): import fresh exports
+into a new database instead.
+
 ## Live Garmin fetch
 
 `ingest/garmin_fetch.py` pulls new activities through Garmin's official

@@ -12,7 +12,7 @@ import zipfile
 from datetime import datetime, timezone
 from typing import NoReturn
 
-from . import db, engine
+from . import engine
 from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey
@@ -222,7 +222,7 @@ class GarminFetcher:
 
     def run(self) -> dict[str, int]:
         client = self.authenticate()
-        conn = db.open_db(self.db_path)
+        conn = engine.open_for_write(self.db_path, self.archive, now=self.now)
         try:
             hw = self.high_water(conn)
             after_epoch = int(datetime.fromisoformat(hw).timestamp()) if hw else 0
