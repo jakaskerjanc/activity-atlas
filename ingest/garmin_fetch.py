@@ -3,18 +3,19 @@ activity file, writes a source record per activity, and applies them through
 the engine. See docs/2026-10-24-garmin-personal-api-design.md."""
 import argparse
 import io
+import json
 import os
 import sys
 import time
 import warnings
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 
-from . import engine
+from . import engine, merge
 from .archive import Archive, open_archive
 from .export_reader import now_iso
-from .garmin_api import GarminAuthError, GarminPersonalApi, MissingApiKey, parse_activity_list
+from .garmin_api import GarminApiError, GarminAuthError, GarminPersonalApi, MissingApiKey, parse_activity_list
 from .model import REPORTED_KEYS, SourceActivity
 from .normalize import canonical_type
 from .parse import ParsedFile
@@ -49,18 +50,6 @@ def extract_activity_file(data: bytes) -> tuple[str, bytes]:
                 if name.lower().endswith(ext):
                     return os.path.basename(name), zf.read(name)
     raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
-
-
-def has_gps_hint(item: dict) -> bool:
-    """True when the activity is worth downloading for geometry.
-
-    Older payloads carry hasPolyline; the live Personal API DTO does not, so
-    fall back to the start coordinates (null for indoor activities).
-    """
-    if item.get("hasPolyline"):
-        return True
-    return (item.get("startLatitude") is not None
-            and item.get("startLongitude") is not None)
 
 
 # DTO fields in metres and seconds (no scaling). activityName,
@@ -116,7 +105,13 @@ engine.register("garmin_api", record_to_source)
 
 
 PAGE_SIZE = 100
+RECHECK_DAYS = 30
 MAX_CONSECUTIVE_FAILURES = 3
+
+
+def has_no_file(error: Exception) -> bool:
+    """True when a download failed because the activity has no file."""
+    return isinstance(error, ValueError) or (isinstance(error, GarminApiError) and error.status == 404)
 
 
 def auth_rejected(error: Exception) -> NoReturn:
@@ -168,7 +163,7 @@ class GarminFetcher:
         row = conn.execute("SELECT MAX(start_time) FROM activity_sources WHERE provider='garmin'").fetchone()
         return row[0] if row and row[0] else None
 
-    def _list(self, client, after_epoch: int) -> list[tuple[dict, str]]:
+    def _list(self, client, cutoff_epoch: int) -> list[tuple[dict, str]]:
         """[(item, sha of its list page)], newest first, archiving every page."""
         items, offset = [], 0
         while True:
@@ -179,58 +174,89 @@ class GarminFetcher:
             sha = self.archive.put_blob(body)
             items.extend((item, sha) for item in page)
             oldest = gmt_to_epoch(page[-1]["startTimeGMT"])   # newest-first list
-            if len(page) < self.page_size or oldest <= after_epoch:
+            if len(page) < self.page_size or oldest <= cutoff_epoch:
                 break
             offset += self.page_size
             time.sleep(self.delay_s)
         return items
 
-    def _records(self, client, after_epoch: int) -> list[SourceRecord]:
+    @staticmethod
+    def _is_unchanged(conn, item: dict) -> bool:
+        """True when the stored record's list DTO equals the listed one."""
+        row = conn.execute(
+            "SELECT summary_json FROM activity_sources WHERE provider='garmin' AND provider_activity_id=?",
+            (str(item["activityId"]),)).fetchone()
+        return row is not None and json.loads(row["summary_json"]) == item
+
+    def _records(self, client, conn, items: list[tuple[dict, str]], cutoff_epoch: int) -> list[SourceRecord]:
+        """A record for every new or changed item past the cutoff, with its
+        activity file when it has one. A download that fails writes nothing,
+        so the item is retried next run while it stays inside the window."""
         records, failures = [], 0
-        for item, list_sha in self._list(client, after_epoch):
-            if gmt_to_epoch(item["startTimeGMT"]) <= after_epoch:
+        for item, list_sha in items:
+            if gmt_to_epoch(item["startTimeGMT"]) <= cutoff_epoch or self._is_unchanged(conn, item):
                 continue
             origin = {"kind": "garmin_api", "list_sha": list_sha, "zip_sha": None}
             file_sha = file_name = None
-            if has_gps_hint(item):
-                time.sleep(self.delay_s)
-                try:
-                    data = client.download_activity(item["activityId"])
-                    origin["zip_sha"] = self.archive.put_blob(data)
-                    file_name, raw = extract_activity_file(data)
-                    file_sha = self.archive.put_blob(raw)
-                    failures = 0
-                except GarminAuthError:
-                    raise          # the key died; retrying the page won't help
-                except Exception as e:
+            time.sleep(self.delay_s)
+            try:
+                data = client.download_activity(item["activityId"])
+                origin["zip_sha"] = self.archive.put_blob(data)
+                file_name, raw = extract_activity_file(data)
+                file_sha = self.archive.put_blob(raw)
+                failures = 0
+            except GarminAuthError:
+                raise          # the key died; retrying the page won't help
+            except Exception as e:
+                if not has_no_file(e):
                     failures += 1
                     warnings.warn(f"download failed for {item['activityId']}: {e}")
                     if failures >= MAX_CONSECUTIVE_FAILURES:
                         warnings.warn("consecutive download failures; stopping run")
                         break
-                    # Don't store a GPS activity without its file. It is retried
-                    # next run only while it stays above the Garmin high-water
-                    # mark; a newer stored Garmin activity moves the mark past it
-                    # and the failed item is then missed.
                     continue
+                # A manual activity has no file (404), or its ZIP holds none.
+                # Keep it without streams; its unchanged DTO won't retry it.
+                failures = 0
             rec = SourceRecord("garmin", str(item["activityId"]), self.now, item,
                                file_sha, file_name, origin)
             self.archive.put_record(rec)
             records.append(rec)
         return records
 
+    def _mark_deleted(self, conn, items: list[tuple[dict, str]]) -> int:
+        """Mark Garmin activities in the re-check window that the list no
+        longer has as deleted; activities listed again are undeleted."""
+        now = datetime.fromisoformat(self.now)
+        start, end = merge.iso(now - timedelta(days=RECHECK_DAYS)), merge.iso(now)
+        lo, hi = int((now - timedelta(days=RECHECK_DAYS)).timestamp()), int(now.timestamp())
+        seen = {str(item["activityId"]) for item, _ in items
+                if lo <= gmt_to_epoch(item["startTimeGMT"]) <= hi}
+        if not seen and conn.execute(
+                "SELECT 1 FROM activity_sources WHERE provider='garmin' AND deleted_at IS NULL "
+                "AND start_time >= ? AND start_time <= ?", (start, end)).fetchone():
+            warnings.warn(f"re-check listed no Garmin activities in the last {RECHECK_DAYS} days; "
+                          "marking nothing deleted")
+            return 0
+        return engine.mark_missing_deleted(conn, "garmin", seen, start, end, now=self.now)
+
     def run(self) -> dict[str, int]:
         client = self.authenticate()
         conn = engine.open_for_write(self.db_path, self.archive, now=self.now)
         try:
             hw = self.high_water(conn)
-            after_epoch = int(datetime.fromisoformat(hw).timestamp()) if hw else 0
-            records = self._records(client, after_epoch)
+            cutoff_epoch = 0
+            if hw:
+                recheck = int((datetime.fromisoformat(self.now) - timedelta(days=RECHECK_DAYS)).timestamp())
+                cutoff_epoch = min(int(datetime.fromisoformat(hw).timestamp()), recheck)
+            items = self._list(client, cutoff_epoch)
+            records = self._records(client, conn, items, cutoff_epoch)
+            deleted = self._mark_deleted(conn, items)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
         finally:
             conn.close()
-        return counts
+        return {**counts, "deleted": deleted}
 
 
 def main():
