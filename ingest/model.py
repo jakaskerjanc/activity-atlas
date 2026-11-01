@@ -29,3 +29,4 @@ class SourceActivity:
     file_sha256: str | None
     parsed: "ParsedFile | None"
     fetched_at: str
+    observed_at: str | None = None  # when the data was observed (an export's as_of); None = fetched_at

@@ -134,12 +134,14 @@ class StravaImporter:
 
         conn = engine.open_for_write(self.db_path, self.archive, now=self.now)
         try:
-            records = [r for r in latest(self.archive.list_records())
+            archived = self.archive.list_records()
+            records = [r for r in latest(archived)
                        if r.provider == "strava" and r.provider_activity_id in seen]
             # Deletions first: a re-upload under a new ID can then join the
             # activity its deleted original belonged to.
             if starts and not older:   # an older export cannot say what was deleted since
-                engine.mark_missing_deleted(conn, "strava", seen, iso(min(starts)), iso(max(starts)), now=self.now)
+                engine.mark_missing_deleted(conn, "strava", seen, iso(min(starts)), iso(max(starts)), now=self.now,
+                                            as_of=made, first_observed=engine.first_observed(archived, "strava"))
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
         finally:

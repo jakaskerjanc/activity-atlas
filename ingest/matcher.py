@@ -97,7 +97,7 @@ def reconcile(conn, src: SourceActivity, *, now: str) -> str:
         (src.provider, src.provider_activity_id)).fetchone()
     if known is not None:
         merge.write_source(conn, src, known["activity_id"], now=now)
-        if known["deleted_at"] and _after(src.fetched_at, known["deleted_at"]):
+        if known["deleted_at"] and _after(src.observed_at or src.fetched_at, known["deleted_at"]):
             conn.execute("UPDATE activity_sources SET deleted_at=NULL WHERE provider=? AND provider_activity_id=?",
                          (src.provider, src.provider_activity_id))
         merge.recompute_activity(conn, known["activity_id"])
