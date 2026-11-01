@@ -100,9 +100,8 @@ Set the secret without putting the key in shell history:
 gh secret set GARMIN_PERSONAL_API_KEY    # paste the key at the prompt
 ```
 
-Upgrading from the old scraper? Delete the now-unused `GARMIN_TOKEN` secret.
-`GH_PAT` needs only **contents: write**; its `secrets: write` permission is no
-longer needed.
+The workflow no longer writes any secrets, so `GH_PAT` needs no `secrets: write`
+permission.
 
 ### Renewing the key
 
