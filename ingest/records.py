@@ -5,6 +5,7 @@ an API day). The database is rebuilt from these."""
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
 from typing import Iterable
 
 
@@ -42,6 +43,19 @@ class SourceRecord:
     @staticmethod
     def from_json(data: bytes) -> "SourceRecord":
         return SourceRecord(**json.loads(data))
+
+
+# An export's as_of comes from zip member times, which are local time read as
+# UTC: the real moment lies within this margin of it (UTC-12 to UTC+14).
+EXPORT_CLOCK_MARGIN = timedelta(hours=14)
+
+
+def earliest_observed(r: SourceRecord) -> str:
+    """The earliest real (UTC) moment the record's data may have been
+    observed: an export's as_of less EXPORT_CLOCK_MARGIN, else fetched_at."""
+    if not r.as_of:
+        return r.fetched_at
+    return (datetime.fromisoformat(r.as_of) - EXPORT_CLOCK_MARGIN).isoformat()
 
 
 def recency(r: SourceRecord) -> tuple[str, str, str]:
