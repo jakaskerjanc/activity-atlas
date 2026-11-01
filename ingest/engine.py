@@ -2,6 +2,7 @@
 importers, the Garmin fetch and rebuilds: parse file -> normalize to
 SourceActivity -> match -> recompute."""
 import importlib
+from datetime import datetime
 import sys
 import warnings
 from typing import Callable, Iterable
@@ -42,7 +43,9 @@ def to_source(rec: SourceRecord, archive: Archive) -> SourceActivity:
             parsed = parse_bytes(rec.file_name, archive.get_blob(rec.file_sha256))
         except Exception as e:  # any corrupt or truncated file: keep the activity without streams
             warnings.warn(f"unreadable activity file {rec.file_name}: {e}")
-    return _mapper(rec.origin["kind"])(rec, parsed)
+    src = _mapper(rec.origin["kind"])(rec, parsed)
+    src.observed_at = rec.as_of or rec.fetched_at
+    return src
 
 
 def _raw_file(conn, archive, sha, kind, provider, ref, name, fetched_at):
@@ -91,26 +94,49 @@ def apply_records(conn, archive: Archive, records: Iterable[SourceRecord], *, no
     return counts
 
 
-def mark_missing_deleted(conn, provider: str, seen_ids: set[str], start: str, end: str, *, now: str) -> int:
-    """A newer export that lacks a record within its date range deleted it:
-    set deleted_at on such records and recompute their activities. Records
-    seen again are undeleted. Returns the number newly deleted."""
+def first_observed(records: Iterable[SourceRecord], provider: str) -> dict[str, str]:
+    """When each of the provider's records was first observed: the earliest
+    as_of (else fetched_at) across all of its archived records."""
+    out: dict[str, str] = {}
+    for r in records:
+        if r.provider == provider:
+            seen = r.as_of or r.fetched_at
+            if r.provider_activity_id not in out or _before(seen, out[r.provider_activity_id]):
+                out[r.provider_activity_id] = seen
+    return out
+
+
+def _before(a: str, b: str) -> bool:
+    return datetime.fromisoformat(a) < datetime.fromisoformat(b)
+
+
+def mark_missing_deleted(conn, provider: str, seen_ids: set[str], start: str, end: str, *, now: str,
+                         as_of: str | None = None, first_observed: dict[str, str] | None = None) -> int:
+    """A list or export observed at `as_of` (default `now`) that lacks a record
+    within its date range deleted it: set deleted_at to `as_of` on such
+    records and recompute their activities. Records first observed after
+    `as_of` are left alone, since the list could not have had them. Records
+    seen again are undeleted, unless the deletion was observed later than
+    `as_of`. Returns the number newly deleted."""
+    when = as_of or now
+    first_observed = first_observed or {}
     seen_ids = set(seen_ids)
     touched = set()
     for r in conn.execute("SELECT provider_activity_id, activity_id, deleted_at FROM activity_sources "
                           "WHERE provider=?", (provider,)).fetchall():
         pid = r["provider_activity_id"]
-        if pid in seen_ids and r["deleted_at"] is not None:
+        if pid in seen_ids and r["deleted_at"] is not None and _before(r["deleted_at"], when):
             conn.execute("UPDATE activity_sources SET deleted_at=NULL WHERE provider=? AND provider_activity_id=?",
                          (provider, pid))
             touched.add(r["activity_id"])
     rows = conn.execute(
         "SELECT provider_activity_id, activity_id FROM activity_sources WHERE provider=? AND deleted_at IS NULL "
         "AND start_time >= ? AND start_time <= ?", (provider, start, end)).fetchall()
-    missing = [r for r in rows if r["provider_activity_id"] not in seen_ids]
+    missing = [r for r in rows if r["provider_activity_id"] not in seen_ids
+               and not _before(when, first_observed.get(r["provider_activity_id"], when))]
     for r in missing:
         conn.execute("UPDATE activity_sources SET deleted_at=? WHERE provider=? AND provider_activity_id=?",
-                     (now, provider, r["provider_activity_id"]))
+                     (when, provider, r["provider_activity_id"]))
         touched.add(r["activity_id"])
     for aid in sorted(touched):
         merge.recompute_activity(conn, aid)

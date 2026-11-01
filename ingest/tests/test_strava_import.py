@@ -108,11 +108,13 @@ def test_newer_export_missing_activity_marks_it_deleted(tmp_path):
     r1 = _row(111, "Aug 1, 2026, 6:30:00 AM", "A", "Run")
     r2 = _row(222, "Aug 2, 2026, 6:30:00 AM", "B", "Run")
     r3 = _row(333, "Aug 3, 2026, 6:30:00 AM", "C", "Run")
-    StravaImporter(_zip(tmp_path, HEADER + r1 + r2, {}, "e1.zip"), dbp, arch, now="2026-10-01T10:00:00+00:00").run()
-    StravaImporter(_zip(tmp_path, HEADER + r1 + r3, {}, "e2.zip"), dbp, arch, now="2026-10-20T10:00:00+00:00").run()
+    StravaImporter(_zip(tmp_path, HEADER + r1 + r2, {}, "e1.zip", made=(2026, 9, 30, 0, 0, 0)), dbp, arch,
+                   now="2026-10-01T10:00:00+00:00").run()
+    StravaImporter(_zip(tmp_path, HEADER + r1 + r3, {}, "e2.zip", made=(2026, 10, 19, 0, 0, 0)), dbp, arch,
+                   now="2026-10-20T10:00:00+00:00").run()
     conn = db.connect(dbp)
     src = conn.execute("SELECT deleted_at FROM activity_sources WHERE provider_activity_id='222'").fetchone()
-    assert src["deleted_at"] == "2026-10-20T10:00:00+00:00"
+    assert src["deleted_at"] == "2026-10-19T00:00:00+00:00"   # when the export saw it gone, not the import
     assert _activity_for(conn, "strava", "222")["visible"] == 0
     assert _activity_for(conn, "strava", "111")["visible"] == 1
 
