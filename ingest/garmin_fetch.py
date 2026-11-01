@@ -187,6 +187,20 @@ class GarminFetcher:
             (str(item["activityId"]),)).fetchone()
         return row is not None and json.loads(row["summary_json"]) == item
 
+    @staticmethod
+    def _previous_file(conn, item: dict) -> tuple[str | None, str | None]:
+        """The stored activity file of an item whose re-download returned
+        none (404 or a ZIP without one), so an edit doesn't drop its streams."""
+        row = conn.execute(
+            "SELECT s.file_sha256, r.original_name FROM activity_sources s "
+            "LEFT JOIN raw_files r ON r.sha256 = s.file_sha256 "
+            "WHERE s.provider='garmin' AND s.provider_activity_id=? AND s.file_sha256 IS NOT NULL",
+            (str(item["activityId"]),)).fetchone()
+        if row is None or not row["original_name"]:
+            return None, None
+        warnings.warn(f"re-download of {item['activityId']} returned no activity file; keeping its previous file")
+        return row["file_sha256"], row["original_name"]
+
     def _records(self, client, conn, items: list[tuple[dict, str]], cutoff_epoch: int) -> list[SourceRecord]:
         """A record for every new or changed item past the cutoff, with its
         activity file when it has one. A download that fails writes nothing,
@@ -221,6 +235,8 @@ class GarminFetcher:
                 # A manual activity has no file (404). Keep it without streams;
                 # its unchanged DTO won't retry it.
                 failures = 0
+            if file_sha is None:
+                file_sha, file_name = self._previous_file(conn, item)
             rec = SourceRecord("garmin", str(item["activityId"]), self.now, item,
                                file_sha, file_name, origin)
             self.archive.put_record(rec)
