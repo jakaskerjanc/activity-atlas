@@ -161,11 +161,15 @@ database's `daily_stats` (wellness is stored, never published): `daily_summary`,
 `weight`. The responses of `daily_summary`, `sleep`, `hrv`, `weight` and `spo2`
 also fill typed `daily_stats` columns; the others are kept raw only.
 
-- The window starts 7 days before the last stored day and ends today. On the
-  first run it is the last 30 days; until an endpoint has returned data, every
-  run fetches those 30 days again.
-- `--wellness-since YYYY-MM-DD` starts the window at that date instead, for a
-  backfill.
+- Each endpoint's window starts 7 days before its own last stored day and ends
+  today, so days an endpoint missed while it was skipped are fetched on the
+  next run. On the first run it is the last 30 days. An endpoint with nothing
+  stored, or far behind the others, reaches back at most 30 days before their
+  window; a gap larger than that is reported with the `--wellness-since` date
+  that fills it.
+- `--wellness-since YYYY-MM-DD` starts every window at that date instead, for a
+  backfill. The database is saved every 30 days of data, so an interrupted
+  backfill keeps its progress.
 - An endpoint that fails 3 times in a row is skipped for the rest of the run
   (with a warning). A rejected key still exits with code 3, after the
   activities have been stored.

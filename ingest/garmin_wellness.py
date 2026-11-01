@@ -17,6 +17,7 @@ from .wellness import DayPart, register
 WELLNESS_REVISE_DAYS = 7
 WELLNESS_FIRST_DAYS = 30
 MAX_CONSECUTIVE_FAILURES = 3
+WELLNESS_BATCH_DAYS = 30
 
 # source -> date -> (path, params)
 ENDPOINTS: dict[str, Callable[[str], tuple[str, dict | None]]] = {
@@ -104,33 +105,56 @@ for _source in ENDPOINTS:    # the rest are raw only
     register(_source, _parser(_source, _STATS.get(_source, lambda payload, date: {})))
 
 
-def _start_date(conn, today: Date, since: str | None) -> Date:
+def _start_dates(conn, today: Date, since: str | None) -> dict[str, Date]:
+    """The first date to fetch for each endpoint. ``since`` applies to all.
+    Otherwise an endpoint revises the WELLNESS_REVISE_DAYS before its own last
+    stored day, so days it missed while skipped are fetched again. An endpoint
+    with nothing stored, or far behind, reaches back at most WELLNESS_FIRST_DAYS
+    before the window of the endpoints that are current."""
     if since:
-        return Date.fromisoformat(since)
+        return dict.fromkeys(ENDPOINTS, Date.fromisoformat(since))
     marks = ", ".join("?" * len(ENDPOINTS))
-    last = conn.execute(f"SELECT MAX(date) FROM wellness_inputs WHERE provider='garmin' AND source IN ({marks})",
-                        tuple(ENDPOINTS)).fetchone()[0]
-    if last:
-        return Date.fromisoformat(last) - timedelta(days=WELLNESS_REVISE_DAYS)
-    return today - timedelta(days=WELLNESS_FIRST_DAYS)
+    last = {source: Date.fromisoformat(d) for source, d in conn.execute(
+        f"SELECT source, MAX(date) FROM wellness_inputs WHERE provider='garmin' AND source IN ({marks}) "
+        "GROUP BY source", tuple(ENDPOINTS))}
+    if not last:
+        return dict.fromkeys(ENDPOINTS, today - timedelta(days=WELLNESS_FIRST_DAYS))
+    revise = timedelta(days=WELLNESS_REVISE_DAYS)
+    floor = max(last.values()) - revise - timedelta(days=WELLNESS_FIRST_DAYS)
+    starts = {}
+    for source in ENDPOINTS:
+        if source not in last:
+            starts[source] = floor
+            continue
+        starts[source] = max(last[source] - revise, floor)
+        if last[source] - revise < floor:
+            warnings.warn(f"wellness {source} was last stored for {last[source]}; fetching from {floor}. "
+                          f"Run with --wellness-since {last[source] - revise} to fill the gap")
+    return starts
 
 
 def fetch_wellness(client, archive: Archive, conn, *, now: str, since: str | None = None,
-                   delay_s: float = 1.0) -> list[WellnessRecord]:
-    """Fetch every endpoint for each date from the start (``since``, else the
-    last stored day minus WELLNESS_REVISE_DAYS, else WELLNESS_FIRST_DAYS ago)
+                   delay_s: float = 1.0,
+                   on_batch: Callable[[list[WellnessRecord]], None] | None = None) -> list[WellnessRecord]:
+    """Fetch every endpoint for each date from its start (see _start_dates)
     through today, archive each response and return its record. An endpoint
     that fails 3 times in a row is skipped for the rest of the run; an auth
-    error aborts."""
+    error aborts. ``on_batch`` receives the records of every
+    WELLNESS_BATCH_DAYS days as they complete, and the rest at the end."""
     today = datetime.fromisoformat(now).astimezone(timezone.utc).date()
-    day = _start_date(conn, today, since)
+    starts = _start_dates(conn, today, since)
+    day = min(starts.values())
     failures = dict.fromkeys(ENDPOINTS, 0)
-    records = []
+    records, batch, batch_days = [], [], 0
     while day <= today:
-        date = day.isoformat()
+        current, date = day, day.isoformat()
         day += timedelta(days=1)
+        if on_batch and batch_days == WELLNESS_BATCH_DAYS:
+            on_batch(batch)
+            batch, batch_days = [], 0
+        batch_days += 1
         for source, endpoint in ENDPOINTS.items():
-            if failures[source] >= MAX_CONSECUTIVE_FAILURES:
+            if current < starts[source] or failures[source] >= MAX_CONSECUTIVE_FAILURES:
                 continue
             path, params = endpoint(date)
             try:
@@ -161,4 +185,7 @@ def fetch_wellness(client, archive: Archive, conn, *, now: str, since: str | Non
                                  {"kind": "garmin_api", "path": path})
             archive.put_wellness(rec)
             records.append(rec)
+            batch.append(rec)
+    if on_batch:
+        on_batch(batch)
     return records

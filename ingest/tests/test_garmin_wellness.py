@@ -143,6 +143,42 @@ def test_failing_endpoint_is_skipped_after_three_failures(arch):
     assert sum("hrv" in m for m in messages) == 4      # three failures, then the skip notice
 
 
+SLEEP = "/sleep-service/sleep/dailySleep"
+
+
+def test_endpoint_skipped_in_one_run_catches_up_in_the_next(arch):
+    conn = fresh()
+    down = {"2026-09-27", "2026-09-28", "2026-09-29"}   # sleep fails these, then is skipped for the run
+
+    def sleep(p):
+        if p["date"] in down:
+            raise GarminApiError("x", status=500)
+        return b'{"dailySleepDTO": {}}'
+    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"], restingHeartRate=52), SLEEP: sleep})
+    with pytest.warns(UserWarning):
+        apply_wellness(conn, arch, _fetch(first, arch, conn))
+    assert not any(c == SLEEP and p["date"] == "2026-09-30" for c, p in first.calls)
+
+    down.clear()
+    client = FakeClient({SLEEP: sleep})
+    _fetch(client, arch, conn, now="2026-10-28T10:00:00+00:00")
+    sleep_dates = sorted(p["date"] for c, p in client.calls if c == SLEEP)
+    assert sleep_dates[0] <= "2026-09-27" and sleep_dates[-1] == "2026-10-28"
+    assert _dates(client, SUMMARY)[0] == "2026-10-20"      # endpoints that are current still revise 7 days
+
+
+def test_endpoint_far_behind_is_capped_with_a_warning(arch):
+    conn = fresh()
+    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"]),
+                        SLEEP: lambda p: b"{}" if p["date"] == "2026-08-01" else b""})
+    apply_wellness(conn, arch, _fetch(first, arch, conn, since="2026-08-01"))
+    client = FakeClient()
+    with pytest.warns(UserWarning, match="sleep.*--wellness-since"):
+        _fetch(client, arch, conn, now="2026-10-28T10:00:00+00:00")
+    sleep_dates = sorted(p["date"] for c, p in client.calls if c == SLEEP)
+    assert sleep_dates[0] == "2026-09-20"     # 30 days before the 7-day revise window of the others
+
+
 def test_success_resets_the_failure_count(arch):
     day = lambda d: f"/hrv-service/hrv/2026-10-{d:02d}"
     wellness = {day(d): GarminApiError("x", status=500) for d in (20, 21, 23, 24)}
