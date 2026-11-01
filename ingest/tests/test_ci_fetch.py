@@ -33,11 +33,7 @@ def test_dry_run_commits_and_pushes_when_db_changed(tmp_path):
     repo = _repo(tmp_path)
     env = {**os.environ, "DRY_RUN": "1",
            "PYTHON_BIN": _stub_python(
-               tmp_path,
-               'printf NEWTOKEN > "$GARMIN_TOKEN_OUT"\n'
-               "printf x >> data/activities.sqlite\n"),
-           "GARMIN_TOKEN_OUT": str(tmp_path / "token.new"),
-           "GARMIN_TOKEN": "OLDTOKEN"}
+               tmp_path, "printf x >> data/activities.sqlite\n")}
     out = subprocess.run(["bash", SCRIPT], cwd=repo, env=env,
                          capture_output=True, text=True, check=True).stdout
     assert "DRY: git add data/activities.sqlite" in out
