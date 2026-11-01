@@ -12,7 +12,7 @@ from .archive import Archive
 from .model import SourceActivity
 from .parse import ParsedFile
 from .parse.dispatch import parse_bytes
-from .records import SourceRecord
+from .records import EXPORT_CLOCK_MARGIN, SourceRecord, earliest_observed
 
 Mapper = Callable[[SourceRecord, "ParsedFile | None"], SourceActivity]
 
@@ -44,7 +44,7 @@ def to_source(rec: SourceRecord, archive: Archive) -> SourceActivity:
         except Exception as e:  # any corrupt or truncated file: keep the activity without streams
             warnings.warn(f"unreadable activity file {rec.file_name}: {e}")
     src = _mapper(rec.origin["kind"])(rec, parsed)
-    src.observed_at = rec.as_of or rec.fetched_at
+    src.observed_at = earliest_observed(rec)   # undeletes only when surely after the deletion
     return src
 
 
@@ -95,12 +95,14 @@ def apply_records(conn, archive: Archive, records: Iterable[SourceRecord], *, no
 
 
 def first_observed(records: Iterable[SourceRecord], provider: str) -> dict[str, str]:
-    """When each of the provider's records was first observed: the earliest
-    as_of (else fetched_at) across all of its archived records."""
+    """By when each of the provider's records surely existed, on the export
+    clock (local time read as UTC): the earliest of its exports' as_of and
+    its API fetches' fetched_at plus EXPORT_CLOCK_MARGIN. Two exports share
+    a clock, so only a fetch needs the margin to compare with an export."""
     out: dict[str, str] = {}
     for r in records:
         if r.provider == provider:
-            seen = r.as_of or r.fetched_at
+            seen = r.as_of or (datetime.fromisoformat(r.fetched_at) + EXPORT_CLOCK_MARGIN).isoformat()
             if r.provider_activity_id not in out or _before(seen, out[r.provider_activity_id]):
                 out[r.provider_activity_id] = seen
     return out
@@ -117,15 +119,18 @@ def mark_missing_deleted(conn, provider: str, seen_ids: set[str], start: str, en
     records and recompute their activities. Records first observed after
     `as_of` are left alone, since the list could not have had them. Records
     seen again are undeleted, unless the deletion was observed later than
-    `as_of`. Returns the number newly deleted."""
+    `as_of`. An export's `as_of` is on the export clock (see first_observed),
+    so it undeletes only deletions dated before its earliest possible real
+    moment. Returns the number newly deleted."""
     when = as_of or now
+    surely_after = (datetime.fromisoformat(as_of) - EXPORT_CLOCK_MARGIN).isoformat() if as_of else now
     first_observed = first_observed or {}
     seen_ids = set(seen_ids)
     touched = set()
     for r in conn.execute("SELECT provider_activity_id, activity_id, deleted_at FROM activity_sources "
                           "WHERE provider=?", (provider,)).fetchall():
         pid = r["provider_activity_id"]
-        if pid in seen_ids and r["deleted_at"] is not None and _before(r["deleted_at"], when):
+        if pid in seen_ids and r["deleted_at"] is not None and _before(r["deleted_at"], surely_after):
             conn.execute("UPDATE activity_sources SET deleted_at=NULL WHERE provider=? AND provider_activity_id=?",
                          (provider, pid))
             touched.add(r["activity_id"])

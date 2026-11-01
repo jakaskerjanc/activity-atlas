@@ -59,3 +59,25 @@ def test_export_does_not_delete_an_activity_first_seen_after_it_was_made(tmp_pat
     export = _export(tmp_path, [_summary(earlier), _summary(_list()[0])], made=(2026, 9, 15, 0, 0, 0))
     GarminImporter(export, dbp, arch, now="2026-09-22T10:00:00+00:00").run()
     assert _source(dbp, "5000002") == (None, 1)
+
+
+# Export zips carry local time read as UTC: an export made at 10:00 UTC in
+# UTC+2 says 12:00. Comparisons with real UTC fetch times leave a margin.
+
+def test_export_clock_skew_does_not_delete_an_activity_fetched_after_it(tmp_path):
+    dbp, arch = str(tmp_path / "a.sqlite"), LocalArchive(str(tmp_path / "arch"))
+    _fetch(dbp, arch, _list(), "2026-09-20T11:00:00+00:00")   # the gym synced after the export was made
+    earlier = dict(_list()[0], activityId=5000000, activityName="Earlier Walk",
+                   startTimeGMT="2026-09-10 08:00:00")
+    export = _export(tmp_path, [_summary(earlier), _summary(_list()[0])], made=(2026, 9, 20, 12, 0, 0))
+    GarminImporter(export, dbp, arch, now="2026-09-22T10:00:00+00:00").run()
+    assert _source(dbp, "5000002") == (None, 1)
+
+
+def test_export_clock_skew_does_not_bring_back_a_later_fetched_deletion(tmp_path):
+    dbp, arch = str(tmp_path / "a.sqlite"), LocalArchive(str(tmp_path / "arch"))
+    _fetch(dbp, arch, _list(), "2026-09-20T08:00:00+00:00")
+    _fetch(dbp, arch, _list()[:1], "2026-09-20T11:00:00+00:00")   # deleted after the export was made
+    export = _export(tmp_path, [_summary(i) for i in _list()], made=(2026, 9, 20, 12, 0, 0))
+    GarminImporter(export, dbp, arch, now="2026-09-22T10:00:00+00:00").run()
+    assert _source(dbp, "5000002") == ("2026-09-20T11:00:00+00:00", 0)
