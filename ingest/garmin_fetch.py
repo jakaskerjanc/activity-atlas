@@ -9,7 +9,7 @@ import sys
 import time
 import warnings
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import NoReturn
 
 from . import engine, merge
@@ -274,13 +274,24 @@ class GarminFetcher:
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
             # after the commit, so a wellness failure leaves the activities stored
-            wellness = fetch_wellness(client, self.archive, conn, now=self.now,
-                                      since=self.wellness_since, delay_s=self.delay_s)
-            wellness_days = apply_wellness(conn, self.archive, wellness)
-            conn.commit()
+            wellness_days = 0
+
+            def save(batch):    # per chunk of days, so an interrupted backfill keeps its progress
+                nonlocal wellness_days
+                wellness_days += apply_wellness(conn, self.archive, batch)
+                conn.commit()
+            fetch_wellness(client, self.archive, conn, now=self.now, since=self.wellness_since,
+                           delay_s=self.delay_s, on_batch=save)
         finally:
             conn.close()
         return {**counts, "deleted": deleted, "wellness_days": wellness_days}
+
+
+def _iso_date(value: str) -> str:
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a YYYY-MM-DD date: {value!r}") from None
 
 
 def main():
@@ -291,8 +302,8 @@ def main():
     ap.add_argument("--api-key-file", default=None,
                     help="Personal API key file (default: GARMIN_PERSONAL_API_KEY env, "
                          "then GARMIN_PERSONAL_API_KEY in the repo-root .env)")
-    ap.add_argument("--wellness-since", default=None, metavar="YYYY-MM-DD",
-                    help="fetch wellness data from this date (backfill); default: the last "
+    ap.add_argument("--wellness-since", default=None, metavar="YYYY-MM-DD", type=_iso_date,
+                    help="fetch wellness data from this date (backfill); default: each endpoint's last "
                          "stored day minus 7, or the last 30 days on the first run")
     args = ap.parse_args()
     f = GarminFetcher(args.db, open_archive(args.archive), key_file=args.api_key_file,

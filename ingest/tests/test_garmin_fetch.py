@@ -486,6 +486,34 @@ def test_main_passes_wellness_since(monkeypatch, tmp_path):
     assert seen["wellness_since"] == "2026-10-01"
 
 
+@pytest.mark.parametrize("bad", ["2026-13-01", "yesterday", "01.10.2026"])
+def test_main_rejects_a_malformed_wellness_since(monkeypatch, tmp_path, capsys, bad):
+    monkeypatch.setattr(gf, "GarminFetcher", lambda *a, **kw: pytest.fail("must not start a fetch"))
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite"),
+                                      "--wellness-since", bad])
+    with pytest.raises(SystemExit) as exc:
+        gf.main()
+    assert exc.value.code == 2 and "--wellness-since" in capsys.readouterr().err
+
+
+def test_backfill_keeps_the_days_saved_before_an_interruption(tmp_path):
+    client = FakeClient(_list(), _downloads())
+
+    def summary(p):
+        if p["startDate"] == "2026-10-20":
+            raise GarminAuthError("401 mid-backfill")
+        return json.dumps([{"calendarDate": p["startDate"], "totalSteps": 1000}]).encode()
+    client.wellness[WELLNESS_PATH] = summary
+    with pytest.raises(GarminAuthError):
+        _fetcher(tmp_path, client, wellness_since="2026-08-01").run()
+    conn = dbm.connect(str(tmp_path / "db.sqlite"))
+    try:
+        dates = [r[0] for r in conn.execute("SELECT date FROM daily_stats ORDER BY date")]
+    finally:
+        conn.close()
+    assert dates and dates[0] == "2026-08-01" and dates[-1] < "2026-10-20"
+
+
 def test_missing_key_exits_2(tmp_path, monkeypatch):
     monkeypatch.delenv("GARMIN_PERSONAL_API_KEY", raising=False)
     fetcher = gf.GarminFetcher(str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch")),
