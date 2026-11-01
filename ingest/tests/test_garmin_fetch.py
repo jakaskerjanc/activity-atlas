@@ -292,6 +292,27 @@ def test_recheck_changed_dto_updates_in_place(tmp_path):
     assert len(_record_files(tmp_path, 5000001)) == 2
 
 
+@pytest.mark.parametrize("no_file", [NO_FILE, _zip_with_only_text()], ids=["404", "zip-without-file"])
+def test_recheck_changed_dto_without_a_file_keeps_the_previous_file(tmp_path, no_file):
+    from ingest.rebuild import rebuild
+    _fetcher(tmp_path, FakeClient(_list(), _downloads()), NOW_IN).run()
+    before = _by_id(tmp_path, "5000001")
+    assert before["has_gps"] == 1 and before["polyline"]
+
+    renamed = _list()
+    renamed[0]["activityName"] = "Renamed"
+    with pytest.warns(UserWarning, match="keeping its previous file"):
+        _fetcher(tmp_path, FakeClient(renamed, {5000001: no_file, 5000002: _zip("indoor.fit")}),
+                 "2026-09-21T10:00:00+00:00").run()
+    run = _by_id(tmp_path, "5000001")
+    assert run["id"] == before["id"] and run["name"] == "Renamed"
+    assert (run["has_gps"], run["has_hr"], run["polyline"]) == (before["has_gps"], before["has_hr"], before["polyline"])
+
+    rebuild(str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch")), now="2026-09-22T10:00:00+00:00")
+    rebuilt = _by_id(tmp_path, "5000001")
+    assert rebuilt["name"] == "Renamed" and rebuilt["polyline"] == before["polyline"]
+
+
 def test_recheck_missing_activity_is_marked_deleted(tmp_path):
     _fetcher(tmp_path, FakeClient(_list(), _downloads()), NOW_IN).run()
     later = "2026-09-21T10:00:00+00:00"
