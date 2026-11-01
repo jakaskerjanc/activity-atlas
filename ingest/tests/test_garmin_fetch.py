@@ -455,7 +455,7 @@ def test_wellness_auth_error_keeps_activities(tmp_path):
 def test_run_applies_wellness_after_the_activities(tmp_path):
     client = FakeClient(_list(), _downloads())
     client.wellness[WELLNESS_PATH] = lambda p: (
-        b'[{"calendarDate": "2026-10-27", "totalSteps": 9000}]' if p["startDate"] == "2026-10-27" else b"")
+        b'{"data": [{"calendarDate": "2026-10-27", "movement": {"steps": {"value": 9000}}}]}' if p["startDate"] == "2026-10-27" else b"")
     assert _fetcher(tmp_path, client).run()["wellness_days"] == 1
     conn = dbm.connect(str(tmp_path / "db.sqlite"))
     try:
@@ -502,7 +502,7 @@ def test_backfill_keeps_the_days_saved_before_an_interruption(tmp_path):
     def summary(p):
         if p["startDate"] == "2026-10-20":
             raise GarminAuthError("401 mid-backfill")
-        return json.dumps([{"calendarDate": p["startDate"], "totalSteps": 1000}]).encode()
+        return json.dumps({"data": [{"calendarDate": p["startDate"], "movement": {"steps": {"value": 1000}}}]}).encode()
     client.wellness[WELLNESS_PATH] = summary
     with pytest.raises(GarminAuthError):
         _fetcher(tmp_path, client, wellness_since="2026-08-01").run()

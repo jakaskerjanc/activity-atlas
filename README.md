@@ -173,10 +173,14 @@ also fill typed `daily_stats` columns; the others are kept raw only.
 - An endpoint that fails 3 times in a row is skipped for the rest of the run
   (with a warning). A rejected key still exits with code 3, after the
   activities have been stored.
-- The typed field names (`restingHeartRate`, `dailySleepDTO.sleepTimeSeconds`
-  and so on) follow the unofficial `garminconnect` payloads and are unverified
-  until measured against real responses. The raw responses are always archived,
-  so a corrected mapping only needs a rebuild.
+- The typed field names were checked against live responses on 2026-11-01;
+  `ingest/tests/fixtures/garmin_wellness` holds those responses, trimmed and
+  with made-up numbers. The raw responses are always archived, so a corrected
+  mapping only needs a rebuild.
+- How far back the API serves data: daily values from the watch's first day
+  (2025-04-19), but the intraday series (heart rate through the day, hourly
+  SpO2, HRV readings) only for about the last 4 months. Days the fetch misses
+  for longer than that lose their intraday detail.
 
 ### CI
 

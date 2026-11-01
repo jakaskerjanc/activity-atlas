@@ -54,10 +54,9 @@ def extract_activity_file(data: bytes) -> tuple[str, bytes]:
     raise ValueError("no .fit/.tcx/.gpx file in the activity ZIP")
 
 
-# DTO fields in metres and seconds (no scaling). activityName,
-# activityType.typeKey, startTimeGMT, startTimeLocal, distance, duration,
-# movingDuration and elevationGain are verified; elevationLoss, averageHR,
-# maxHR and calories are mapped when present but their names are unverified.
+# DTO fields in metres and seconds (no scaling). Every mapped name, including
+# elevationLoss, averageHR, maxHR and calories, was checked against a live
+# DTO and its FIT session on 2026-11-01.
 _REPORTED = {"elevation_gain_m": "elevationGain", "elevation_loss_m": "elevationLoss",
              "avg_hr": "averageHR", "max_hr": "maxHR", "calories": "calories"}
 
