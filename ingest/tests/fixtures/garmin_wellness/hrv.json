@@ -1,0 +1,37 @@
+{
+ "hrvSummary": {
+  "calendarDate": "2026-10-30",
+  "weeklyAvg": 88,
+  "lastNightAvg": 40,
+  "lastNight5MinHigh": 14,
+  "baseline": {
+   "lowUpper": 75,
+   "balancedLow": 74,
+   "balancedUpper": 82,
+   "markerValue": 25.0
+  },
+  "status": "BALANCED",
+  "feedbackPhrase": "HRV_BALANCED_1",
+  "createTimeStamp": "2026-10-30T08:35:49.411"
+ },
+ "hrvReadings": [
+  {
+   "hrvValue": 48,
+   "readingTimeGMT": "2026-10-29T23:56:22.0",
+   "readingTimeLocal": "2026-10-30T00:56:22.0"
+  },
+  {
+   "hrvValue": 13,
+   "readingTimeGMT": "2026-10-30T00:01:22.0",
+   "readingTimeLocal": "2026-10-30T01:01:22.0"
+  }
+ ],
+ "startTimestampGMT": "2026-10-29T23:53:02.0",
+ "endTimestampGMT": "2026-10-30T08:06:22.0",
+ "startTimestampLocal": "2026-10-30T00:53:02.0",
+ "endTimestampLocal": "2026-10-30T09:06:22.0",
+ "sleepStartTimestampGMT": "2026-10-29T23:53:02.0",
+ "sleepEndTimestampGMT": "2026-10-30T08:11:02.0",
+ "sleepStartTimestampLocal": "2026-10-30T00:53:02.0",
+ "sleepEndTimestampLocal": "2026-10-30T09:11:02.0"
+}

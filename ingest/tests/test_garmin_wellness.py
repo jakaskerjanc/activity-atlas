@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import pytest
+from pathlib import Path
 
 from ingest import garmin_wellness as gw
 from ingest.archive import LocalArchive
@@ -38,8 +39,25 @@ def _dates(client, path):
     return sorted({p["startDate"] for c, p in client.calls if c == path})
 
 
-def _summary(date, **fields):
-    return json.dumps([{"calendarDate": date, **fields}]).encode()
+def _summary(date, resting_hr=None, **entry):
+    """A daily summary in the real v2 shape."""
+    return json.dumps({"data": [{"calendarDate": date, "heartRate": {"restingValue": resting_hr}, **entry}]}).encode()
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "garmin_wellness"
+
+
+def _fixture(name):
+    """A real API response for one day: ids removed, lists cut to 2, numbers made up."""
+    return (FIXTURES / f"{name}.json").read_bytes()
+
+
+def _one_day(day, bodies):
+    """Endpoint path -> body for ``day``; every other date gets no body."""
+    def serve(path, body):
+        return lambda params: body if day in path or day in (params or {}).values() else b""
+    paths = {source: gw.ENDPOINTS[source](day)[0] for source in bodies}
+    return {paths[source]: serve(paths[source], body) for source, body in bodies.items()}
 
 
 def test_first_run_fetches_30_days_of_every_endpoint(arch):
@@ -53,7 +71,7 @@ def test_first_run_fetches_30_days_of_every_endpoint(arch):
 
 def test_next_run_refetches_last_7_days(arch):
     conn = fresh()
-    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"], restingHeartRate=52)
+    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"], resting_hr=52)
                         if p["startDate"] == "2026-10-27" else b""})
     apply_wellness(conn, arch, _fetch(first, arch, conn))
     client = FakeClient()
@@ -72,56 +90,54 @@ def test_wellness_since_overrides_start(arch):
     assert dates[0] == "2026-10-01" and dates[-1] == "2026-10-29" and len(dates) == 29
 
 
-def test_daily_summary_maps_typed_columns_and_keeps_raw(arch):
-    conn = fresh()
-    payload = [{"calendarDate": "2026-10-27", "restingHeartRate": 52, "totalSteps": 12000}]
-    client = FakeClient({SUMMARY: lambda p: json.dumps(payload).encode() if p["startDate"] == "2026-10-27" else b""})
-    records = _fetch(client, arch, conn)
-    assert [(r.source, r.key) for r in records] == [("daily_summary", "2026-10-27")]
+def test_real_daily_summary_maps_typed_columns_and_keeps_raw(arch):
+    conn, day = fresh(), "2026-10-30"
+    records = _fetch(FakeClient(_one_day(day, {"daily_summary": _fixture("daily_summary")})), arch, conn, since=day,
+                     now="2026-10-30T10:00:00+00:00")
+    assert [(r.source, r.key) for r in records] == [("daily_summary", day)]
     assert records[0].origin == {"kind": "garmin_api", "path": SUMMARY}
     assert apply_wellness(conn, arch, records) == 1
-    row = conn.execute("SELECT * FROM daily_stats WHERE date='2026-10-27'").fetchone()
-    assert row["resting_hr"] == 52 and row["steps"] == 12000 and row["stress_avg"] is None
-    assert json.loads(row["raw"])["daily_summary"] == payload
-
-
-def test_other_endpoints_map_their_typed_columns(arch):
-    conn = fresh()
-    day = "2026-10-27"
-    wellness = {
-        "/sleep-service/sleep/dailySleep": json.dumps(
-            {"dailySleepDTO": {"sleepTimeSeconds": 27000, "sleepScores": {"overall": {"value": 81}}}}).encode(),
-        f"/hrv-service/hrv/{day}": json.dumps({"hrvSummary": {"lastNightAvg": 44, "status": "BALANCED"}}).encode(),
-        f"/weight-service/weight/range/{day}/{day}": json.dumps({"dateWeightList": [{"weight": 71500}]}).encode(),
-        f"/wellness-service/wellness/daily/spo2acclimation/{day}": json.dumps({"averageSpO2": 95}).encode(),
-        f"/usersummary-service/stats/steps/daily/{day}/{day}": b'[{"totalSteps": 1}]',
-    }
-    client = FakeClient({p: (lambda b: lambda params: b if not params or params.get("date", day) == day else b"")(b)
-                         for p, b in wellness.items()})
-    apply_wellness(conn, arch, _fetch(client, arch, conn, since=day))
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
-    assert (row["sleep_s"], row["sleep_score"], row["hrv_avg"], row["hrv_status"]) == (27000, 81, 44, "BALANCED")
-    assert (row["weight_kg"], row["spo2_avg"]) == (71.5, 95)
+    assert (row["resting_hr"], row["steps"], row["stress_avg"], row["body_battery_high"],
+            row["body_battery_low"]) == (55, 8000, 25, 80, 15)
+    assert json.loads(row["raw"])["daily_summary"] == json.loads(_fixture("daily_summary"))
+
+
+def test_real_responses_of_the_other_endpoints_map_their_typed_columns(arch):
+    conn, day = fresh(), "2026-10-30"
+    bodies = {source: _fixture(source) for source in ("sleep", "hrv", "spo2")}
+    bodies["steps"] = b'[{"calendarDate": "2026-10-30", "totalSteps": 1}]'
+    apply_wellness(conn, arch, _fetch(FakeClient(_one_day(day, bodies)), arch, conn, since=day,
+                                      now="2026-10-30T10:00:00+00:00"))
+    row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
+    assert (row["sleep_s"], row["sleep_score"], row["hrv_avg"], row["hrv_status"]) == (27000, 75, 40, "BALANCED")
+    assert row["spo2_avg"] is None                  # pulse ox was off: averageSpO2 is null
     assert row["steps"] is None                     # the steps endpoint is raw only
-    assert set(json.loads(row["raw"])) == {"sleep", "hrv", "weight", "spo2", "steps"}
+    assert set(json.loads(row["raw"])) == {"sleep", "hrv", "spo2", "steps"}
 
 
-def test_daily_summary_dict_payload_and_other_dates_ignored(arch):
+def test_weight_is_the_days_latest_weigh_in_only(arch):
     conn = fresh()
+    for day, name in (("2026-10-25", "weight"), ("2026-10-24", "weight_none")):
+        apply_wellness(conn, arch, _fetch(FakeClient(_one_day(day, {"weight": _fixture(name)})), arch, conn,
+                                          since=day, now="2026-10-25T10:00:00+00:00"))
+    weights = dict(conn.execute("SELECT date, weight_kg FROM daily_stats WHERE date IN ('2026-10-24', '2026-10-25')"))
+    assert weights == {"2026-10-25": 70.0, "2026-10-24": None}   # not the neighbouring days' weights
+
+
+def test_daily_summary_takes_its_own_date_and_empty_days_add_no_values(arch):
     day = "2026-10-27"
-    other = json.dumps([{"calendarDate": "2026-10-26", "totalSteps": 1},
-                        {"calendarDate": day, "totalSteps": 7}]).encode()
-    client = FakeClient({SUMMARY: other})
-    apply_wellness(conn, arch, _fetch(client, arch, conn, since=day))
-    assert conn.execute("SELECT steps FROM daily_stats WHERE date=?", (day,)).fetchone()[0] == 7
-    assert gw._daily_summary_stats({"totalSteps": 3}, day) == {"steps": 3}
+    other = json.dumps({"data": [{"calendarDate": "2026-10-26", "movement": {"steps": {"value": 1}}},
+                                 {"calendarDate": day, "movement": {"steps": {"value": 7}}}]}).encode()
+    assert gw._daily_summary_stats(json.loads(other), day) == {"steps": 7}
+    assert gw._daily_summary_stats(json.loads(_fixture("daily_summary_empty")), day) == {}
 
 
 def test_revised_day_replaces_value(tmp_path, arch):
     conn = fresh()
     day = "2026-10-27"
     for value in (52, 50):
-        client = FakeClient({SUMMARY: lambda p, v=value: _summary(day, restingHeartRate=v)
+        client = FakeClient({SUMMARY: lambda p, v=value: _summary(day, resting_hr=v)
                              if p["startDate"] == day else b""})
         apply_wellness(conn, arch, _fetch(client, arch, conn, now="2026-10-27T10:00:00+00:00" if value == 52
                                           else "2026-10-27T18:00:00+00:00"))
@@ -153,8 +169,8 @@ def test_endpoint_skipped_in_one_run_catches_up_in_the_next(arch):
     def sleep(p):
         if p["date"] in down:
             raise GarminApiError("x", status=500)
-        return b'{"dailySleepDTO": {}}'
-    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"], restingHeartRate=52), SLEEP: sleep})
+        return b'{"sleepTimeSeconds": null}'
+    first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"], resting_hr=52), SLEEP: sleep})
     with pytest.warns(UserWarning):
         apply_wellness(conn, arch, _fetch(first, arch, conn))
     assert not any(c == SLEEP and p["date"] == "2026-09-30" for c, p in first.calls)
@@ -202,7 +218,7 @@ def test_unparseable_body_is_archived_and_adds_nothing(arch):
 def test_unparseable_response_keeps_the_days_stored_data(tmp_path, arch):
     conn = fresh()
     day = "2026-10-27"
-    good = FakeClient({SUMMARY: _summary(day, restingHeartRate=52)})
+    good = FakeClient({SUMMARY: _summary(day, resting_hr=52)})
     apply_wellness(conn, arch, _fetch(good, arch, conn, since=day))
     garbage = b"<html>maintenance</html>"
     bad = FakeClient({SUMMARY: garbage})
@@ -218,10 +234,11 @@ def test_wrongly_typed_fields_stay_none(arch):
     conn = fresh()
     day = "2026-10-27"
     client = FakeClient({
-        SUMMARY: _summary(day, restingHeartRate={"value": 52}, totalSteps=True, averageStressLevel="high"),
+        SUMMARY: _summary(day, resting_hr={"value": 52}, movement={"steps": {"value": True}},
+                          stress={"avgLevel": "high"}),
         f"/hrv-service/hrv/{day}": json.dumps({"hrvSummary": {"lastNightAvg": [44], "status": {"x": 1}}}).encode(),
     })
     apply_wellness(conn, arch, _fetch(client, arch, conn, since=day))
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
     assert (row["resting_hr"], row["steps"], row["stress_avg"], row["hrv_avg"], row["hrv_status"]) == (None,) * 5
-    assert json.loads(row["raw"])["daily_summary"][0]["restingHeartRate"] == {"value": 52}
+    assert json.loads(row["raw"])["daily_summary"]["data"][0]["heartRate"]["restingValue"] == {"value": 52}

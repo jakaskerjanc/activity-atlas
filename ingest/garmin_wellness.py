@@ -1,8 +1,8 @@
 """Garmin Personal API wellness endpoints: one response per endpoint and date,
 archived as a wellness record and parsed into daily_stats columns plus the
-raw payload. The typed field names follow the unofficial garminconnect
-payloads and are unverified until measured; the raw payload is always kept, so
-a corrected mapping only needs a rebuild."""
+raw payload. The typed field names were checked against live responses on
+2026-11-01 (see ingest/tests/fixtures/garmin_wellness); the raw payload is
+always kept, so a corrected mapping only needs a rebuild."""
 import json
 import time
 import warnings
@@ -62,24 +62,29 @@ def _pick(payload, mapping: dict[str, tuple]) -> dict:
     return stats
 
 
-_DAILY_SUMMARY = {"resting_hr": ("restingHeartRate",), "steps": ("totalSteps",),
-                  "stress_avg": ("averageStressLevel",),
-                  "body_battery_high": ("bodyBatteryHighestValue",),
-                  "body_battery_low": ("bodyBatteryLowestValue",)}
-_SLEEP = {"sleep_s": ("dailySleepDTO", "sleepTimeSeconds"),
-          "sleep_score": ("dailySleepDTO", "sleepScores", "overall", "value")}
+_DAILY_SUMMARY = {"resting_hr": ("heartRate", "restingValue"), "steps": ("movement", "steps", "value"),
+                  "stress_avg": ("stress", "avgLevel"),
+                  "body_battery_high": ("bodyBattery", "maxValue"),
+                  "body_battery_low": ("bodyBattery", "minValue")}
+_SLEEP = {"sleep_s": ("sleepTimeSeconds",), "sleep_score": ("sleepScores", "overall", "value")}
 _HRV = {"hrv_avg": ("hrvSummary", "lastNightAvg"), "hrv_status": ("hrvSummary", "status")}
 _SPO2 = {"spo2_avg": ("averageSpO2",)}
 
 
+def _entry_for(entries, date_key: str, date: str):
+    """The entry of a list response that belongs to ``date``, or None."""
+    if not isinstance(entries, list):
+        return None
+    return next((e for e in entries if isinstance(e, dict) and e.get(date_key) == date), None)
+
+
 def _daily_summary_stats(payload, date: str) -> dict:
-    if isinstance(payload, list):
-        payload = next((e for e in payload if isinstance(e, dict) and e.get("calendarDate") == date), None)
-    return _pick(payload, _DAILY_SUMMARY)
+    return _pick(_entry_for(_dig(payload, "data"), "calendarDate", date), _DAILY_SUMMARY)
 
 
 def _weight_stats(payload, date: str) -> dict:
-    grams = _dig(payload, "dateWeightList", 0, "weight")
+    # previousDateWeight / nextDateWeight belong to other days
+    grams = _dig(_entry_for(_dig(payload, "dailyWeightSummaries"), "summaryDate", date), "latestWeight", "weight")
     return {"weight_kg": grams / 1000} if _number(grams) else {}
 
 
