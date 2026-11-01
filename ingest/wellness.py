@@ -36,6 +36,7 @@ class DayPart:
     raw: object | None                                 # goes into daily_stats.raw[source]
     series: dict[str, list[tuple[int, float]]]         # channel -> [(unix_s, value)]
     utc_offset_s: int | None
+    observed_s: int | None = None     # when the stats were read; the latest wins within a source
 
 
 # local date -> part. A parser may depend only on the bytes and the record's
@@ -93,6 +94,7 @@ def _monitoring_parts(data: bytes, rec: WellnessRecord) -> dict[str, DayPart]:
         p = part(day)
         p.stats = {"resting_hr": resting["current_day_resting_heart_rate"]}
         p.raw = resting
+        p.observed_s = m.resting_at.get(day)
     return parts
 
 
@@ -110,20 +112,23 @@ def _recompute_day(conn, day: str, parts: list[tuple[str, DayPart]], columns: li
     if not parts:
         return
 
-    # API daily figures beat our reading of a FIT; the sort is stable, so
-    # inputs of one source keep their (provider, key) order
+    # API daily figures beat our reading of a FIT. Within a source the latest
+    # reading comes first; the sort is stable, so inputs without a reading
+    # time keep their (provider, key) order after those with one
+    ranked = sorted(parts, key=lambda sp: (sp[0] == MONITORING_FIT, sp[0],
+                                           0 if sp[1].observed_s is None else -sp[1].observed_s))
     stats = dict.fromkeys(columns)
-    for source, p in sorted(parts, key=lambda sp: (sp[0] == MONITORING_FIT, sp[0])):
+    for source, p in ranked:
         unknown = set(p.stats) - set(columns)
         if unknown:
             raise ValueError(f"{source}: unknown daily_stats columns {sorted(unknown)}")
         for col, v in p.stats.items():
             if stats[col] is None:
                 stats[col] = v
-    # several inputs of one source merge like the stats: the earlier input
-    # wins per field and a None never overwrites a value
+    # several inputs of one source merge like the stats: the input ranked
+    # first wins per field and a None never overwrites a value
     raw: dict[str, object] = {}
-    for source, p in parts:
+    for source, p in ranked:
         if p.raw is None:
             continue
         if isinstance(raw.get(source), dict) and isinstance(p.raw, dict):

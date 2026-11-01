@@ -15,6 +15,7 @@ class MonitoringData:
     series: dict[str, list[tuple[int, float]]] = field(default_factory=dict)
     # local date -> {"resting_heart_rate": .., "current_day_resting_heart_rate": ..}
     resting: dict[str, dict] = field(default_factory=dict)
+    resting_at: dict[str, int] = field(default_factory=dict)   # local date -> unix_s of that reading
 
 
 def _unix(dt) -> int:
@@ -64,8 +65,8 @@ def parse_monitoring(data: bytes) -> MonitoringData:
                     "current_day_resting_heart_rate":
                         frame.get_value("current_day_resting_heart_rate", fallback=None)}))
     # the offset may arrive after a resting message, so key the dates once it is known
-    resting = {}
+    resting, resting_s = {}, {}
     for t, values in resting_at:
-        local = datetime.fromtimestamp(t + (offset or 0), timezone.utc)
-        resting[local.date().isoformat()] = values
-    return MonitoringData(offset, series, resting)
+        day = datetime.fromtimestamp(t + (offset or 0), timezone.utc).date().isoformat()
+        resting[day], resting_s[day] = values, t
+    return MonitoringData(offset, series, resting, resting_s)
