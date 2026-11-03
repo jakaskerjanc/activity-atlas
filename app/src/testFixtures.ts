@@ -16,6 +16,7 @@ export function activity(props: Partial<ActivityFeatureProps> = {}): ActivityFea
       distance: 10000,
       moving_time: 3000,
       elevation_gain: 100,
+      sources: [],
       ...props,
     },
   };

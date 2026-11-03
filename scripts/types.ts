@@ -19,12 +19,19 @@ export interface TrackPayload {
   tracks: EncodedTrack[];
 }
 
+/** One provider record behind an activity, enough to link back to it. */
+export interface ActivitySource {
+  provider: "strava" | "garmin";
+  /** the provider's own activity id */
+  id: string;
+}
+
 /**
  * GeoJSON feature properties consumed by the frontend map + filters.
  * This is the stable data contract the UI depends on.
  */
 export interface ActivityFeatureProps {
-  /** Namespaced wire id: "s:<stravaId>" or "g:<garminId>". */
+  /** random activity id (v2), opaque */
   id: string;
   name: string;
   /** activity-type filter key */
@@ -39,4 +46,6 @@ export interface ActivityFeatureProps {
   moving_time: number;
   /** meters */
   elevation_gain: number;
+  /** Live provider sources only (deleted ones are dropped), Strava first. */
+  sources: ActivitySource[];
 }
