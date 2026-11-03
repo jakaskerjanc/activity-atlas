@@ -25,7 +25,8 @@ def test_live_conditional_writes_head_and_list(tmp_path):
             store.put(first, b"two", if_none_match="*")
         with pytest.raises(PreconditionFailed):
             store.put(first, b"two", if_match='"stale"')
-        new_etag = store.put(first, b"three", if_match=etag)
+        # A PUT replaces the object's metadata, so the overwrite restates it.
+        new_etag = store.put(first, b"three", if_match=etag, metadata={"kind": "live"})
         assert new_etag != etag
 
         store.put(second, b"x")
