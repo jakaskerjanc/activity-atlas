@@ -9,7 +9,7 @@ interface Props {
   title: string;
   subtitle: string;
   cards: StatCard[];
-  link: { url: string; label: string } | null;
+  links: { url: string; label: string }[];
   /** Collapsed off the bottom edge, leaving its title strip visible to click. */
   collapsed: boolean;
   onToggle: () => void;
@@ -32,7 +32,7 @@ export function InfoPanel(p: Props) {
         title={p.title}
         subtitle={p.subtitle}
         cards={p.cards}
-        link={p.link}
+        links={p.links}
       />
     </GlassPanel>
   );

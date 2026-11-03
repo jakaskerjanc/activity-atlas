@@ -1,5 +1,7 @@
 // Pure display formatters for activity stats. No React / Mapbox deps.
 
+import type { ActivitySource } from "./types";
+
 const DASH = "—";
 
 /** meters -> km string, `digits` decimals (default 1). */
@@ -80,15 +82,20 @@ export function isFootBased(type: string): boolean {
 }
 
 /**
- * Resolve a namespaced wire id ("s:123" / "g:456") to its source's activity page.
- * Returns null for anything unrecognized so the UI just renders plain text.
+ * Resolve an activity's live sources to their provider pages, in source order.
+ * A provider this build doesn't know is skipped, so the UI just shows fewer links.
  */
-export function activityLink(id: string): { url: string; label: string } | null {
-  const sep = id.indexOf(":");
-  if (sep < 1) return null;
-  const raw = id.slice(sep + 1);
-  if (!raw) return null;
-  if (id[0] === "s") return { url: `https://www.strava.com/activities/${raw}`, label: "View on Strava" };
-  if (id[0] === "g") return { url: `https://connect.garmin.com/modern/activity/${raw}`, label: "View on Garmin Connect" };
-  return null;
+export function activityLinks(sources: ActivitySource[]): { url: string; label: string }[] {
+  const links: { url: string; label: string }[] = [];
+  for (const { provider, id } of sources) {
+    if (provider === "strava") {
+      links.push({ url: `https://www.strava.com/activities/${id}`, label: "View on Strava" });
+    } else if (provider === "garmin") {
+      links.push({
+        url: `https://connect.garmin.com/modern/activity/${id}`,
+        label: "View on Garmin Connect",
+      });
+    }
+  }
+  return links;
 }

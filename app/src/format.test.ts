@@ -10,8 +10,9 @@ import {
   monthEnd,
   formatMonth,
   isFootBased,
-  activityLink,
+  activityLinks,
 } from "./format";
+import type { ActivitySource } from "./types";
 
 describe("formatKm", () => {
   test("meters to km with one decimal by default", () => {
@@ -112,22 +113,32 @@ describe("isFootBased", () => {
   );
 });
 
-describe("activityLink", () => {
-  test("strava id -> strava url", () => {
-    expect(activityLink("s:10089952322")).toEqual({
-      url: "https://www.strava.com/activities/10089952322",
-      label: "View on Strava",
-    });
+describe("activityLinks", () => {
+  test("strava + garmin -> two links in source order", () => {
+    expect(
+      activityLinks([
+        { provider: "strava", id: "10089952322" },
+        { provider: "garmin", id: "12345678" },
+      ]),
+    ).toEqual([
+      { url: "https://www.strava.com/activities/10089952322", label: "View on Strava" },
+      {
+        url: "https://connect.garmin.com/modern/activity/12345678",
+        label: "View on Garmin Connect",
+      },
+    ]);
   });
-  test("garmin id -> garmin url", () => {
-    expect(activityLink("g:12345678")).toEqual({
-      url: "https://connect.garmin.com/modern/activity/12345678",
-      label: "View on Garmin Connect",
-    });
+  test("no sources -> no links", () => {
+    expect(activityLinks([])).toEqual([]);
   });
-  test("unknown prefix / malformed -> null", () => {
-    expect(activityLink("x:1")).toBeNull();
-    expect(activityLink("")).toBeNull();
-    expect(activityLink("12345")).toBeNull();
+  test("unknown provider is skipped", () => {
+    expect(
+      activityLinks([
+        { provider: "polar", id: "1" } as unknown as ActivitySource,
+        { provider: "garmin", id: "2" },
+      ]),
+    ).toEqual([
+      { url: "https://connect.garmin.com/modern/activity/2", label: "View on Garmin Connect" },
+    ]);
   });
 });

@@ -10,7 +10,7 @@ function encodeLngLat(coords: [number, number][]): string {
 
 function track(over: Partial<EncodedTrack> & { poly: string }): EncodedTrack {
   return {
-    id: "s:1",
+    id: "k3j9x0",
     name: "Test",
     type: "Run",
     ts: 1723975135,
@@ -18,6 +18,7 @@ function track(over: Partial<EncodedTrack> & { poly: string }): EncodedTrack {
     distance: 10000,
     moving_time: 3000,
     elevation_gain: 100,
+    sources: [{ provider: "strava", id: "1" }],
     ...over,
   };
 }
@@ -55,7 +56,7 @@ describe("decodeTracks", () => {
       tracks: [
         track({
           poly: encodeLngLat(PATH),
-          id: "s:42",
+          id: "k42",
           name: "Morning Ride",
           type: "Ride",
           ts: 1700000000,
@@ -66,7 +67,7 @@ describe("decodeTracks", () => {
       ],
     });
     expect(fc.features[0].properties).toEqual({
-      id: "s:42",
+      id: "k42",
       name: "Morning Ride",
       type: "Ride",
       ts: 1700000000,
@@ -74,6 +75,7 @@ describe("decodeTracks", () => {
       distance: 25000,
       moving_time: 3600,
       elevation_gain: 350,
+      sources: [{ provider: "strava", id: "1" }],
     });
     // poly must not leak into properties
     expect("poly" in fc.features[0].properties).toBe(false);
@@ -88,11 +90,16 @@ describe("decodeTracks", () => {
     const fc = decodeTracks({
       v: PAYLOAD_VERSION,
       tracks: [
-        track({ id: "s:1", poly: onePoint }),
-        track({ id: "s:2", poly: encodeLngLat(PATH) }),
+        track({ id: "one", poly: onePoint }),
+        track({ id: "two", poly: encodeLngLat(PATH) }),
       ],
     });
-    expect(fc.features.map((f) => f.properties.id)).toEqual(["s:2"]);
+    expect(fc.features.map((f) => f.properties.id)).toEqual(["two"]);
+  });
+
+  test("throws on the previous payload version (v2 has no sources)", () => {
+    const old = { v: 2, tracks: [] } as unknown as TrackPayload;
+    expect(() => decodeTracks(old)).toThrow(/Unsupported tracks payload version 2/);
   });
 
   test("throws on an unsupported payload version", () => {

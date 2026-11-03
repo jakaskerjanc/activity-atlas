@@ -16,7 +16,7 @@ import {
 } from "./activityFilter";
 import type { ActivityFeatureCollection, TrackPayload, Theme } from "./types";
 import { decodeTracks } from "./tracks";
-import { formatDate, formatMonth, activityLink } from "./format";
+import { formatDate, formatMonth, activityLinks } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
@@ -178,11 +178,11 @@ export default function App() {
   );
 
   // InfoPanel content: selected activity, or aggregate totals.
-  const { title, subtitle, cards, link } = useMemo<{
+  const { title, subtitle, cards, links } = useMemo<{
     title: string;
     subtitle: string;
     cards: StatCard[];
-    link: { url: string; label: string } | null;
+    links: { url: string; label: string }[];
   }>(() => {
     if (selectedFeature) {
       const p = selectedFeature.properties;
@@ -190,14 +190,14 @@ export default function App() {
         title: p.name,
         subtitle: `${p.type} · ${formatDate(p.ts)}`,
         cards: activityCards(selectedFeature),
-        link: activityLink(p.id),
+        links: activityLinks(p.sources),
       };
     }
     return {
       title: "All Activities",
       subtitle: filter ? `${formatMonth(filter.fromMonth)} — ${formatMonth(filter.toMonth)}` : "",
       cards: totalCards(visible),
-      link: null,
+      links: [],
     };
   }, [selectedFeature, visible, filter?.fromMonth, filter?.toMonth]);
 
@@ -269,7 +269,7 @@ export default function App() {
               title={title}
               subtitle={subtitle}
               cards={cards}
-              link={link}
+              links={links}
               collapsed={panels.bottomCollapsed}
               onToggle={panels.toggleBottom}
             />
