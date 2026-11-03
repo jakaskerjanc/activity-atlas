@@ -139,19 +139,21 @@ def _start_dates(conn, today: Date, since: str | None) -> dict[str, Date]:
 
 
 def fetch_wellness(client, archive: Archive, conn, *, now: str, since: str | None = None,
-                   delay_s: float = 1.0,
+                   until: str | None = None, delay_s: float = 1.0,
                    on_batch: Callable[[list[WellnessRecord]], None] | None = None) -> list[WellnessRecord]:
     """Fetch every endpoint for each date from its start (see _start_dates)
-    through today, archive each response and return its record. An endpoint
+    through ``until`` (default and latest: today), archive each response and
+    return its record. An endpoint
     that fails 3 times in a row is skipped for the rest of the run; an auth
     error aborts. ``on_batch`` receives the records of every
     WELLNESS_BATCH_DAYS days as they complete, and the rest at the end."""
     today = datetime.fromisoformat(now).astimezone(timezone.utc).date()
     starts = _start_dates(conn, today, since)
+    last = min(today, Date.fromisoformat(until)) if until else today
     day = min(starts.values())
     failures = dict.fromkeys(ENDPOINTS, 0)
     records, batch, batch_days = [], [], 0
-    while day <= today:
+    while day <= last:
         current, date = day, day.isoformat()
         day += timedelta(days=1)
         if on_batch and batch_days == WELLNESS_BATCH_DAYS:

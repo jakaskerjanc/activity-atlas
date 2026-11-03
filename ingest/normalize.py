@@ -7,7 +7,7 @@ import polyline
 CANONICAL = {
     "Run", "Ride", "Hike", "Walk", "WeightTraining", "Workout", "Swim",
     "RockClimbing", "Rowing", "StairStepper", "Badminton", "Volleyball",
-    "IceSkate", "Tennis",
+    "IceSkate", "Tennis", "WaterSport", "Padel",
 }
 
 # Garmin snake typeKeys -> canonical. Unmapped keys title-case + warn.
@@ -22,11 +22,13 @@ GARMIN_TYPE_MAP = {
     "indoor_cardio": "Workout", "fitness_equipment": "Workout", "other": "Workout",
     "lap_swimming": "Swim", "open_water_swimming": "Swim",
     "indoor_climbing": "RockClimbing", "rock_climbing": "RockClimbing", "bouldering": "RockClimbing",
+    "rock_climb": "RockClimbing",   # Strava's older display name "Rock Climb"
     "indoor_rowing": "Rowing", "rowing": "Rowing",
     "stair_climbing": "StairStepper",
     "badminton": "Badminton", "volleyball": "Volleyball",
     "ice_skating": "IceSkate", "skating_ws": "IceSkate",
     "tennis": "Tennis", "tennis_v2": "Tennis",
+    "padel": "Padel", "paddelball": "Padel",   # Garmin's key for padel is "paddelball"
 }
 
 

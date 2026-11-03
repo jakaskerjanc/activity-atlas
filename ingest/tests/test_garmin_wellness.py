@@ -80,6 +80,18 @@ def test_next_run_refetches_last_7_days(arch):
     assert dates[0] == "2026-10-20" and dates[-1] == "2026-10-29" and len(dates) == 10
 
 
+def test_wellness_until_ends_the_range(arch):
+    client = FakeClient()
+    _fetch(client, arch, fresh(), now="2026-10-29T10:00:00+00:00", since="2026-10-01", until="2026-10-05")
+    assert _dates(client, SUMMARY) == ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"]
+
+
+def test_wellness_until_after_today_stops_at_today(arch):
+    client = FakeClient()
+    _fetch(client, arch, fresh(), now="2026-10-29T10:00:00+00:00", since="2026-10-28", until="2026-12-01")
+    assert _dates(client, SUMMARY) == ["2026-10-28", "2026-10-29"]
+
+
 def test_wellness_since_overrides_start(arch):
     conn = fresh()
     first = FakeClient({SUMMARY: lambda p: _summary(p["startDate"]) if p["startDate"] == "2026-10-27" else b""})

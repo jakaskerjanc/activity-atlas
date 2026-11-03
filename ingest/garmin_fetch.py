@@ -122,7 +122,7 @@ def auth_rejected(error: Exception) -> NoReturn:
 class GarminFetcher:
     def __init__(self, db_path: str, archive: Archive, *, delay_s: float = 1.0, client=None,
                  key_file=None, page_size: int = PAGE_SIZE, now: str | None = None,
-                 wellness_since: str | None = None):
+                 wellness_since: str | None = None, wellness_until: str | None = None):
         self.db_path = db_path
         self.archive = archive
         self.delay_s = delay_s
@@ -131,6 +131,7 @@ class GarminFetcher:
         self.page_size = page_size
         self.now = now or now_iso()
         self.wellness_since = wellness_since
+        self.wellness_until = wellness_until
 
     # --- auth -------------------------------------------------------------
     def authenticate(self) -> GarminPersonalApi:
@@ -280,6 +281,7 @@ class GarminFetcher:
                 wellness_days += apply_wellness(conn, self.archive, batch)
                 conn.commit()
             fetch_wellness(client, self.archive, conn, now=self.now, since=self.wellness_since,
+                           until=self.wellness_until,
                            delay_s=self.delay_s, on_batch=save)
         finally:
             conn.close()
@@ -304,9 +306,17 @@ def main():
     ap.add_argument("--wellness-since", default=None, metavar="YYYY-MM-DD", type=_iso_date,
                     help="fetch wellness data from this date (backfill); default: each endpoint's last "
                          "stored day minus 7, or the last 30 days on the first run")
+    ap.add_argument("--wellness-until", default=None, metavar="YYYY-MM-DD", type=_iso_date,
+                    help="with --wellness-since: the last day to fetch (default: today), "
+                         "to refill a gap without refetching up to today")
     args = ap.parse_args()
+    if args.wellness_until and not args.wellness_since:
+        ap.error("--wellness-until needs --wellness-since")
+    if args.wellness_until and args.wellness_until < args.wellness_since:
+        ap.error("--wellness-until is before --wellness-since")
     archive = open_archive(args.archive)
-    first = GarminFetcher(args.db, archive, key_file=args.api_key_file, wellness_since=args.wellness_since)
+    first = GarminFetcher(args.db, archive, key_file=args.api_key_file, wellness_since=args.wellness_since,
+                          wellness_until=args.wellness_until)
     client = first.authenticate()   # fail loud on missing/rejected key, before any pull
 
     def work(path):
@@ -316,7 +326,8 @@ def main():
         # uploads that progress, and main re-raises the error afterwards.
         try:
             return GarminFetcher(path, archive, key_file=args.api_key_file,
-                                 wellness_since=args.wellness_since, client=client).run(), None
+                                 wellness_since=args.wellness_since, wellness_until=args.wellness_until,
+                                 client=client).run(), None
         except Exception as e:
             return None, e
     counts, error = writer.run(args.db, archive, work, today=date.today().isoformat())

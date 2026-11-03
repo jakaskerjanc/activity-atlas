@@ -176,6 +176,10 @@ also fill typed `daily_stats` columns; the others are kept raw only.
 - `--wellness-since YYYY-MM-DD` starts every window at that date instead, for a
   backfill. The database is saved every 30 days of data, so an interrupted
   backfill keeps its progress.
+- `--wellness-until YYYY-MM-DD`, together with `--wellness-since`, ends the
+  windows at that date instead of today. Use it to refill a few days a run
+  missed (for example after network errors) without refetching everything
+  since then.
 - An endpoint that fails 3 times in a row is skipped for the rest of the run
   (with a warning). A rejected key still exits with code 3, after the
   activities have been stored.
