@@ -2,8 +2,10 @@
 off into its own activity, hide or unhide an activity. Merged and split
 sources are pinned, and identity survives re-imports and rebuilds."""
 import argparse
+from datetime import date
 
-from . import db, matcher, merge as merging
+from . import db, matcher, merge as merging, writer
+from .archive import open_archive
 
 
 def _require_activity(conn, activity_id: str) -> None:
@@ -79,26 +81,32 @@ def main():
         sub.add_parser(name, help=f"{name} an activity on the site").add_argument("activity_id")
     for p in sub.choices.values():
         p.add_argument("--db", default="data/activities.sqlite")
+        p.add_argument("--archive", default=None,
+                       help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
     args = ap.parse_args()
+    if args.cmd == "split":
+        provider, sep, pid = args.source.partition(":")
+        if not sep or not pid:
+            ap.error("source must be provider:provider_activity_id")
 
-    conn = db.open_db(args.db)
-    try:
-        if args.cmd == "merge":
-            merge(conn, args.keep_id, args.other_id)
-            print(f"merged {args.other_id} into {args.keep_id}")
-        elif args.cmd == "split":
-            provider, sep, pid = args.source.partition(":")
-            if not sep or not pid:
-                ap.error("source must be provider:provider_activity_id")
-            print(f"split {args.source} into {split(conn, args.activity_id, provider, pid)}")
-        else:
-            set_hidden(conn, args.activity_id, args.cmd == "hide")
-            print(f"{args.cmd} {args.activity_id}")
-        conn.commit()
-    except ValueError as e:
-        raise SystemExit(f"activity: {e}")
-    finally:
-        conn.close()
+    def work(path):
+        conn = db.open_db(path)
+        try:
+            if args.cmd == "merge":
+                merge(conn, args.keep_id, args.other_id)
+                print(f"merged {args.other_id} into {args.keep_id}")
+            elif args.cmd == "split":
+                print(f"split {args.source} into {split(conn, args.activity_id, provider, pid)}")
+            else:
+                set_hidden(conn, args.activity_id, args.cmd == "hide")
+                print(f"{args.cmd} {args.activity_id}")
+            conn.commit()
+        except ValueError as e:
+            raise SystemExit(f"activity: {e}")
+        finally:
+            conn.close()
+
+    writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat())
 
 
 if __name__ == "__main__":

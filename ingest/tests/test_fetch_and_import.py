@@ -1,13 +1,22 @@
 """The daily fetch and a Garmin export import working on the same database:
 deletions each one saw must respect when the other's data was observed."""
 import json
+import os
+import shutil
+import sys
+import time
 import warnings
 import zipfile
 
-from ingest import db
+import pytest
+
+from ingest import archive as archive_mod
+from ingest import db, strava_import, sync, writer
 from ingest import garmin_fetch as gf
 from ingest.archive import LocalArchive
 from ingest.garmin_import import GarminImporter
+from ingest.objstore import MemoryStore
+from ingest.tests.test_strava_import import GYM, HEADER, _zip as _strava_zip
 from ingest.tests.test_garmin_fetch import FakeClient, _downloads, _list
 
 
@@ -81,3 +90,68 @@ def test_export_clock_skew_does_not_bring_back_a_later_fetched_deletion(tmp_path
     export = _export(tmp_path, [_summary(i) for i in _list()], made=(2026, 9, 20, 12, 0, 0))
     GarminImporter(export, dbp, arch, now="2026-09-22T10:00:00+00:00").run()
     assert _source(dbp, "5000002") == ("2026-09-20T11:00:00+00:00", 0)
+
+
+class _FakeApi(FakeClient):
+    """Stands in for GarminPersonalApi: the fake client plus authenticate()."""
+
+    def __init__(self, **kw):
+        super().__init__(_list(), _downloads())
+
+    def authenticate(self):
+        pass
+
+
+def _r2(monkeypatch, tmp_path):
+    monkeypatch.setattr(time, "sleep", lambda s: None)    # the fetch paces its API calls
+    store = MemoryStore()
+    store.bucket = "bkt"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    return store
+
+
+def _activity_ids(path):
+    conn = db.connect(path)
+    try:
+        return {(r[0], r[1]): r[2] for r in conn.execute(
+            "SELECT provider, provider_activity_id, activity_id FROM activity_sources")}
+    finally:
+        conn.close()
+
+
+def test_import_then_fetch_through_r2(tmp_path, monkeypatch):
+    store = _r2(monkeypatch, tmp_path)
+    local = str(tmp_path / "data" / "activities.sqlite")
+    monkeypatch.setattr(sys, "argv", ["strava_import", _strava_zip(tmp_path, HEADER + GYM, {}),
+                                       "--db", local, "--init-db"])
+    strava_import.main()
+    after_import = _activity_ids(local)
+    assert list(after_import) == [("strava", "222")]
+
+    monkeypatch.setattr(gf, "GarminPersonalApi", _FakeApi)
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", local])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gf.main()
+
+    os.remove(local)
+    shutil.rmtree(tmp_path / "data" / "cache")
+    monkeypatch.setattr(sys, "argv", ["sync", "--db", local])
+    sync.main()
+    synced = _activity_ids(local)
+    assert {("strava", "222"), ("garmin", "5000001"), ("garmin", "5000002")} <= set(synced)
+    assert synced[("strava", "222")] == after_import[("strava", "222")]
+    assert store.head(writer.DB_KEY) is not None
+
+
+def test_fetch_without_remote_db_exits_6(tmp_path, monkeypatch, capsys):
+    store = _r2(monkeypatch, tmp_path)
+    monkeypatch.setattr(gf, "GarminPersonalApi", _FakeApi)
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite")])
+    with pytest.raises(SystemExit) as exc:
+        gf.main()
+    assert exc.value.code == 6
+    assert "--init-db" in capsys.readouterr().err
+    assert store.head(writer.DB_KEY) is None

@@ -7,9 +7,9 @@ import gzip
 import io
 import os
 import warnings
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from . import engine
+from . import engine, writer
 from .archive import Archive, open_archive
 from .export_reader import (ExportReader, archive_export, export_made_at, is_older_export,
                             newest_export_as_of, now_iso)
@@ -154,8 +154,13 @@ def main():
     ap.add_argument("export", help="Strava export zip (or an unzipped export folder, for development)")
     ap.add_argument("--db", default="data/activities.sqlite")
     ap.add_argument("--archive", default=None, help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
+    ap.add_argument("--init-db", action="store_true",
+                    help="allow creating the database in R2 when it has none (the first import)")
     args = ap.parse_args()
-    print(f"strava_import: {StravaImporter(args.export, args.db, open_archive(args.archive)).run()}")
+    archive = open_archive(args.archive)
+    counts = writer.run(args.db, archive, lambda path: StravaImporter(args.export, path, archive).run(),
+                        today=date.today().isoformat(), init_db=args.init_db)
+    print(f"strava_import: {counts}")
 
 
 if __name__ == "__main__":
