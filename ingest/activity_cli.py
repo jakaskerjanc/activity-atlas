@@ -94,19 +94,21 @@ def main():
         try:
             if args.cmd == "merge":
                 merge(conn, args.keep_id, args.other_id)
-                print(f"merged {args.other_id} into {args.keep_id}")
+                message = f"merged {args.other_id} into {args.keep_id}"
             elif args.cmd == "split":
-                print(f"split {args.source} into {split(conn, args.activity_id, provider, pid)}")
+                message = f"split {args.source} into {split(conn, args.activity_id, provider, pid)}"
             else:
                 set_hidden(conn, args.activity_id, args.cmd == "hide")
-                print(f"{args.cmd} {args.activity_id}")
+                message = f"{args.cmd} {args.activity_id}"
             conn.commit()
+            return message
         except ValueError as e:
             raise SystemExit(f"activity: {e}")
         finally:
             conn.close()
 
-    writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat())
+    # work may run again after an upload conflict, so the message is printed once, here.
+    print(writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat()))
 
 
 if __name__ == "__main__":

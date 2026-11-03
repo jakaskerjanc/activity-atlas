@@ -23,7 +23,7 @@ def _run(tmp_path, env_extra, python_body="true\n"):
                    + python_body)
     _stub(bin_dir, "git", f'echo "git $@" >> {tmp_path / "git.log"}\nexit 99\n')
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("R2_") and k != "DB"}
+           if not k.startswith("R2_") and k not in ("DB", "GARMIN_PERSONAL_API_KEY")}
     env.update({"PATH": f"{bin_dir}:{os.environ['PATH']}",
                 "PYTHON_BIN": python, **env_extra})
     result = subprocess.run(["bash", SCRIPT], cwd=tmp_path, env=env,
@@ -35,6 +35,14 @@ def test_skips_without_r2(tmp_path):
     result, log = _run(tmp_path, {})
     assert result.returncode == 0
     assert "::notice::no R2 secrets: the daily fetch needs R2" in result.stdout
+    assert not log.exists()
+
+
+def test_warns_when_garmin_key_is_set_but_r2_is_not(tmp_path):
+    result, log = _run(tmp_path, {"GARMIN_PERSONAL_API_KEY": "k"})
+    assert result.returncode == 0
+    assert "::warning::" in result.stdout and "R2 is not configured" in result.stdout
+    assert "::notice::" not in result.stdout
     assert not log.exists()
 
 

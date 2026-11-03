@@ -6,6 +6,18 @@ on:
     paths: ["app/**", "scripts/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
   workflow_call:
+    # Only what the deploy reads; optional so a fork without R2 still deploys.
+    secrets:
+      VITE_MAPBOX_TOKEN:
+        required: false
+      R2_ACCOUNT_ID:
+        required: false
+      R2_BUCKET:
+        required: false
+      R2_RO_ACCESS_KEY_ID:
+        required: false
+      R2_RO_SECRET_ACCESS_KEY:
+        required: false
 
 concurrency:
   group: pages

@@ -54,6 +54,17 @@ def _file_sha(path: str) -> str:
     return h.hexdigest()
 
 
+def _free_export_key(prefix: str, today: str, filename: str, taken) -> str:
+    """``<prefix><today>-<name>``, or ``<today>-<stem>-2<ext>``, ``-3``, ... when
+    that key holds a different export (Strava names every export export_<id>.zip)."""
+    stem, ext = os.path.splitext(filename)
+    key, n = f"{prefix}{today}-{filename}", 1
+    while taken(key):
+        n += 1
+        key = f"{prefix}{today}-{stem}-{n}{ext}"
+    return key
+
+
 class LocalArchive:
     def __init__(self, root: str):
         self.root = root
@@ -94,11 +105,13 @@ class LocalArchive:
 
     def put_export(self, provider: str, src_path: str, *, today: str) -> str:
         """Store the export byte for byte. An identical export already stored
-        keeps its key, so re-importing it later writes no new records."""
+        keeps its key, so re-importing it later writes no new records. A different
+        export that would get an existing key gets the next free ``-2``, ``-3`` name."""
         existing = self._same_export(provider, src_path)
         if existing:
             return existing
-        key = f"exports/{_safe(provider)}/{today}-{os.path.basename(src_path)}"
+        key = _free_export_key(f"exports/{_safe(provider)}/", today, os.path.basename(src_path),
+                               lambda k: os.path.exists(self._path(k)))
         with open(src_path, "rb") as src:
             self._write(key, lambda f: shutil.copyfileobj(src, f))
         return key
@@ -253,14 +266,16 @@ class RemoteArchive(LocalArchive):
     def put_export(self, provider: str, src_path: str, *, today: str) -> str:
         prefix = f"exports/{_safe(provider)}/"
         size, sha = os.path.getsize(src_path), None
+        taken = set()
         for key, key_size in self.store.list(prefix):
+            taken.add(key)
             if key_size != size:
                 continue
             sha = sha or _file_sha(src_path)
             head = self.store.head(key)
             if head and head["metadata"].get("sha256") == sha:
                 return key
-        key = f"{prefix}{today}-{os.path.basename(src_path)}"
+        key = _free_export_key(prefix, today, os.path.basename(src_path), taken.__contains__)
         self.store.put_file(key, src_path, metadata={"sha256": sha or _file_sha(src_path)})
         return key
 

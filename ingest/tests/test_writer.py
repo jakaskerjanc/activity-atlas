@@ -203,3 +203,40 @@ def test_snapshots_to_delete():
     assert kept == set(days[-30:]) | {"2026-01-01", "2026-02-01", "2026-03-01"}
     assert "2026-04-01" in kept
     assert writer.snapshots_to_delete([]) == []
+
+
+def test_nested_local_writer_does_not_clobber_working_copy(store, archive, db_path, tmp_path):
+    seed(store, tmp_path, "base")
+
+    def add_gear(path, name):
+        conn = db.open_db(path)
+        conn.execute("INSERT INTO gear (provider, name) VALUES ('strava', ?)", (name,))
+        conn.commit()
+        conn.close()
+
+    calls = []
+
+    def work_a(path):
+        calls.append(path)
+        if len(calls) == 1:
+            # writer B: a complete run on the same db_path and store
+            writer.run(db_path, archive, lambda p: add_gear(p, "from-b"), today=TODAY)
+        add_gear(path, f"from-a-{len(calls)}")
+
+    writer.run(db_path, archive, work_a, today=TODAY)
+
+    assert len(calls) == 2  # the first upload hit a 412 and A redid
+    data, _ = store.get(writer.DB_KEY)
+    assert gear_names(data, tmp_path) == ["base", "from-a-2", "from-b"]
+    assert len(set(calls)) == 2  # every attempt got its own working copy
+    assert not [n for n in os.listdir(os.path.dirname(db_path)) if ".pull-" in n]
+
+
+def test_stale_journal_is_not_rolled_into_the_pulled_database(store, archive, db_path, tmp_path):
+    seed(store, tmp_path, "base")
+    os.makedirs(os.path.dirname(db_path))
+    for suffix in ("-journal", "-wal", "-shm"):
+        with open(db_path + suffix, "wb") as fh:
+            fh.write(b"stale")
+    writer.run(db_path, archive, Work(), today=TODAY)
+    assert not [s for s in ("-journal", "-wal", "-shm") if os.path.exists(db_path + s)]

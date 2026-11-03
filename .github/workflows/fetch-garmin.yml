@@ -39,7 +39,12 @@ jobs:
     needs: fetch
     if: needs.fetch.outputs.db_changed == 'true'
     uses: ./.github/workflows/deploy.yml
-    secrets: inherit
+    secrets:
+      VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_RO_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+      R2_RO_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
     permissions:
       contents: read
       pages: write

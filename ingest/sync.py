@@ -22,15 +22,12 @@ def main():
         print("sync: no R2 configured (set R2_* in .env); the local database is already the master",
               file=sys.stderr)
         raise SystemExit(1)
-    tmp = args.db + ".pull"
+    tmp = writer.working_copy(args.db)
     try:
         if writer.pull(archive.store, tmp) is None:
             print(f"sync: R2 has no database at {writer.DB_KEY} (nothing to sync yet)", file=sys.stderr)
             raise SystemExit(writer.EXIT_NO_REMOTE_DB)
-        for suffix in ("-journal", "-wal", "-shm"):    # leftovers of the copy being replaced
-            if os.path.exists(args.db + suffix):
-                os.remove(args.db + suffix)
-        os.replace(tmp, args.db)
+        writer.install(tmp, args.db)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)

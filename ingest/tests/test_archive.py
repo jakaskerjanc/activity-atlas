@@ -249,3 +249,18 @@ def test_remote_get_blob_rejects_corrupted_store_blob(tmp_path):
     assert not os.path.exists(a._path(f"raw/{sha}"))
     store.put(f"raw/{sha}", b"good")
     assert a.get_blob(sha) == b"good" and os.path.exists(a._path(f"raw/{sha}"))
+
+
+def test_put_export_same_day_same_name_never_overwrites(archive, tmp_path):
+    src = tmp_path / "export_123.zip"
+    keys = []
+    for body in (b"first", b"second", b"third"):
+        src.write_bytes(body)
+        keys.append(archive.put_export("strava", str(src), today="2026-10-27"))
+    assert keys == ["exports/strava/2026-10-27-export_123.zip",
+                    "exports/strava/2026-10-27-export_123-2.zip",
+                    "exports/strava/2026-10-27-export_123-3.zip"]
+    assert [stored_bytes(archive, k) for k in keys] == [b"first", b"second", b"third"]
+    # identical content still finds its existing key
+    src.write_bytes(b"second")
+    assert archive.put_export("strava", str(src), today="2026-10-27") == keys[1]
