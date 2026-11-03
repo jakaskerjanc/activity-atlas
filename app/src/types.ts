@@ -4,8 +4,15 @@
 /** UI color scheme. Drives both the panel chrome and the Mapbox base style. */
 export type Theme = "light" | "dark";
 
+/** One provider record behind an activity, enough to link back to it. */
+export interface ActivitySource {
+  provider: "strava" | "garmin";
+  /** the provider's own activity id */
+  id: string;
+}
+
 export interface ActivityFeatureProps {
-  /** namespaced wire id ("s:<stravaId>" / "g:<garminId>") */
+  /** random activity id (v2), opaque */
   id: string;
   name: string;
   /** activity-type filter key (Strava sport_type) */
@@ -19,6 +26,8 @@ export interface ActivityFeatureProps {
   moving_time: number;
   /** meters */
   elevation_gain: number;
+  /** Live provider sources only (deleted ones are dropped), Strava first. */
+  sources: ActivitySource[];
 }
 
 export type ActivityFeature = GeoJSON.Feature<

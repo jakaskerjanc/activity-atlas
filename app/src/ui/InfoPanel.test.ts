@@ -10,7 +10,7 @@ const props = {
   title: "All Activities",
   subtitle: "Jan — Dec",
   cards: [{ value: "1", label: "Activities" }],
-  link: null,
+  links: [],
   collapsed: false,
   onToggle: () => {},
 };

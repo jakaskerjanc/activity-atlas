@@ -9,19 +9,20 @@ interface Props {
   title: string;
   subtitle: string;
   cards: StatCard[];
-  link?: { url: string; label: string } | null;
+  links: { url: string; label: string }[];
 }
 
-export function StatsSection({ title, subtitle, cards, link }: Props) {
+export function StatsSection({ title, subtitle, cards, links }: Props) {
   return (
     <>
       <div style={{ marginBottom: 12 }}>
-        {link ? (
+        {links.length > 0 ? (
+          // The title links to the first source, as the single link always did.
           <a
-            href={link.url}
+            href={links[0].url}
             target="_blank"
             rel="noopener noreferrer"
-            title={link.label}
+            title={links[0].label}
             style={titleLink}
           >
             {title}
@@ -42,6 +43,17 @@ export function StatsSection({ title, subtitle, cards, link }: Props) {
         >
           {subtitle}
         </span>
+        {links.slice(1).map((l) => (
+          <a
+            key={l.url}
+            href={l.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={extraLink}
+          >
+            {l.label}
+          </a>
+        ))}
       </div>
 
       <div
@@ -97,4 +109,16 @@ const titleLink: CSSProperties = {
   ...titleText,
   textDecoration: "none",
   cursor: "pointer",
+};
+
+// Sources beyond the first (a merged Strava + Garmin activity).
+const extraLink: CSSProperties = {
+  display: "block",
+  fontSize: 10,
+  letterSpacing: ".14em",
+  color: "var(--accent-text)",
+  textTransform: "uppercase",
+  fontFamily: MONO,
+  textDecoration: "none",
+  marginTop: 4,
 };

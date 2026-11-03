@@ -15,6 +15,7 @@ function route(coords: [number, number][]): ActivityFeature {
       distance: 1000,
       moving_time: 300,
       elevation_gain: 10,
+      sources: [],
     },
   };
 }

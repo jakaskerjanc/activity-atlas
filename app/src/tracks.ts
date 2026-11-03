@@ -12,7 +12,7 @@ import type {
 } from "./types";
 
 /** Wire-format version this decoder understands (see scripts/build-tracks.ts). */
-export const PAYLOAD_VERSION = 2;
+export const PAYLOAD_VERSION = 3;
 
 function toFeature(track: EncodedTrack): ActivityFeature | null {
   const { poly, ...properties } = track;

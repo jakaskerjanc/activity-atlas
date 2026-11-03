@@ -1,16 +1,13 @@
 import math
 import warnings
-from datetime import datetime, timezone
 
 import polyline
-
-from .model import RawActivity, Activity
 
 # Canonical vocabulary (Strava display names collapse into this set).
 CANONICAL = {
     "Run", "Ride", "Hike", "Walk", "WeightTraining", "Workout", "Swim",
     "RockClimbing", "Rowing", "StairStepper", "Badminton", "Volleyball",
-    "IceSkate", "Tennis",
+    "IceSkate", "Tennis", "WaterSport", "Padel",
 }
 
 # Garmin snake typeKeys -> canonical. Unmapped keys title-case + warn.
@@ -25,11 +22,13 @@ GARMIN_TYPE_MAP = {
     "indoor_cardio": "Workout", "fitness_equipment": "Workout", "other": "Workout",
     "lap_swimming": "Swim", "open_water_swimming": "Swim",
     "indoor_climbing": "RockClimbing", "rock_climbing": "RockClimbing", "bouldering": "RockClimbing",
+    "rock_climb": "RockClimbing",   # Strava's older display name "Rock Climb"
     "indoor_rowing": "Rowing", "rowing": "Rowing",
     "stair_climbing": "StairStepper",
     "badminton": "Badminton", "volleyball": "Volleyball",
     "ice_skating": "IceSkate", "skating_ws": "IceSkate",
     "tennis": "Tennis", "tennis_v2": "Tennis",
+    "padel": "Padel", "paddelball": "Padel",   # Garmin's key for padel is "paddelball"
 }
 
 
@@ -84,24 +83,3 @@ def encode(track) -> str:
     if len(track) < 2:
         return ""
     return polyline.encode([(lat, lon) for lat, lon in track], 5)
-
-
-def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def normalize(raw: RawActivity, tol_m: float = 0.5) -> Activity:
-    poly = encode(simplify(raw.track, tol_m)) if raw.track else ""
-    if raw.source == "strava":
-        aid, strava_id, garmin_id = f"s:{raw.source_id}", raw.source_id, None
-    else:
-        aid, strava_id, garmin_id = f"g:{raw.source_id}", None, raw.source_id
-    return Activity(
-        id=aid, strava_id=strava_id, garmin_id=garmin_id,
-        name=raw.name, type=canonical_type(raw.type_raw),
-        start_time=_iso(raw.start_time),
-        distance=float(raw.distance_m), moving_time=int(raw.moving_time_s),
-        elevation_gain=float(raw.elevation_gain_m), polyline=poly,
-        start_lat=raw.track[0][0] if raw.track else None,
-        start_lng=raw.track[0][1] if raw.track else None,
-    )
