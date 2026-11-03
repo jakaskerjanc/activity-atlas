@@ -246,10 +246,10 @@ against the newer database, up to 3 attempts). A snapshot is kept in
 R2 database. Refresh it on demand with:
 
 ```bash
-pnpm sync
+npm run sync
 ```
 
-`pnpm sync` overwrites the local copy with the R2 database; without R2
+`npm run sync` overwrites the local copy with the R2 database; without R2
 configured it exits 1, because the local database is already the master.
 
 Exit codes: `5` means R2 kept rejecting the upload because another writer was

@@ -272,10 +272,10 @@ class GarminFetcher:
             deleted = self._mark_deleted(conn, items)
             counts = engine.apply_records(conn, self.archive, records, now=self.now)
             conn.commit()
-            # after the commit, so a wellness failure leaves the activities stored
+            # after the commit, so a wellness failure leaves the activities stored (main uploads them under R2)
             wellness_days = 0
 
-            def save(batch):    # per chunk of days, so an interrupted backfill keeps its progress
+            def save(batch):    # per chunk of days, so an interrupted backfill keeps its progress (locally, and uploaded under R2)
                 nonlocal wellness_days
                 wellness_days += apply_wellness(conn, self.archive, batch)
                 conn.commit()
@@ -310,13 +310,21 @@ def main():
     client = first.authenticate()   # fail loud on missing/rejected key, before any pull
 
     def work(path):
-        # a fresh fetcher per attempt, so a redo after a lost upload race starts clean
-        return GarminFetcher(path, archive, key_file=args.api_key_file, wellness_since=args.wellness_since,
-                             client=client).run()
-    try:
-        counts = writer.run(args.db, archive, work, today=date.today().isoformat())
-    except GarminAuthError as e:
-        auth_rejected(e)        # key expired between startup and the API calls
+        # A fresh fetcher per attempt, so a redo after a lost upload race starts clean.
+        # A failed run() has already committed what it fetched (run() closes its connection
+        # on the way out), so hand the error back instead of raising: writer.run then
+        # uploads that progress, and main re-raises the error afterwards.
+        try:
+            return GarminFetcher(path, archive, key_file=args.api_key_file,
+                                 wellness_since=args.wellness_since, client=client).run(), None
+        except Exception as e:
+            return None, e
+    counts, error = writer.run(args.db, archive, work, today=date.today().isoformat())
+    if error is not None:
+        try:
+            raise error
+        except GarminAuthError as e:
+            auth_rejected(e)    # key expired between startup and the API calls
     print(f"garmin_fetch: {counts}")
 
 

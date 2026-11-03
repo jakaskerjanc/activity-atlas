@@ -25,8 +25,7 @@ def main():
     tmp = args.db + ".pull"
     try:
         if writer.pull(archive.store, tmp) is None:
-            print(f"R2 has no database at {writer.DB_KEY}: run an import with --init-db first (see migration)",
-                  file=sys.stderr)
+            print(f"sync: R2 has no database at {writer.DB_KEY} (nothing to sync yet)", file=sys.stderr)
             raise SystemExit(writer.EXIT_NO_REMOTE_DB)
         for suffix in ("-journal", "-wal", "-shm"):    # leftovers of the copy being replaced
             if os.path.exists(args.db + suffix):

@@ -14,6 +14,7 @@ from ingest import archive as archive_mod
 from ingest import db, strava_import, sync, writer
 from ingest import garmin_fetch as gf
 from ingest.archive import LocalArchive
+from ingest.garmin_api import GarminAuthError
 from ingest.garmin_import import GarminImporter
 from ingest.objstore import MemoryStore
 from ingest.tests.test_strava_import import GYM, HEADER, _zip as _strava_zip
@@ -155,3 +156,41 @@ def test_fetch_without_remote_db_exits_6(tmp_path, monkeypatch, capsys):
     assert exc.value.code == 6
     assert "--init-db" in capsys.readouterr().err
     assert store.head(writer.DB_KEY) is None
+
+
+def _failing_wellness_api(error):
+    class Api(_FakeApi):
+        def get_raw(self, path, params=None):
+            raise error
+    return Api
+
+
+def _seed_r2_db(store, tmp_path):
+    path = str(tmp_path / "seed.sqlite")
+    db.open_db(path).close()
+    store.put(writer.DB_KEY, open(path, "rb").read())
+
+
+def _r2_activities(store, tmp_path):
+    path = str(tmp_path / "from-r2.sqlite")
+    open(path, "wb").write(store.get(writer.DB_KEY)[0])
+    return {pid for (_, pid) in _activity_ids(path)}
+
+
+@pytest.mark.parametrize("error, code", [(RuntimeError("boom"), 1), (GarminAuthError("401"), 3)])
+def test_interrupted_fetch_still_uploads_what_it_committed(tmp_path, monkeypatch, error, code):
+    store = _r2(monkeypatch, tmp_path)
+    _seed_r2_db(store, tmp_path)
+    monkeypatch.setattr(gf, "GarminPersonalApi", _failing_wellness_api(error))
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite")])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(BaseException) as exc:
+            gf.main()
+    # (a GarminApiError is retried per endpoint by the wellness fetch and never aborts the run)
+    if code == 3:
+        assert isinstance(exc.value, SystemExit) and exc.value.code == 3
+    else:
+        assert exc.value is error
+    assert _r2_activities(store, tmp_path) == {"5000001", "5000002"}
+    assert any(k.startswith(writer.SNAPSHOT_PREFIX) for k, _ in store.list(writer.SNAPSHOT_PREFIX))
