@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Daily Garmin fetch into R2. The Personal API key and the R2_* names are read
-# from the environment (or the repo-root .env, by the writer). Nothing is
-# committed: the database lives in R2, and the writer reports whether it
-# changed through $GITHUB_OUTPUT (db_changed=true|false).
+# Daily Garmin fetch into R2. The R2_BUCKET gate below reads the process
+# environment only (not the repo-root .env); in CI the secrets arrive as env
+# vars. Nothing is committed: the database lives in R2, and the writer reports
+# whether it changed through $GITHUB_OUTPUT (db_changed=true|false).
 set -euo pipefail
 
 DB="${DB:-data/activities.sqlite}"
@@ -11,6 +11,10 @@ if [ -z "${R2_BUCKET:-}" ]; then
   echo "::notice::no R2 secrets: the daily fetch needs R2"
   exit 0
 fi
+
+# Force the R2 archive: with an incomplete credential set, open_archive then
+# raises instead of falling back to a local archive that dies with the runner.
+export ARCHIVE_URL="r2://$R2_BUCKET"
 
 # Fail-loud: a rejected key exits non-zero and fails the job.
 "${PYTHON_BIN:-python3}" -m ingest.garmin_fetch --db "$DB"

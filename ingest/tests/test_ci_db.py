@@ -80,3 +80,32 @@ def test_empty_fallback_warns(tmp_path):
     assert result.stdout == "data/activities.sqlite\n"
     assert "::warning::" in result.stderr
     assert "empty" in result.stderr
+
+
+def _assert_refused(result, tmp_path):
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "R2" in result.stderr
+    assert not (tmp_path / "aws.log").exists()
+
+
+def test_bucket_without_ro_pair_fails_not_demo(tmp_path):
+    body, _ = _recording_aws(tmp_path)
+    env = {"R2_ACCOUNT_ID": "acct123", "R2_BUCKET": "my-bucket",
+           "R2_ACCESS_KEY_ID": "rw-id", "R2_SECRET_ACCESS_KEY": "rw-secret"}
+    result = _run(tmp_path, env, aws_body=body, demo=True)
+    _assert_refused(result, tmp_path)
+
+
+def test_ro_pair_without_account_fails(tmp_path):
+    body, _ = _recording_aws(tmp_path)
+    env = {k: v for k, v in RO_ENV.items() if k != "R2_ACCOUNT_ID"}
+    result = _run(tmp_path, env, aws_body=body, demo=True)
+    _assert_refused(result, tmp_path)
+
+
+def test_ro_pair_without_bucket_fails(tmp_path):
+    body, _ = _recording_aws(tmp_path)
+    env = {k: v for k, v in RO_ENV.items() if k != "R2_BUCKET"}
+    result = _run(tmp_path, env, aws_body=body, demo=True)
+    _assert_refused(result, tmp_path)
