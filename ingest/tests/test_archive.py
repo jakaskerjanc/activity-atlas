@@ -212,7 +212,8 @@ def test_open_archive_selection(monkeypatch, tmp_path):
         monkeypatch.setenv(name, value)
     remote = open_archive()
     assert isinstance(remote, RemoteArchive) and is_remote(remote)
-    assert remote.root == DEFAULT_CACHE and remote.store.bucket == "mine"
+    assert remote.root == os.path.join(DEFAULT_CACHE, "mine") == "data/cache/mine"
+    assert remote.store.bucket == "mine"
     assert open_archive("r2://mine").store.bucket == "mine"
 
     local = open_archive("file:///x")
@@ -224,3 +225,27 @@ def test_open_archive_selection(monkeypatch, tmp_path):
 def test_open_archive_r2_without_credentials_raises():
     with pytest.raises(ValueError):
         open_archive("r2://mine")
+
+
+@pytest.mark.parametrize("bad_key", ["records/../../evil.json", "records//x.json", "records/garmin/./x.json"])
+def test_remote_sync_rejects_unsafe_store_keys(tmp_path, bad_key):
+    store = MemoryStore()
+    store.put(bad_key, b"{}")
+    cache = tmp_path / "deep" / "cache"
+    a = RemoteArchive(store, str(cache))
+    with pytest.raises(ValueError, match="unsafe archive key from store"):
+        a.list_records()
+    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == []
+    assert not (tmp_path / "evil.json").exists() and not (tmp_path / "deep" / "evil.json").exists()
+
+
+def test_remote_get_blob_rejects_corrupted_store_blob(tmp_path):
+    store = MemoryStore()
+    sha = hashlib.sha256(b"good").hexdigest()
+    store.put(f"raw/{sha}", b"corrupted")
+    a = RemoteArchive(store, str(tmp_path / "cache"))
+    with pytest.raises(ValueError, match="does not match its hash"):
+        a.get_blob(sha)
+    assert not os.path.exists(a._path(f"raw/{sha}"))
+    store.put(f"raw/{sha}", b"good")
+    assert a.get_blob(sha) == b"good" and os.path.exists(a._path(f"raw/{sha}"))

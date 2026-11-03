@@ -198,9 +198,12 @@ class RemoteArchive(LocalArchive):
         self.store.put(key, data)
         super()._write(key, lambda f: f.write(data))
 
-    def _fetch(self, key: str) -> bytes:
-        """Download key into the cache only (it is already in the store)."""
+    def _fetch(self, key: str, sha256: str | None = None) -> bytes:
+        """Download key into the cache only (it is already in the store). With
+        ``sha256``, the bytes must hash to it before anything is cached."""
         data, _ = self.store.get(key)
+        if sha256 is not None and hashlib.sha256(data).hexdigest() != sha256:
+            raise ValueError(f"archive blob {key} does not match its hash")
         super()._write(key, lambda f: f.write(data))
         return data
 
@@ -213,12 +216,21 @@ class RemoteArchive(LocalArchive):
         except KeyError:
             pass
         try:
-            return self._fetch(f"raw/{sha256}")
+            return self._fetch(f"raw/{_safe(sha256)}", sha256)
         except KeyError:
             raise KeyError(sha256) from None
 
     def _sync(self, prefix: str) -> None:
-        for key, _ in self.store.list(prefix):
+        keys = [key for key, _ in self.store.list(prefix)]
+        for key in keys:  # the store is untrusted: no key may escape the cache root
+            try:
+                if not key.startswith(prefix):
+                    raise ValueError(key)
+                for part in key.split("/"):
+                    _safe(part)
+            except ValueError:
+                raise ValueError(f"unsafe archive key from store: {key!r}") from None
+        for key in keys:
             if not os.path.exists(self._path(key)):
                 self._fetch(key)
 
@@ -272,5 +284,6 @@ def open_archive(url: str | None = None) -> Archive:
             raise ValueError(f"{url}: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set")
         if url[len("r2://"):] != store.bucket:
             raise ValueError(f"{url}: bucket differs from R2_BUCKET={store.bucket}")
-        return RemoteArchive(store, DEFAULT_CACHE)
+        # One cache folder per bucket, so a cached key is never taken for one the bucket lacks.
+        return RemoteArchive(store, os.path.join(DEFAULT_CACHE, store.bucket))
     raise ValueError(f"unsupported archive URL: {url} (expected file:// or r2://)")
