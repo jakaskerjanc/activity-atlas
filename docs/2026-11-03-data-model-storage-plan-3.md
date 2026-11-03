@@ -595,7 +595,8 @@ it.
     `data/activities.sqlite` from git here; Task 7 does it at cutover.
   - **README:**
     - CI section: the secrets become `GARMIN_PERSONAL_API_KEY`, the four
-      `R2_*`, and the RO pair. `GH_PAT` is no longer used: delete it.
+      `R2_*`, and the RO pair. `GH_PAT` is no longer used (Task 7 Step 7 says
+      when to delete it).
     - Setting up your own copy: say that without R2 secrets the site deploys
       the demo data, or an empty map until §6 adds it, and the daily fetch is
       skipped.
@@ -673,7 +674,9 @@ the owner's `.env`.
      or reports no change.
   3. Confirm the deploy pulls from R2 and the site shows the activities with
      both links on merged ones.
-  4. The owner deletes the `GH_PAT` secret.
+  4. The owner deletes the `GH_PAT` secret only after about a week of clean
+     daily v2 runs. Until then, reverting the merge must still work, and the
+     restored v1 fetch pushes its database commits with `GH_PAT`.
 
 ## Out of scope
 
