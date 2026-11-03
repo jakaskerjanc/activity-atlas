@@ -1,0 +1,131 @@
+{
+ "cases": [
+  {
+   "blob": "eNpjYIAARhw0E5RmhtIAAMgACQ==",
+   "channel": "time",
+   "name": "time 1 Hz",
+   "values": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    8.0
+   ]
+  },
+  {
+   "blob": "eNoDAAAAAAE=",
+   "channel": "time",
+   "name": "time empty",
+   "values": []
+  },
+  {
+   "blob": "eNqLvFMkzQAEZgwQ0PnrPxgAAEugCXY=",
+   "channel": "lat",
+   "name": "lat",
+   "values": [
+    46.0512345,
+    46.0512399,
+    46.0511
+   ]
+  },
+  {
+   "blob": "eNr7f9EzmwEImGJyNP8DAQA1iwd0",
+   "channel": "lon",
+   "name": "lon antimeridian",
+   "values": [
+    179.9999999,
+    -179.9999999
+   ]
+  },
+  {
+   "blob": "eNoz4WEAg5f/IQDCY2gwhDIAr2gI1A==",
+   "channel": "altitude",
+   "name": "altitude up and down",
+   "values": [
+    312.4,
+    310.1,
+    null,
+    315.0
+   ]
+  },
+  {
+   "blob": "eNpjYACDhiQIzcDMgAIa0PkALZAB6Q==",
+   "channel": "hr",
+   "name": "hr missing start middle end",
+   "values": [
+    null,
+    98.0,
+    101.0,
+    null,
+    104.0,
+    null
+   ]
+  },
+  {
+   "blob": "eNoLYIAAJii97j8EBEL5AGtkCEs=",
+   "channel": "cadence",
+   "name": "cadence",
+   "values": [
+    80.0,
+    82.0,
+    0.0,
+    81.0
+   ]
+  },
+  {
+   "blob": "eNq7xMIABnq//4PBGl4GZNDA/Q8iDgAcIxA2",
+   "channel": "speed",
+   "name": "speed",
+   "values": [
+    1.234,
+    0.0,
+    3.5,
+    null,
+    2.999
+   ]
+  },
+  {
+   "blob": "eNpjYIAAR0YIvRZKH4PSABdlAbg=",
+   "channel": "distance",
+   "name": "distance",
+   "values": [
+    0.0,
+    3.21,
+    7.5,
+    12.04
+   ]
+  },
+  {
+   "blob": "eNq7xAABGgwooIHtPwQAAD60CHo=",
+   "channel": "power",
+   "name": "power",
+   "values": [
+    210.0,
+    250.0,
+    null,
+    0.0
+   ]
+  },
+  {
+   "blob": "eNr7+x8CGBkggBlKAwCjbAf7",
+   "channel": "temperature",
+   "name": "temperature negative",
+   "values": [
+    -3.0,
+    -2.0,
+    1.0
+   ]
+  },
+  {
+   "blob": "eNpjYACDBgYoDQAFEAEB",
+   "channel": "hr",
+   "name": "hr all missing",
+   "values": [
+    null,
+    null
+   ]
+  }
+ ],
+ "encoding": 1
+}
