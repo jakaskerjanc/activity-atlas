@@ -3,8 +3,9 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths: ["data/activities.sqlite", "app/**", "scripts/**", ".github/workflows/deploy.yml"]
+    paths: ["app/**", "scripts/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: pages
@@ -29,9 +30,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # R2 read-only token -> pull the database; a fork without R2 secrets
+      # builds from data/demo/ if present, otherwise an empty site.
+      - name: Get database
+        id: db
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_RO_ACCESS_KEY_ID: ${{ secrets.R2_RO_ACCESS_KEY_ID }}
+          R2_RO_SECRET_ACCESS_KEY: ${{ secrets.R2_RO_SECRET_ACCESS_KEY }}
+        # Assign first: `echo "path=$(...)"` would swallow a failed pull.
+        run: |
+          path=$(scripts/ci_db.sh)
+          echo "path=$path" >> "$GITHUB_OUTPUT"
       - name: Build site
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
+          DB_PATH: ${{ steps.db.outputs.path }}
         run: pnpm run build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
