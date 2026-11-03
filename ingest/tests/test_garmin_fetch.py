@@ -471,6 +471,13 @@ def test_wellness_since_reaches_the_endpoints(tmp_path):
     assert min(starts) == "2026-10-20" and len(starts) == 8
 
 
+def test_wellness_until_reaches_the_endpoints(tmp_path):
+    client = FakeClient(_list(), _downloads())
+    _fetcher(tmp_path, client, wellness_since="2026-10-20", wellness_until="2026-10-22").run()
+    starts = {p["startDate"] for path, p in client.wellness_calls if path == WELLNESS_PATH}
+    assert sorted(starts) == ["2026-10-20", "2026-10-21", "2026-10-22"]
+
+
 def test_main_passes_wellness_since(monkeypatch, tmp_path):
     seen = {}
 
@@ -481,9 +488,19 @@ def test_main_passes_wellness_since(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gf, "GarminFetcher", FakeFetcher)
     monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite"),
-                                      "--wellness-since", "2026-10-01"])
+                                      "--wellness-since", "2026-10-01", "--wellness-until", "2026-10-03"])
     gf.main()
-    assert seen["wellness_since"] == "2026-10-01"
+    assert seen["wellness_since"] == "2026-10-01" and seen["wellness_until"] == "2026-10-03"
+
+
+@pytest.mark.parametrize("args", [["--wellness-until", "2026-10-03"],
+                                  ["--wellness-since", "2026-10-05", "--wellness-until", "2026-10-03"]])
+def test_main_rejects_wellness_until_without_a_valid_since(monkeypatch, tmp_path, capsys, args):
+    monkeypatch.setattr(gf, "GarminFetcher", lambda *a, **kw: pytest.fail("must not start a fetch"))
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite"), *args])
+    with pytest.raises(SystemExit) as exc:
+        gf.main()
+    assert exc.value.code == 2 and "--wellness-until" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("bad", ["2026-13-01", "yesterday", "01.10.2026"])

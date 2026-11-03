@@ -18,6 +18,16 @@ def test_canonical_type_garmin_keys():
     assert canonical_type("tennis_v2") == "Tennis"
 
 
+def test_canonical_type_types_seen_in_the_owners_data():
+    # Strava's older "Rock Climb", Strava's "Water Sport" and Garmin's "paddelball" (padel)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert canonical_type("Rock Climb") == "RockClimbing"
+        assert canonical_type("Water Sport") == "WaterSport"
+        assert canonical_type("paddelball") == "Padel"
+        assert canonical_type("padel") == "Padel"
+
+
 def test_canonical_type_unmapped_warns_and_titlecases():
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
@@ -49,8 +59,3 @@ def test_encode_empty_for_degenerate():
     assert encode([]) == ""
     assert encode([(46.0, 14.0)]) == ""
 
-
-def test_paddelball_title_cases():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        assert canonical_type("paddelball") == "Paddelball"
