@@ -1,34 +1,60 @@
 import hashlib
+import os
 
 import pytest
-from ingest.archive import LocalArchive, open_archive
+from ingest.archive import DEFAULT_CACHE, LocalArchive, RemoteArchive, is_remote, open_archive
+from ingest.objstore import MemoryStore
 from ingest.records import SourceRecord, WellnessRecord, _canonical, latest
+
+
+@pytest.fixture(params=["local", "remote"])
+def archive(request, tmp_path):
+    """Every Archive behaviour must hold for the folder and the R2-with-cache backend."""
+    if request.param == "local":
+        return LocalArchive(str(tmp_path / "a"))
+    return RemoteArchive(MemoryStore(), str(tmp_path / "cache"))
+
+
+def stored_keys(a, prefix):
+    """Keys the backend holds under prefix: the folder itself, or the object store (not the cache)."""
+    if is_remote(a):
+        return [k for k, _ in a.store.list(prefix)]
+    found = []
+    for dirpath, _, names in os.walk(a._path(prefix.rstrip("/"))):
+        found += [os.path.relpath(os.path.join(dirpath, n), a.root).replace(os.sep, "/") for n in names]
+    return sorted(found)
+
+
+def stored_bytes(a, key):
+    if is_remote(a):
+        return a.store.get(key)[0]
+    with open(a._path(key), "rb") as f:
+        return f.read()
 
 
 def _rec(fetched_at="2026-10-27T10:00:00+00:00", name="Run", as_of=None):
     return SourceRecord("garmin", "900", fetched_at, {"activityName": name}, None, None, {"kind": "garmin_api"}, as_of)
 
 
-def test_blobs_are_content_addressed_and_idempotent(tmp_path):
-    a = LocalArchive(str(tmp_path))
+def test_blobs_are_content_addressed_and_idempotent(archive):
+    a = archive
     sha = a.put_blob(b"fit-bytes")
     assert a.put_blob(b"fit-bytes") == sha and a.get_blob(sha) == b"fit-bytes"
     assert a.has_blob(sha) and not a.has_blob("0" * 64)
-    assert len(list((tmp_path / "raw").iterdir())) == 1
+    assert stored_keys(a, "raw/") == [f"raw/{sha}"]
     with pytest.raises(KeyError):
         a.get_blob("0" * 64)
 
 
-def test_put_export_is_byte_identical(tmp_path):
+def test_put_export_is_byte_identical(archive, tmp_path):
     src = tmp_path / "export_123.zip"; src.write_bytes(b"PK\x03\x04zip")
-    a = LocalArchive(str(tmp_path / "arch"))
-    key = a.put_export("strava", str(src), today="2026-10-27")
+    key = archive.put_export("strava", str(src), today="2026-10-27")
     assert key == "exports/strava/2026-10-27-export_123.zip"
-    assert (tmp_path / "arch" / key).read_bytes() == b"PK\x03\x04zip"
+    assert stored_bytes(archive, key) == b"PK\x03\x04zip"
 
 
-def test_put_record_skips_unchanged_but_keeps_a_b_a_edits(tmp_path):
-    a = LocalArchive(str(tmp_path))
+def test_put_record_skips_unchanged_but_keeps_a_b_a_edits(archive):
+    a = archive
     assert a.put_record(_rec()) is True
     assert a.put_record(_rec("2026-10-28T10:00:00+00:00")) is False        # same content
     assert a.put_record(_rec("2026-10-29T10:00:00+00:00", "Renamed")) is True
@@ -48,9 +74,9 @@ def test_open_archive_defaults_and_rejects_unknown(monkeypatch, tmp_path):
         open_archive("s3://x")
 
 
-def test_put_export_reuses_key_for_identical_bytes(tmp_path):
+def test_put_export_reuses_key_for_identical_bytes(archive, tmp_path):
     src = tmp_path / "export_123.zip"; src.write_bytes(b"PK\x03\x04zip")
-    a = LocalArchive(str(tmp_path / "arch"))
+    a = archive
     first = a.put_export("strava", str(src), today="2026-10-27")
     assert a.put_export("strava", str(src), today="2026-10-28") == first
     src.write_bytes(b"PK\x03\x04zip2")
@@ -76,8 +102,8 @@ def test_record_without_as_of_keeps_plan1_hash():
     assert with_as_of.content_sha() != r.content_sha()
 
 
-def test_put_record_compares_with_newest_by_recency(tmp_path):
-    a = LocalArchive(str(tmp_path))
+def test_put_record_compares_with_newest_by_recency(archive):
+    a = archive
     b = _rec("2026-10-20T10:00:00+00:00", "B")
     older = _rec("2026-10-28T10:00:00+00:00", "A", as_of="2026-10-01T00:00:00+00:00")
     assert a.put_record(b) is True
@@ -90,8 +116,8 @@ def _wrec(fetched_at="2026-10-27T10:00:00+00:00", blob="a" * 64):
                           {"kind": "garmin_export"})
 
 
-def test_put_wellness_skips_identical_and_lists(tmp_path):
-    a = LocalArchive(str(tmp_path))
+def test_put_wellness_skips_identical_and_lists(archive):
+    a = archive
     first = _wrec()
     assert a.put_wellness(first) is True
     assert a.put_wellness(_wrec("2026-10-28T10:00:00+00:00")) is False     # same content
@@ -99,6 +125,102 @@ def test_put_wellness_skips_identical_and_lists(tmp_path):
     assert a.put_wellness(changed) is True
     assert sorted(a.list_wellness(), key=lambda r: r.fetched_at) == [first, changed]
     assert WellnessRecord.from_json(first.to_json()) == first
-    stored = sorted(p.name for p in (tmp_path / "wellness" / "garmin" / "monitoring_fit" / ("a" * 64)).iterdir())
-    assert stored == [f"20261027T100000Z-{first.content_sha()[:12]}.json",
-                      f"20261029T100000Z-{changed.content_sha()[:12]}.json"]
+    base = f"wellness/garmin/monitoring_fit/{'a' * 64}"
+    assert stored_keys(a, "wellness/") == [f"{base}/20261027T100000Z-{first.content_sha()[:12]}.json",
+                                           f"{base}/20261029T100000Z-{changed.content_sha()[:12]}.json"]
+
+
+def _pair(tmp_path):
+    store = MemoryStore()
+    return (RemoteArchive(store, str(tmp_path / "cache-a")), RemoteArchive(store, str(tmp_path / "cache-b")), store)
+
+
+def test_remote_cold_cache_sees_other_writer(tmp_path):
+    a, b, _ = _pair(tmp_path)
+    src = tmp_path / "export_1.zip"; src.write_bytes(b"PK\x03\x04zip")
+    sha = a.put_blob(b"fit-bytes")
+    a.put_record(_rec())
+    a.put_wellness(_wrec())
+    key = a.put_export("strava", str(src), today="2026-10-27")
+
+    assert b.has_blob(sha) and b.get_blob(sha) == b"fit-bytes"
+    assert b.list_records() == a.list_records() == [_rec()]
+    assert b.list_wellness() == a.list_wellness() == [_wrec()]
+    assert b.put_export("strava", str(src), today="2026-11-01") == key
+
+
+def test_remote_get_blob_missing_raises_key_error(tmp_path):
+    a, _, _ = _pair(tmp_path)
+    with pytest.raises(KeyError):
+        a.get_blob("0" * 64)
+
+
+def test_remote_put_record_dedupes_against_store_not_cache(tmp_path):
+    a, b, store = _pair(tmp_path)
+    assert a.put_record(_rec()) is True
+    assert a.put_wellness(_wrec()) is True
+    records, wellness = store.list("records/"), store.list("wellness/")
+    assert b.put_record(_rec("2026-10-28T10:00:00+00:00")) is False
+    assert b.put_wellness(_wrec("2026-10-28T10:00:00+00:00")) is False
+    assert store.list("records/") == records and store.list("wellness/") == wellness
+
+
+def test_remote_failed_upload_leaves_cache_clean(tmp_path, monkeypatch):
+    store, cache = MemoryStore(), tmp_path / "cache"
+    real_put, calls = store.put, []
+
+    def flaky_put(*args, **kwargs):
+        calls.append(args[0])
+        if len(calls) == 2:
+            raise OSError("upload failed")
+        return real_put(*args, **kwargs)
+
+    monkeypatch.setattr(store, "put", flaky_put)
+    a = RemoteArchive(store, str(cache))
+    sha1 = a.put_blob(b"1")
+    with pytest.raises(OSError):
+        a.put_blob(b"2")
+    cached = [os.path.relpath(os.path.join(d, n), cache) for d, _, names in os.walk(cache) for n in names]
+    assert cached == [os.path.join("raw", sha1)]
+
+    sha2 = hashlib.sha256(b"2").hexdigest()
+    fresh_store = MemoryStore()
+    fresh = RemoteArchive(fresh_store, str(cache))
+    assert fresh.put_blob(b"2") == sha2
+    assert [k for k, _ in fresh_store.list("raw/")] == [f"raw/{sha2}"]
+
+
+def test_remote_export_same_size_compares_sha_metadata(tmp_path):
+    a, _, store = _pair(tmp_path)
+    one, two = tmp_path / "one.zip", tmp_path / "two.zip"
+    one.write_bytes(b"AAAA"); two.write_bytes(b"BBBB")
+    k1 = a.put_export("strava", str(one), today="2026-10-27")
+    k2 = a.put_export("strava", str(two), today="2026-10-27")
+    assert k1 != k2
+    assert a.put_export("strava", str(one), today="2026-10-28") == k1
+    assert [k for k, _ in store.list("exports/strava/")] == [k1, k2]
+    assert store.head(k1)["metadata"]["sha256"] == hashlib.sha256(b"AAAA").hexdigest()
+    assert not os.path.exists(a._path("exports"))      # exports are never cached
+
+
+def test_open_archive_selection(monkeypatch, tmp_path):
+    assert isinstance(open_archive(), LocalArchive) and open_archive().root == "data/archive"
+    assert not is_remote(open_archive())
+
+    for name, value in (("R2_ACCOUNT_ID", "acc"), ("R2_ACCESS_KEY_ID", "i"),
+                        ("R2_SECRET_ACCESS_KEY", "s"), ("R2_BUCKET", "mine")):
+        monkeypatch.setenv(name, value)
+    remote = open_archive()
+    assert isinstance(remote, RemoteArchive) and is_remote(remote)
+    assert remote.root == DEFAULT_CACHE and remote.store.bucket == "mine"
+    assert open_archive("r2://mine").store.bucket == "mine"
+
+    local = open_archive("file:///x")
+    assert isinstance(local, LocalArchive) and not is_remote(local) and local.root == "/x"
+    with pytest.raises(ValueError):
+        open_archive("r2://other")
+
+
+def test_open_archive_r2_without_credentials_raises():
+    with pytest.raises(ValueError):
+        open_archive("r2://mine")

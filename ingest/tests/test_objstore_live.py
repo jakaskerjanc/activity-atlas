@@ -8,6 +8,7 @@ import pytest
 
 from ingest.objstore import PreconditionFailed, store_from_env
 
+USES_LIVE_R2 = True  # tells the conftest not to clear R2_* settings
 pytestmark = pytest.mark.skipif(os.environ.get("R2_LIVE_TEST") != "1", reason="live R2 test")
 
 
