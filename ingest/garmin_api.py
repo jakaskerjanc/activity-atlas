@@ -19,13 +19,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import config
+
 BASE_URL = "https://personal.connectapi.garmin.com"
 TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
 _LIST_PATH = "/activitylist-service/activities/search/activities"
 _DOWNLOAD_PATH = "/download-service/files/activity/"
 API_KEY_ENV = "GARMIN_PERSONAL_API_KEY"
 BASE_URL_ENV = "GARMIN_PERSONAL_API_BASE_URL"
-DOTENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+DOTENV_FILE = config.DOTENV_FILE
 USER_AGENT = "strava-on-maps/0.1"
 
 
@@ -65,22 +67,7 @@ def _resolve_key_file(path, source):
 
 def _read_dotenv_key(path):
     """GARMIN_PERSONAL_API_KEY from a KEY=VALUE .env file; None when absent/empty."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except OSError:
-        return None
-    for line in lines:
-        line = line.strip()
-        if line.startswith("export "):
-            line = line[len("export "):].lstrip()
-        name, sep, value = line.partition("=")
-        if sep and name.strip() == API_KEY_ENV:
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1].strip()
-            return value or None
-    return None
+    return config.dotenv_value(path, API_KEY_ENV)
 
 
 def resolve_api_key(api_key=None, *, key_file=None):
