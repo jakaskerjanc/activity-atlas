@@ -17,7 +17,10 @@ def _run(tmp_path, env_extra, python_body="true\n"):
     """Run ci_fetch.sh with stub python and git; git must never be called."""
     bin_dir = tmp_path / "bin"
     log = tmp_path / "calls.log"
-    python = _stub(bin_dir, "pybin", f'echo "$@" >> {log}\n' + python_body)
+    python = _stub(bin_dir, "pybin",
+                   f'echo "$@" >> {log}\n'
+                   f'echo "ARCHIVE_URL=${{ARCHIVE_URL:-}}" >> {log}\n'
+                   + python_body)
     _stub(bin_dir, "git", f'echo "git $@" >> {tmp_path / "git.log"}\nexit 99\n')
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("R2_") and k != "DB"}
@@ -38,8 +41,16 @@ def test_skips_without_r2(tmp_path):
 def test_runs_fetch_with_r2(tmp_path):
     result, log = _run(tmp_path, {"R2_BUCKET": "b"})
     assert result.returncode == 0
-    assert log.read_text().strip() == \
+    assert log.read_text().splitlines()[0] == \
         "-m ingest.garmin_fetch --db data/activities.sqlite"
+
+
+def test_forces_r2_archive(tmp_path):
+    # With incomplete R2 secrets the archive must fail loudly instead of
+    # falling back to a local archive that dies with the runner.
+    result, log = _run(tmp_path, {"R2_BUCKET": "my-bucket"})
+    assert result.returncode == 0
+    assert "ARCHIVE_URL=r2://my-bucket" in log.read_text().splitlines()
 
 
 def test_fetch_failure_fails_the_job(tmp_path):

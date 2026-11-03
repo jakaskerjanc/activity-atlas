@@ -212,8 +212,10 @@ gh secret set R2_ACCESS_KEY_ID           # and so on for each secret above
 ```
 
 `deploy.yml` also runs on a push to `main` that touches `app/**` or `scripts/**`,
-and on demand; it always pulls the current database from R2. If the pull fails,
-the deploy fails rather than publishing an empty site.
+and on demand. When the R2 secrets are set it always pulls the current database
+from R2, and a missing secret or a failed pull fails the deploy rather than
+publishing an empty site. A fork without any R2 secrets gets the demo data, or
+an empty map.
 
 ### Renewing the key
 
