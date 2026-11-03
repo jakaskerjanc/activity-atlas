@@ -167,3 +167,40 @@ def test_merge_with_hidden_activity_stays_hidden(tmp_path):
     activity_cli.set_hidden(conn, other, True)
     activity_cli.merge(conn, keep, other)
     assert _visible(conn, keep) == 0
+
+
+def test_split_redone_after_412_prints_one_line(tmp_path, monkeypatch, capsys):
+    dbp, _ = _imported(tmp_path)
+    conn = db.connect(dbp)
+    merged = _aid(conn, "strava", "111")
+    conn.close()
+    store = MemoryStore()
+    store.bucket = "bkt"
+    store.put(writer.DB_KEY, open(dbp, "rb").read())
+    real_put, raced = store.put, []
+
+    def racing_put(key, data, **kw):
+        if key == writer.DB_KEY and not raced:      # another writer lands first: 412 for us
+            raced.append(True)
+            other = str(tmp_path / "other.sqlite")
+            open(other, "wb").write(store.get(writer.DB_KEY)[0])
+            c = db.open_db(other)
+            c.execute("INSERT INTO gear (provider, name) VALUES ('strava', 'raced')")
+            c.commit()
+            c.close()
+            real_put(writer.DB_KEY, open(other, "rb").read())
+        return real_put(key, data, **kw)
+
+    monkeypatch.setattr(store, "put", racing_put)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    monkeypatch.setattr(sys, "argv", ["activity", "split", merged, "garmin:900001", "--db", str(tmp_path / "l.sqlite")])
+    activity_cli.main()
+    assert raced
+    out = capsys.readouterr().out
+    assert len([ln for ln in out.splitlines() if ln.startswith("split ")]) == 1
+    remote = str(tmp_path / "remote.sqlite")
+    open(remote, "wb").write(store.get(writer.DB_KEY)[0])
+    conn = db.connect(remote)
+    assert _aid(conn, "garmin", "900001") == out.strip().split()[-1]

@@ -1,4 +1,4 @@
-// Build app/public/tracks.json from the committed SQLite store.
+// Build app/public/tracks.json from the SQLite database at DB_PATH (default data/activities.sqlite, synced from R2).
 // Reads visible activities with geometry from the v2 database (hidden and
 // deleted ones never reach the public site), simplifies each route (Douglas–Peucker, 10 m)
 // and re-encodes it as a Google polyline for the compact wire format. No network.

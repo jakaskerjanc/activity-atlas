@@ -96,14 +96,14 @@ test("sources lists live providers strava first", () => {
   withDb(
     (db) => {
       addActivity(db, "merged");
-      addSource(db, "merged", "garmin", "222");
-      addSource(db, "merged", "strava", "111");
+      addSource(db, "merged", "garmin", "100");
+      addSource(db, "merged", "strava", "999");
     },
     (path) => {
       const { payload } = readPayload(path);
       assert.deepEqual(payload.tracks[0].sources, [
-        { provider: "strava", id: "111" },
-        { provider: "garmin", id: "222" },
+        { provider: "strava", id: "999" },
+        { provider: "garmin", id: "100" },
       ]);
     },
   );

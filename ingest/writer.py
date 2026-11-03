@@ -13,6 +13,7 @@ import hashlib
 import os
 import re
 import sys
+import tempfile
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -73,6 +74,35 @@ def _remove(path: str) -> None:
             pass
 
 
+def working_copy(db_path: str) -> str:
+    """A fresh, unique path next to db_path for one pull; the file does not exist yet.
+
+    Unique per call so two processes sharing a db_path (a backfill and a sync, say)
+    never delete or truncate each other's working copy.
+    """
+    directory = os.path.dirname(os.path.abspath(db_path))
+    os.makedirs(directory, exist_ok=True)
+    fd, path = tempfile.mkstemp(dir=directory, prefix=os.path.basename(db_path) + ".pull-")
+    os.close(fd)
+    os.remove(path)
+    return path
+
+
+def install(tmp: str, db_path: str) -> None:
+    """Replace db_path with the pulled copy at tmp.
+
+    Leftover journal/WAL files of the copy being replaced are removed first, so a
+    hot journal from a crashed earlier process is never rolled into the new file.
+    """
+    os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+    for suffix in ("-journal", "-wal", "-shm"):
+        try:
+            os.remove(db_path + suffix)
+        except FileNotFoundError:
+            pass
+    os.replace(tmp, db_path)
+
+
 def _prune_snapshots(store: ObjectStore) -> None:
     by_date = {}
     for key, _ in store.list(SNAPSHOT_PREFIX):
@@ -95,11 +125,13 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
         return work(db_path)
 
     store = archive.store
-    tmp = db_path + ".pull"
+    tmp = None
     changed = False
     try:
         for attempt in range(1, WRITE_ATTEMPTS + 1):
-            _remove(tmp)
+            if tmp:
+                _remove(tmp)
+            tmp = working_copy(db_path)
             etag = pull(store, tmp)
             if etag is None and not init_db:
                 print(
@@ -112,7 +144,7 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
             after = _sha256(tmp)
             if after is None or after == before:
                 if after is not None:
-                    os.replace(tmp, db_path)
+                    install(tmp, db_path)
                 return result
             with open(tmp, "rb") as fh:
                 data = fh.read()
@@ -128,8 +160,7 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
                 )
                 continue
             # The master is updated; the local copy follows it even if a snapshot step fails.
-            os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-            os.replace(tmp, db_path)
+            install(tmp, db_path)
             changed = True
             store.put(f"{SNAPSHOT_PREFIX}{today}.sqlite", data)
             _prune_snapshots(store)
@@ -141,5 +172,6 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
         )
         raise SystemExit(EXIT_WRITE_CONFLICT)
     finally:
-        _remove(tmp)
+        if tmp:
+            _remove(tmp)
         _report_changed(changed)

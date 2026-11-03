@@ -8,7 +8,11 @@ set -euo pipefail
 DB="${DB:-data/activities.sqlite}"
 
 if [ -z "${R2_BUCKET:-}" ]; then
-  echo "::notice::no R2 secrets: the daily fetch needs R2"
+  if [ -n "${GARMIN_PERSONAL_API_KEY:-}" ]; then
+    echo "::warning::GARMIN_PERSONAL_API_KEY is set but R2 is not configured: the fetch is skipped"
+  else
+    echo "::notice::no R2 secrets: the daily fetch needs R2"
+  fi
   exit 0
 fi
 

@@ -4,8 +4,8 @@
 
 All your Strava and Garmin activities as routes on one interactive Mapbox
 map, filterable by type and date. A GitHub Action builds a compact track file
-from the committed activity database and deploys a static site to GitHub
-Pages on every push.
+from the activity database (kept in a private R2 bucket, never in git) and
+deploys a static site to GitHub Pages.
 
 ## How it works
 
@@ -13,9 +13,11 @@ Pages on every push.
 data/activities.sqlite ──▶ build-tracks.ts ──▶ app/public/tracks.json ──▶ site
 ```
 
-`data/activities.sqlite` is the committed source of truth — a SQLite
-database of deduped activities from Strava and Garmin, built from bulk exports
-and kept current by the ongoing Garmin live fetch.
+`data/activities.sqlite` is a SQLite database of deduped activities from
+Strava and Garmin, built from bulk exports and kept current by the ongoing
+Garmin live fetch. It is never committed (`data/*` is gitignored). With R2
+configured the master lives in the bucket and this file is a synced copy of
+it; without R2 it is the local database itself.
 
 **`build-tracks.ts`** reads that database and writes `app/public/tracks.json`,
 simplifying each route with Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default
@@ -25,9 +27,9 @@ The frontend fetches this static file and decodes the polylines back into map
 geometry (`app/src/tracks.ts`) — no Strava/Garmin API calls happen in the
 browser.
 
-`npm run build` runs `build:tracks` then the app build, so CI needs no
-network access or secrets beyond the Mapbox token — it just reads the
-committed DB.
+`npm run build` runs `build:tracks` then the app build. In CI the deploy pulls
+the database from R2 with a read-only token first (see [CI](#ci)); locally it
+reads `data/activities.sqlite` (`npm run sync` refreshes it from R2).
 
 ## Populating the database
 
@@ -65,12 +67,12 @@ differ by more than 20%. Two records from the same provider never merge, and a
 type mismatch only logs a warning. Strava's values win on merged activities;
 Garmin fills the gaps. Both importers write into the same database.
 
-**Do not commit the new database.** It holds full-resolution GPS, heart rate
-and the raw export rows (including private notes). Until the storage cutover,
-the committed `data/activities.sqlite` stays the old v1 database that the
-site and the daily fetch use, and every new writer refuses it (exit code 4).
-Point `--db` at a scratch path instead, for example
-`--db data/v2.sqlite`.
+**Never commit the database.** It holds full-resolution GPS, heart rate
+and the raw export rows (including private notes); `data/*` is gitignored. With
+R2 configured, writers work on a pulled copy of the R2 master and leave the
+result at `--db`. Without R2, `--db` is the local database. A local `--db` that
+is still a v1 database is refused (exit code 4); point `--db` at a new path,
+for example `--db data/v2.sqlite`.
 
 Ongoing incremental fetch from the Garmin Connect Personal API
 (`ingest/garmin_fetch.py`) keeps the database current after the backfill — see
@@ -90,8 +92,9 @@ its ID: the rebuild carries over only the identity of each provider record
 (which activity it belongs to, manual pins, deletions) and the hidden flags,
 and re-derives everything else. Rebuilding twice gives the same rows. The
 importers and the fetch run a rebuild by themselves when the database has an
-older v2 schema. They refuse a v1 database (exit code 4): import fresh exports
-into a new database instead.
+older v2 schema. With a local archive they refuse a v1 `--db` (exit code 4):
+import fresh exports into a new database instead. With R2 the writers work on
+the pulled R2 copy, so exit code 4 does not apply.
 
 ## Manual fixes
 
@@ -139,8 +142,8 @@ then run `npm run fetch:garmin`. Credentials resolve in this order: an explicit
 then `GARMIN_PERSONAL_API_KEY` in `.env`. If no key is found, the fetch exits
 with code 2. The fetch stores every list page, activity ZIP and activity file
 in the archive (`ARCHIVE_URL`, `--archive`), then adds the new activities to
-the database (`--db`; see the warning in
-[Populating the database](#populating-the-database) about not committing it).
+the database (`--db`; the database is never committed, see
+[Populating the database](#populating-the-database)).
 
 Each run also re-checks the last 30 days of the Garmin list:
 
@@ -194,7 +197,10 @@ R2 and publishes the site. Nothing is committed to git, and the workflow only
 has `contents: read`. Each run exchanges the key for a fresh 24-hour token, so
 there is no token rotation and no `gh secret set` step during the run.
 
-Without the R2 secrets the fetch is skipped with a notice.
+Without the R2 secrets the fetch is skipped with a notice (a warning if
+`GARMIN_PERSONAL_API_KEY` is set but R2 is not). If a fetch uploads its progress
+and then fails, the deploy for that run is skipped and the data is published by
+the next successful run.
 
 **Secrets:**
 
@@ -262,6 +268,10 @@ npm run sync
 `npm run sync` overwrites the local copy with the R2 database; without R2
 configured it exits 1, because the local database is already the master.
 
+After deleting or recreating anything in the bucket, delete
+`data/cache/<bucket>/` as well: the local cache would otherwise skip
+re-uploading those keys.
+
 Exit codes: `5` means R2 kept rejecting the upload because another writer was
 busy (nothing was uploaded; run again). `6` means R2 has no database yet and
 `--init-db` was not passed.
@@ -303,8 +313,8 @@ npm run import:garmin -- <garmin-export.zip>
 ```
 
 Add `--db data/v2.sqlite` to both commands. This archives the exports under
-`data/archive/` (gitignored) and creates the new database. Don't commit it
-(see [Populating the database](#populating-the-database)).
+`data/archive/` (gitignored) and creates the new database, which is never
+committed (see [Populating the database](#populating-the-database)).
 
 ### 4. Push secrets to GitHub Actions
 

@@ -61,3 +61,22 @@ def test_sync_without_remote_db_exits_6(tmp_path, monkeypatch, capsys):
         sync.main()
     assert exc.value.code == 6
     assert not (tmp_path / "db.sqlite").exists()
+
+
+def test_sync_leaves_another_processes_working_copy_alone(tmp_path, monkeypatch):
+    store = MemoryStore()
+    store.bucket = "bkt"
+    store.put(writer.DB_KEY, _db_bytes(tmp_path, "remote.sqlite", "from-r2"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    local = str(tmp_path / "local.sqlite")
+    other = local + ".pull-writer"      # a running writer's working copy
+    with open(other, "wb") as fh:
+        fh.write(b"partial writer data")
+    monkeypatch.setattr(sys, "argv", ["sync", "--db", local])
+    sync.main()
+    assert _gear(local) == ["from-r2"]
+    with open(other, "rb") as fh:
+        assert fh.read() == b"partial writer data"
+    assert sorted(p.name for p in tmp_path.iterdir() if ".pull-" in p.name) == ["local.sqlite.pull-writer"]
