@@ -187,25 +187,33 @@ also fill typed `daily_stats` columns; the others are kept raw only.
 
 ### CI
 
-`.github/workflows/fetch-garmin.yml` runs daily: fetch via the Personal API →
-commit the DB if it changed → push, which retriggers `deploy.yml`. Each run
-exchanges the key for a fresh 24-hour token, so there is no token rotation and
-no `gh secret set` step during the run.
+`.github/workflows/fetch-garmin.yml` runs daily: fetch via the Personal API into
+the R2 database (see [R2](#r2-optional-the-owners-setup)). If the database
+changed, the workflow calls `deploy.yml` directly, which pulls the database from
+R2 and publishes the site. Nothing is committed to git, and the workflow only
+has `contents: read`. Each run exchanges the key for a fresh 24-hour token, so
+there is no token rotation and no `gh secret set` step during the run.
+
+Without the R2 secrets the fetch is skipped with a notice.
 
 **Secrets:**
 
 - `GARMIN_PERSONAL_API_KEY` — the Personal API key from above.
-- `GH_PAT` — fine-grained, this repo, **contents: write only**. The PAT push is
-  what retriggers `deploy.yml` (`GITHUB_TOKEN` pushes would not).
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` — the
+  R2 bucket and a read-write API token. Used by the fetch.
+- `R2_RO_ACCESS_KEY_ID`, `R2_RO_SECRET_ACCESS_KEY` — a read-only token on the
+  same bucket. Used by the deploy, which only needs to read the database.
 
-Set the secret without putting the key in shell history:
+Set them without putting the values in shell history:
 
 ```bash
 gh secret set GARMIN_PERSONAL_API_KEY    # paste the key at the prompt
+gh secret set R2_ACCESS_KEY_ID           # and so on for each secret above
 ```
 
-The workflow no longer writes any secrets, so `GH_PAT` needs no `secrets: write`
-permission.
+`deploy.yml` also runs on a push to `main` that touches `app/**` or `scripts/**`,
+and on demand; it always pulls the current database from R2. If the pull fails,
+the deploy fails rather than publishing an empty site.
 
 ### Renewing the key
 
@@ -302,6 +310,11 @@ Add `--db data/v2.sqlite` to both commands. This archives the exports under
 gh secret set VITE_MAPBOX_TOKEN -b"pk.xxx"
 ```
 
+Without R2 secrets the site deploys the demo data (`data/demo/activities.sqlite`,
+when the repo has one), or an empty map until [step 6](#6-publish-your-own-data-with-r2)
+adds your data. The daily Garmin fetch is skipped too. A fork never needs a
+Cloudflare account to deploy.
+
 ### 5. Enable Pages and run the workflow
 
 - Settings → Pages → Source = GitHub Actions.
@@ -310,6 +323,14 @@ gh secret set VITE_MAPBOX_TOKEN -b"pk.xxx"
   **Enforce HTTPS**.
 - Push to `main` (or run **Deploy** manually from the Actions tab) to build
   and deploy.
+
+### 6. Publish your own data with R2
+
+R2 is the only way to publish your own data; the database is never committed to
+git. Create a private R2 bucket, put the `R2_*` names in `.env`, and run the
+first import with `--init-db` (see [R2](#r2-optional-the-owners-setup)). Then add
+the repository secrets listed under [CI](#ci), including the read-only pair
+`R2_RO_ACCESS_KEY_ID` and `R2_RO_SECRET_ACCESS_KEY`, and run **Deploy**.
 
 ## Local development
 
