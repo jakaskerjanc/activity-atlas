@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 data/raw/
 data/archive/
+data/cache/
 dist/
 .env
 .env.local

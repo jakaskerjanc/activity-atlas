@@ -6,18 +6,22 @@ byte, and source records. Layout under the root:
     records/<provider>/<provider_activity_id>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
     wellness/<provider>/<source>/<key>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
 
-Only the local-folder backend exists here; R2 arrives in Plan 3.
+Two backends share that layout: a plain folder (LocalArchive) and a private R2
+bucket fronted by a local cache folder (RemoteArchive).
 """
 import hashlib
+import io
 import os
 import shutil
 import tempfile
 from datetime import datetime, timezone
 from typing import Protocol
 
+from .objstore import ObjectStore, store_from_env
 from .records import SourceRecord, WellnessRecord, latest_wellness, recency
 
 DEFAULT_URL = "file://data/archive"
+DEFAULT_CACHE = "data/cache"
 
 
 class Archive(Protocol):
@@ -149,8 +153,12 @@ class LocalArchive:
                 out.extend(self._read_records(os.path.join(base, provider, pid)))
         return out
 
+    @staticmethod
+    def _wellness_dir(rec: WellnessRecord) -> str:
+        return f"wellness/{_safe(rec.provider)}/{_safe(rec.source)}/{_safe(rec.key)}"
+
     def put_wellness(self, rec: WellnessRecord) -> bool:
-        d = f"wellness/{_safe(rec.provider)}/{_safe(rec.source)}/{_safe(rec.key)}"
+        d = self._wellness_dir(rec)
         stored = self._read_records(self._path(d), WellnessRecord)
         if stored and latest_wellness(stored)[0].content_sha() == rec.content_sha():
             return False
@@ -171,9 +179,98 @@ class LocalArchive:
         return out
 
 
+class RemoteArchive(LocalArchive):
+    """The archive in an object store (R2), with ``cache_root`` as a read cache.
+
+    Every write goes to the store first and the cache second, so the cache never
+    holds a key the store lacks. Records are immutable (timestamp + content hash
+    in the key), so a cached key is never refetched. Exports are never cached.
+    """
+
+    def __init__(self, store: ObjectStore, cache_root: str):
+        super().__init__(cache_root)
+        self.store = store
+
+    def _write(self, key: str, write) -> None:
+        buf = io.BytesIO()
+        write(buf)
+        data = buf.getvalue()
+        self.store.put(key, data)
+        super()._write(key, lambda f: f.write(data))
+
+    def _fetch(self, key: str) -> bytes:
+        """Download key into the cache only (it is already in the store)."""
+        data, _ = self.store.get(key)
+        super()._write(key, lambda f: f.write(data))
+        return data
+
+    def has_blob(self, sha256: str) -> bool:
+        return super().has_blob(sha256) or self.store.head(f"raw/{sha256}") is not None
+
+    def get_blob(self, sha256: str) -> bytes:
+        try:
+            return super().get_blob(sha256)
+        except KeyError:
+            pass
+        try:
+            return self._fetch(f"raw/{sha256}")
+        except KeyError:
+            raise KeyError(sha256) from None
+
+    def _sync(self, prefix: str) -> None:
+        for key, _ in self.store.list(prefix):
+            if not os.path.exists(self._path(key)):
+                self._fetch(key)
+
+    def put_record(self, rec: SourceRecord) -> bool:
+        self._sync(self._record_dir(rec.provider, rec.provider_activity_id) + "/")
+        return super().put_record(rec)
+
+    def list_records(self) -> list[SourceRecord]:
+        self._sync("records/")
+        return super().list_records()
+
+    def put_wellness(self, rec: WellnessRecord) -> bool:
+        self._sync(self._wellness_dir(rec) + "/")
+        return super().put_wellness(rec)
+
+    def list_wellness(self) -> list[WellnessRecord]:
+        self._sync("wellness/")
+        return super().list_wellness()
+
+    def put_export(self, provider: str, src_path: str, *, today: str) -> str:
+        prefix = f"exports/{_safe(provider)}/"
+        size, sha = os.path.getsize(src_path), None
+        for key, key_size in self.store.list(prefix):
+            if key_size != size:
+                continue
+            sha = sha or _file_sha(src_path)
+            head = self.store.head(key)
+            if head and head["metadata"].get("sha256") == sha:
+                return key
+        key = f"{prefix}{today}-{os.path.basename(src_path)}"
+        self.store.put_file(key, src_path, metadata={"sha256": sha or _file_sha(src_path)})
+        return key
+
+
+def is_remote(a: Archive) -> bool:
+    return isinstance(a, RemoteArchive)
+
+
 def open_archive(url: str | None = None) -> Archive:
-    """url → env ARCHIVE_URL → file://data/archive. Only file:// for now."""
-    url = url or os.environ.get("ARCHIVE_URL") or DEFAULT_URL
-    if not url.startswith("file://"):
-        raise ValueError(f"unsupported archive URL: {url} (only file:// until Plan 3)")
-    return LocalArchive(url[len("file://"):])
+    """url → env ARCHIVE_URL → r2://$R2_BUCKET when R2 credentials are set →
+    file://data/archive."""
+    url = url or os.environ.get("ARCHIVE_URL")
+    if not url:
+        store = store_from_env()
+        url = f"r2://{store.bucket}" if store else DEFAULT_URL
+    if url.startswith("file://"):
+        return LocalArchive(url[len("file://"):])
+    if url.startswith("r2://"):
+        store = store_from_env()
+        if store is None:
+            raise ValueError(f"{url}: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET must be set")
+        if url[len("r2://"):] != store.bucket:
+            raise ValueError(f"{url}: bucket differs from R2_BUCKET={store.bucket}")
+        return RemoteArchive(store, DEFAULT_CACHE)
+    raise ValueError(f"unsupported archive URL: {url} (expected file:// or r2://)")
