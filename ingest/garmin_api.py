@@ -19,13 +19,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import config
+
 BASE_URL = "https://personal.connectapi.garmin.com"
 TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
 _LIST_PATH = "/activitylist-service/activities/search/activities"
 _DOWNLOAD_PATH = "/download-service/files/activity/"
 API_KEY_ENV = "GARMIN_PERSONAL_API_KEY"
 BASE_URL_ENV = "GARMIN_PERSONAL_API_BASE_URL"
-DOTENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+DOTENV_FILE = config.DOTENV_FILE
 USER_AGENT = "strava-on-maps/0.1"
 
 
@@ -65,22 +67,7 @@ def _resolve_key_file(path, source):
 
 def _read_dotenv_key(path):
     """GARMIN_PERSONAL_API_KEY from a KEY=VALUE .env file; None when absent/empty."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
-    except OSError:
-        return None
-    for line in lines:
-        line = line.strip()
-        if line.startswith("export "):
-            line = line[len("export "):].lstrip()
-        name, sep, value = line.partition("=")
-        if sep and name.strip() == API_KEY_ENV:
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1].strip()
-            return value or None
-    return None
+    return config.dotenv_value(path, API_KEY_ENV)
 
 
 def resolve_api_key(api_key=None, *, key_file=None):
@@ -116,6 +103,23 @@ def _http_error(error, request):
     if status in (401, 403):
         return GarminAuthError(message, status=status, url=url)
     return GarminApiError(message, status=status, url=url)
+
+
+def parse_activity_list(body, url):
+    """Decode an activity-list response body; it must be a JSON list."""
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise GarminApiError(
+            f"garmin_api: invalid JSON from {url}: {exc}", url=url
+        ) from exc
+    if not isinstance(payload, list):
+        raise GarminApiError(
+            f"garmin_api: expected a JSON list of activities from {url}, "
+            f"got {type(payload).__name__}",
+            url=url,
+        )
+    return payload
 
 
 class GarminPersonalApi:
@@ -182,24 +186,22 @@ class GarminPersonalApi:
         )
         return self._request(request)
 
+    def get_raw(self, path, params=None):
+        """GET ``path`` (plus ``params`` as a query string); the body, unchanged."""
+        url = self._base_url + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        return self._get(url, Accept="application/json")
+
+    def list_activities_raw(self, start=0, limit=100):
+        """One page of the activity list, exactly as the API sent it."""
+        return self.get_raw(_LIST_PATH, {"start": start, "limit": limit})
+
     def list_activities(self, start=0, limit=100):
         """Fetch one page of SummarizedActivityDTO items (m/s units, newest first)."""
         query = urllib.parse.urlencode({"start": start, "limit": limit})
         url = f"{self._base_url}{_LIST_PATH}?{query}"
-        body = self._get(url, Accept="application/json")
-        try:
-            payload = json.loads(body)
-        except ValueError as exc:
-            raise GarminApiError(
-                f"garmin_api: invalid JSON from {url}: {exc}", url=url
-            ) from exc
-        if not isinstance(payload, list):
-            raise GarminApiError(
-                f"garmin_api: expected a JSON list of activities from {url}, "
-                f"got {type(payload).__name__}",
-                url=url,
-            )
-        return payload
+        return parse_activity_list(self.list_activities_raw(start, limit), url)
 
     def download_activity(self, activity_id):
         """Download one activity's original-file ZIP and return its bytes."""

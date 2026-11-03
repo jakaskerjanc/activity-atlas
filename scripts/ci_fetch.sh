@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-# Live Garmin fetch -> commit DB. The Personal API key is read from
-# GARMIN_PERSONAL_API_KEY, from the environment or the repo-root .env. Real
-# logic lives here so it runs identically locally. DRY_RUN=1 prints the
-# mutating actions instead.
+# Daily Garmin fetch into R2. The R2_BUCKET gate below reads the process
+# environment only (not the repo-root .env); in CI the secrets arrive as env
+# vars. Nothing is committed: the database lives in R2, and the writer reports
+# whether it changed through $GITHUB_OUTPUT (db_changed=true|false).
 set -euo pipefail
 
 DB="${DB:-data/activities.sqlite}"
-DRY_RUN="${DRY_RUN:-0}"
 
-run() {  # execute, or print under DRY_RUN
-  if [ "$DRY_RUN" = "1" ]; then echo "DRY: $*"; else "$@"; fi
-}
-
-# 1. Fetch (fail-loud: a rejected key exits non-zero and fails the job).
-"${PYTHON_BIN:-python3}" -m ingest.garmin_fetch --db "$DB"
-
-# 2. Commit + push only if the DB changed -> matches deploy.yml's path filter.
-if git diff --quiet -- "$DB"; then
-  echo "no DB change"
-else
-  run git add "$DB"
-  run git commit -m "chore: garmin fetch $(date -u +%F)"
-  run git push
+if [ -z "${R2_BUCKET:-}" ]; then
+  if [ -n "${GARMIN_PERSONAL_API_KEY:-}" ]; then
+    echo "::warning::GARMIN_PERSONAL_API_KEY is set but R2 is not configured: the fetch is skipped"
+  else
+    echo "::notice::no R2 secrets: the daily fetch needs R2"
+  fi
+  exit 0
 fi
+
+# Force the R2 archive: with an incomplete credential set, open_archive then
+# raises instead of falling back to a local archive that dies with the runner.
+export ARCHIVE_URL="r2://$R2_BUCKET"
+
+# Fail-loud: a rejected key exits non-zero and fails the job.
+"${PYTHON_BIN:-python3}" -m ingest.garmin_fetch --db "$DB"

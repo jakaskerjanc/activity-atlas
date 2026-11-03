@@ -1,9 +1,8 @@
-"""Live Strava fetch — deferred stub (Strava polling is dead today). Kept so the
-fetcher base has a second implementation slot for when/if it returns."""
-from .base import BaseFetcher
+"""Live Strava fetch — deferred stub (Strava polling is dead today). Kept as
+the slot for a second live fetcher if it returns."""
 
 
-class StravaFetcher(BaseFetcher):
+class StravaFetcher:
     source = "strava"
 
     def activities(self):
