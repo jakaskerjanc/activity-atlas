@@ -22,6 +22,7 @@
     "import:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_import",
     "fetch:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_fetch",
     "rebuild": "${PYTHON_BIN:-python3} -m ingest.rebuild",
+    "sync": "${PYTHON_BIN:-python3} -m ingest.sync",
     "activity": "${PYTHON_BIN:-python3} -m ingest.activity_cli",
     "test:py": "${PYTHON_BIN:-python3} -m pytest ingest -q"
   },

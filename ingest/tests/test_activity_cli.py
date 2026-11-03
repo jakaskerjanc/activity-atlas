@@ -4,8 +4,9 @@ import warnings
 
 import pytest
 
-from ingest import activity_cli, db
+from ingest import activity_cli, archive as archive_mod, db, writer
 from ingest.archive import LocalArchive
+from ingest.objstore import MemoryStore
 from ingest.garmin_import import GarminImporter
 from ingest.strava_import import StravaImporter
 from ingest.tests.factories import NOW, fresh, src
@@ -109,6 +110,29 @@ def test_cli_hide(tmp_path, monkeypatch):
     activity_cli.main()
     conn = db.connect(dbp)
     assert conn.execute("SELECT visible FROM activities WHERE id=?", (aid,)).fetchone()[0] == 0
+
+
+def test_hide_through_r2(tmp_path, monkeypatch):
+    dbp, _ = _imports(tmp_path)
+    conn = db.connect(dbp)
+    aid = _aid(conn, "strava", "222")
+    conn.close()
+    store = MemoryStore()
+    store.bucket = "bkt"
+    store.put(writer.DB_KEY, open(dbp, "rb").read())
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    local = str(tmp_path / "synced.sqlite")
+    monkeypatch.setattr(sys, "argv", ["activity", "hide", aid, "--db", local])
+    activity_cli.main()
+    remote = str(tmp_path / "remote.sqlite")
+    open(remote, "wb").write(store.get(writer.DB_KEY)[0])
+    conn = db.connect(remote)
+    assert conn.execute("SELECT hidden FROM activity_overrides WHERE activity_id=?", (aid,)).fetchone()[0] == 1
+    conn.close()
+    conn = db.connect(local)    # the local copy follows R2
+    assert _visible(conn, aid) == 0
 
 
 def test_cli_split_parses_provider_ref(tmp_path, monkeypatch, capsys):

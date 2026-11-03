@@ -54,6 +54,9 @@ The Garmin import also stores the export's monitoring FITs (all-day heart
 rate, stress, respiration and resting HR) as wellness data in the same
 database. That data is not published.
 
+With R2 configured, the first import into an empty bucket needs `--init-db`
+(see [R2](#r2-optional-the-owners-setup)).
+
 Run Strava first, then Garmin. Each provider record joins an existing
 activity when their time ranges overlap by at least 50% of the shorter range
 (or, when either side has no elapsed time, when their starts are within
@@ -223,6 +226,39 @@ Add these to a root `.env` (see `.example.env`):
 
 - `VITE_MAPBOX_TOKEN`
 - `GARMIN_PERSONAL_API_KEY` — only needed for the [live Garmin fetch](#live-garmin-fetch)
+
+## R2 (optional, the owner's setup)
+
+The archive and the database can live in a private Cloudflare R2 bucket.
+Add these four names to the root `.env` (or export them):
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET`
+
+With them set, every command (`import:strava`, `import:garmin`, `fetch:garmin`,
+`rebuild`, `activity`) reads and writes R2: it pulls `db/activities.sqlite`,
+changes it, and uploads it back only if it changed (`If-Match` on the etag it
+pulled, so a concurrent writer is never overwritten; the run redoes its work
+against the newer database, up to 3 attempts). A snapshot is kept in
+`db/snapshots/`. `data/activities.sqlite` is then only a synced copy of the
+R2 database. Refresh it on demand with:
+
+```bash
+pnpm sync
+```
+
+`pnpm sync` overwrites the local copy with the R2 database; without R2
+configured it exits 1, because the local database is already the master.
+
+Exit codes: `5` means R2 kept rejecting the upload because another writer was
+busy (nothing was uploaded; run again). `6` means R2 has no database yet and
+`--init-db` was not passed.
+
+The first import into an empty bucket needs `--init-db`
+(`npm run import:strava -- <export.zip> --init-db`); no other command creates the
+database in R2.
 
 ## Setting up your own copy
 

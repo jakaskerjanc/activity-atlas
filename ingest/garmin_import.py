@@ -8,9 +8,9 @@ import io
 import json
 import os
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from . import engine
+from . import engine, writer
 from .wellness import MONITORING_FIT, apply_wellness
 from .archive import Archive, open_archive
 from .export_reader import (ExportReader, archive_export, export_made_at, is_older_export,
@@ -195,8 +195,13 @@ def main():
     ap.add_argument("export", help="Garmin export zip (or an unzipped export folder, for development)")
     ap.add_argument("--db", default="data/activities.sqlite")
     ap.add_argument("--archive", default=None, help="archive URL (default: $ARCHIVE_URL or file://data/archive)")
+    ap.add_argument("--init-db", action="store_true",
+                    help="allow creating the database in R2 when it has none (the first import)")
     args = ap.parse_args()
-    print(f"garmin_import: {GarminImporter(args.export, args.db, open_archive(args.archive)).run()}")
+    archive = open_archive(args.archive)
+    counts = writer.run(args.db, archive, lambda path: GarminImporter(args.export, path, archive).run(),
+                        today=date.today().isoformat(), init_db=args.init_db)
+    print(f"garmin_import: {counts}")
 
 
 if __name__ == "__main__":

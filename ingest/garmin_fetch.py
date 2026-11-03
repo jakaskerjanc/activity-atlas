@@ -12,7 +12,7 @@ import zipfile
 from datetime import date, datetime, timedelta, timezone
 from typing import NoReturn
 
-from . import engine, merge
+from . import engine, merge, writer
 from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .garmin_wellness import fetch_wellness
@@ -305,11 +305,16 @@ def main():
                     help="fetch wellness data from this date (backfill); default: each endpoint's last "
                          "stored day minus 7, or the last 30 days on the first run")
     args = ap.parse_args()
-    f = GarminFetcher(args.db, open_archive(args.archive), key_file=args.api_key_file,
-                      wellness_since=args.wellness_since)
-    f.authenticate()            # fail loud on missing/rejected key
+    archive = open_archive(args.archive)
+    first = GarminFetcher(args.db, archive, key_file=args.api_key_file, wellness_since=args.wellness_since)
+    client = first.authenticate()   # fail loud on missing/rejected key, before any pull
+
+    def work(path):
+        # a fresh fetcher per attempt, so a redo after a lost upload race starts clean
+        return GarminFetcher(path, archive, key_file=args.api_key_file, wellness_since=args.wellness_since,
+                             client=client).run()
     try:
-        counts = f.run()
+        counts = writer.run(args.db, archive, work, today=date.today().isoformat())
     except GarminAuthError as e:
         auth_rejected(e)        # key expired between startup and the API calls
     print(f"garmin_fetch: {counts}")

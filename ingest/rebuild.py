@@ -6,8 +6,9 @@ Wellness records are re-applied after the activities."""
 import argparse
 import os
 import warnings
+from datetime import date
 
-from . import db, engine, wellness
+from . import db, engine, wellness, writer
 from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .records import latest, latest_wellness
@@ -68,7 +69,11 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="rebuild even if some activities have no record in the archive (they lose their data)")
     args = ap.parse_args()
-    print(f"rebuild: {rebuild(args.db, open_archive(args.archive), now=now_iso(), force=args.force)}")
+    archive = open_archive(args.archive)
+    # the orphan check runs inside work, against the pulled copy
+    counts = writer.run(args.db, archive, lambda path: rebuild(path, archive, now=now_iso(), force=args.force),
+                        today=date.today().isoformat())
+    print(f"rebuild: {counts}")
 
 
 if __name__ == "__main__":
