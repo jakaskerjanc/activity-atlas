@@ -5,7 +5,7 @@
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
 //   activities.json     v1  every visible activity's numbers; unknown values left out
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
-//   profiles.json       v1  every activity's elevation by % of distance, for the analytics ridgeline
+//   profiles.json       v1  every activity's elevation every 100 m, for the analytics heatmap
 //
 // Hidden and deleted activities never reach these files, and the folder is
 // emptied before each write so a stale file cannot survive.
@@ -20,7 +20,7 @@ import { simplifyLngLat } from "./simplify.ts";
 import { isUsable, toRecord, type ActivityRow } from "./numbers.ts";
 import { decodeChannel, type StreamChannel } from "./codec.ts";
 import { buildDetail, type Streams } from "./detail.ts";
-import { PROFILE_BINS, PROFILES_VERSION, routeProfile } from "./routeProfile.ts";
+import { PROFILE_STEP_M, PROFILES_VERSION, routeProfile } from "./routeProfile.ts";
 import type {
   ActivitiesFile,
   ActivitySource,
@@ -108,7 +108,7 @@ function emptyFiles(stats: Stats): DisplayFiles {
     routes: { v: ROUTES_VERSION, routes: {} },
     activities: { v: ACTIVITIES_VERSION, activities: [] },
     details: new Map(),
-    profiles: { v: PROFILES_VERSION, bins: PROFILE_BINS, profiles: {} },
+    profiles: { v: PROFILES_VERSION, step: PROFILE_STEP_M, profiles: {} },
     stats,
   };
 }

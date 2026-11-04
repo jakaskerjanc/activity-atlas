@@ -91,7 +91,7 @@ test("missing database yields empty files and a sync warning", () => {
   assert.deepEqual(files.routes, { v: 4, routes: {} });
   assert.deepEqual(files.activities, { v: 1, activities: [] });
   assert.equal(files.details.size, 0);
-  assert.deepEqual(files.profiles, { v: 1, bins: 64, profiles: {} });
+  assert.deepEqual(files.profiles, { v: 1, step: 100, profiles: {} });
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /sync/);
 });
@@ -108,7 +108,7 @@ test("writeDisplayFiles empties the output folder first", async () => {
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "activities.json"), "utf8")), { v: 1, activities: [] });
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")), {
       v: 1,
-      bins: 64,
+      step: 100,
       profiles: {},
     });
   } finally {
@@ -154,9 +154,11 @@ test("a route profile for an activity with distance and altitude, none without",
     (path) => {
       const { profiles } = readDisplayFiles(path);
       assert.deepEqual(Object.keys(profiles.profiles), ["hike"]);
+      // 297 m covered: points at 0, 100 and 200 m, relative to the start.
       const p = profiles.profiles.hike;
-      assert.equal(p.length, 64);
-      assert.ok(p[0] < p[63], "the climb rises along the profile");
+      assert.equal(p.length, 3);
+      assert.equal(p[0], 0);
+      assert.ok(p[0] < p[2], "the climb rises along the profile");
     },
   );
 });

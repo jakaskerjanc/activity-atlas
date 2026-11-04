@@ -1,19 +1,20 @@
-// One activity's route profile for profiles.json: its elevation at PROFILE_BINS evenly
-// spaced fractions of its distance (0%, ..., 100%), in whole metres. Built from the
-// detail file's samples, so it inherits their 5 s bucket means, then smoothed with a
-// centred 3-point mean to take the remaining GPS/barometer jitter off the shape.
-// Read by the Analytics ridgeline (#20, app/src/ridgeline.ts).
+// One activity's route profile for profiles.json: its elevation every PROFILE_STEP_M
+// metres of distance, in whole metres relative to the start (so a loop starts and ends
+// near 0, wherever it was). Built from the detail file's samples, so it inherits their
+// 5 s bucket means, then smoothed with a centred 3-point mean to take the remaining
+// GPS/barometer jitter off the shape. Read by the Analytics elevation heatmap (#16).
 
 import type { DetailFile } from "./types.ts";
 
 export const PROFILES_VERSION = 1;
-export const PROFILE_BINS = 64;
+export const PROFILE_STEP_M = 100;
 
 /**
- * The route profile of a detail file, or null when it has no distance and altitude
- * at two or more common samples, or covers no distance.
+ * The route profile of a detail file: point i is the elevation at i * step metres from
+ * the start, minus the elevation at the start. Null when the activity has no distance
+ * and altitude at two or more common samples, or covers less than one step.
  */
-export function routeProfile(detail: DetailFile, bins = PROFILE_BINS): number[] | null {
+export function routeProfile(detail: DetailFile, step = PROFILE_STEP_M): number[] | null {
   const { d, alt } = detail;
   if (!d || !alt) return null;
   const xs: number[] = [];
@@ -27,26 +28,27 @@ export function routeProfile(detail: DetailFile, bins = PROFILE_BINS): number[] 
   }
   if (xs.length < 2) return null;
   const start = xs[0];
-  const span = xs[xs.length - 1] - start;
-  if (!(span > 0)) return null;
+  const points = Math.floor((xs[xs.length - 1] - start) / step) + 1;
+  if (points < 2) return null;
 
-  // Linear interpolation at each bin's distance. `d` never decreases (detail.ts), so one
-  // forward walk finds every bin's segment.
+  // Linear interpolation at each step. `d` never decreases (detail.ts), so one forward
+  // walk finds every point's segment.
   const resampled: number[] = [];
   let j = 0;
-  for (let b = 0; b < bins; b++) {
-    const x = start + (span * b) / (bins - 1);
+  for (let b = 0; b < points; b++) {
+    const x = start + b * step;
     while (j < xs.length - 2 && xs[j + 1] < x) j++;
     const x0 = xs[j];
     const x1 = xs[j + 1];
     resampled.push(x1 > x0 ? ys[j] + ((ys[j + 1] - ys[j]) * (x - x0)) / (x1 - x0) : ys[j + 1]);
   }
 
-  return resampled.map((_, b) => {
+  const smoothed = resampled.map((_, b) => {
     const lo = Math.max(0, b - 1);
-    const hi = Math.min(bins - 1, b + 1);
+    const hi = Math.min(points - 1, b + 1);
     let sum = 0;
     for (let k = lo; k <= hi; k++) sum += resampled[k];
-    return Math.round(sum / (hi - lo + 1));
+    return sum / (hi - lo + 1);
   });
+  return smoothed.map((v) => Math.round(v - smoothed[0]) || 0);
 }
