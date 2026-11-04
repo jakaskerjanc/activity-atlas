@@ -95,6 +95,18 @@ describe("buildProfile", () => {
     }
   });
 
+  test("paceTicks steps down to give at least two ticks (real hike and walk domains)", () => {
+    for (const [lo, hi] of [[613, 1585], [671, 1136], [638, 826]]) {
+      const ticks = paceTicks(lo, hi);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      for (const t of ticks) {
+        expect(t % 60).toBe(0);
+        expect(t).toBeGreaterThanOrEqual(lo);
+        expect(t).toBeLessThanOrEqual(hi);
+      }
+    }
+  });
+
   test("a steady run's narrow pace domain widens to whole minutes with >= 2 ticks", () => {
     const speed = Array.from({ length: 100 }, (_, i) => 3.4 + ((i % 5) - 2) * 0.01); // ~294 s/km +- 2
     const pace = buildProfile(detail({ t: speed.map((_, i) => i * 5), speed }), "Run")!.charts[0];
@@ -129,6 +141,18 @@ describe("smoothSpeed", () => {
 });
 
 describe("niceTicks", () => {
+  test("steps down to give at least two ticks", () => {
+    for (const [lo, hi, n] of [[120, 165, 2], [0.1, 0.4, 2], [3, 9, 1]]) {
+      const ticks = niceTicks(lo, hi, n);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      for (const t of ticks) {
+        expect(t).toBeGreaterThanOrEqual(lo);
+        expect(t).toBeLessThanOrEqual(hi);
+        expect(String(t).length).toBeLessThan(8); // no float artefacts
+      }
+    }
+  });
+
   test("round steps inside the range", () => {
     expect(niceTicks(0, 1234, 3)).toEqual([0, 500, 1000]);
     expect(niceTicks(296, 342, 3)).toEqual([300, 320, 340]);
