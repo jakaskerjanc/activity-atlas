@@ -213,9 +213,11 @@ also fill typed `daily_stats` columns; the others are kept raw only.
   `respiration_min` and `respiration_max` from `daily_summary`, and
   `sleep_respiration_avg` from `sleep`. Stress likewise is `stress_avg` from
   `daily_summary`. The Personal API has no intraday stress or respiration:
-  Garmin Connect's `/wellness-service/wellness/dailyStress/{date}` and
-  `/wellness-service/wellness/daily/respiration/{date}` return 404 (checked
-  2026-11-04), so those `daily_series` channels come from the export's
+  none of the 26 GET endpoints in its
+  [Swagger docs](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/)
+  returns them, and Garmin Connect's `/wellness-service/wellness/dailyStress/{date}`
+  and `/wellness-service/wellness/daily/respiration/{date}` return 404 (both
+  checked 2026-11-04). So those `daily_series` channels come from the export's
   monitoring FITs alone.
 - How far back the API serves data: daily values from the watch's first day
   (2025-04-19), but the intraday series (heart rate through the day, hourly
