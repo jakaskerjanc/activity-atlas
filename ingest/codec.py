@@ -15,7 +15,7 @@ Deltas are int64 so a jump across the antimeridian (lon ±180 × 1e7) cannot
 overflow; the quantized values themselves fit in int32.
 
 ``SERIES_SCALES`` adds the all-day wellness channels of ``daily_series``
-(stress, respiration in breaths/min at 0.01). They are kept apart from
+(stress, respiration in breaths/min at 0.01, hrv in ms). They are kept apart from
 ``CHANNEL_SCALES`` because that dict also defines the ``streams`` table's
 columns; "hr" and "time" are shared and come from ``CHANNEL_SCALES``.
 """
@@ -29,7 +29,7 @@ CHANNEL_SCALES: dict[str, float] = {
     "speed": 1000, "distance": 100, "power": 1, "temperature": 1,
 }
 
-SERIES_SCALES: dict[str, float] = {"stress": 1, "respiration": 100}
+SERIES_SCALES: dict[str, float] = {"stress": 1, "respiration": 100, "hrv": 1}
 
 MISSING: int = -(2 ** 63)
 

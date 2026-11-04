@@ -1,8 +1,9 @@
 """Garmin Personal API wellness endpoints: one response per endpoint and date,
 archived as a wellness record and parsed into daily_stats columns plus the
-raw payload. The typed field names were checked against live responses on
-2026-11-01 (see ingest/tests/fixtures/garmin_wellness); the raw payload is
-always kept, so a corrected mapping only needs a rebuild."""
+raw payload; heart_rate and hrv also give daily_series samples. The typed
+field names were checked against live responses on 2026-11-01 (see
+ingest/tests/fixtures/garmin_wellness); the raw payload is always kept, so a
+corrected mapping only needs a rebuild."""
 import json
 import time
 import warnings
@@ -65,8 +66,13 @@ def _pick(payload, mapping: dict[str, tuple]) -> dict:
 _DAILY_SUMMARY = {"resting_hr": ("heartRate", "restingValue"), "steps": ("movement", "steps", "value"),
                   "stress_avg": ("stress", "avgLevel"),
                   "body_battery_high": ("bodyBattery", "maxValue"),
-                  "body_battery_low": ("bodyBattery", "minValue")}
-_SLEEP = {"sleep_s": ("sleepTimeSeconds",), "sleep_score": ("sleepScores", "overall", "value")}
+                  "body_battery_low": ("bodyBattery", "minValue"),
+                  # breaths/min over the whole day; the API has no intraday respiration
+                  "respiration_avg": ("respiration", "avgValue"),
+                  "respiration_min": ("respiration", "minValue"),
+                  "respiration_max": ("respiration", "maxValue")}
+_SLEEP = {"sleep_s": ("sleepTimeSeconds",), "sleep_score": ("sleepScores", "overall", "value"),
+          "sleep_respiration_avg": ("averageRespirationValue",)}
 _HRV = {"hrv_avg": ("hrvSummary", "lastNightAvg"), "hrv_status": ("hrvSummary", "status")}
 _SPO2 = {"spo2_avg": ("averageSpO2",)}
 
@@ -88,14 +94,87 @@ def _weight_stats(payload, date: str) -> dict:
     return {"weight_kg": grams / 1000} if _number(grams) else {}
 
 
-def _parser(source: str, stats: Callable[[object, str], dict]):
+# Intraday samples: (local date, utc_offset_s, channel, unix_s, value)
+Sample = tuple[str, int, str, int, float]
+
+
+def _gmt(value) -> int | None:
+    """Unix seconds of a "2026-10-15T05:56:19.0" GMT time, None if it is not one."""
+    try:
+        return int(datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _local_date(unix_s: int, offset: int) -> str:
+    return datetime.fromtimestamp(unix_s + offset, timezone.utc).date().isoformat()
+
+
+def _positive(value) -> bool:
+    """A reading: the API sends null (and the FIT 0) for no reading."""
+    return _number(value) and value > 0
+
+
+def _heart_rate_series(payload, date: str) -> list[Sample]:
+    """heartRateValues: [epoch_ms, bpm | null] every 2 minutes over the local
+    day [startTimestampGMT, endTimestampGMT). Garmin has already cut the day
+    at local midnight, so every sample in that window is ``date``'s, even on a
+    DST change, and keeps the offset at its start: its time of day is then the
+    seconds since local midnight, as for a monitoring FIT. A sample outside the
+    window goes to its local date at the offset of the nearer end."""
+    start, end = _gmt(_dig(payload, "startTimestampGMT")), _gmt(_dig(payload, "endTimestampGMT"))
+    local_start, local_end = _gmt(_dig(payload, "startTimestampLocal")), _gmt(_dig(payload, "endTimestampLocal"))
+    values = _dig(payload, "heartRateValues")
+    if None in (start, end, local_start, local_end) or not isinstance(values, list):
+        return []
+    start_offset, end_offset = local_start - start, local_end - end
+    samples = []
+    for pair in values:
+        if not (isinstance(pair, list) and len(pair) == 2 and _number(pair[0]) and _positive(pair[1])):
+            continue
+        t = int(pair[0] // 1000)
+        if start <= t < end:
+            samples.append((date, start_offset, "hr", t, pair[1]))
+        else:
+            offset = start_offset if t < start else end_offset
+            samples.append((_local_date(t, offset), offset, "hr", t, pair[1]))
+    return samples
+
+
+def _hrv_series(payload, date: str) -> list[Sample]:
+    """hrvReadings: one per 5 minutes of the night ending on ``date``, each with
+    its own GMT and local time. A reading goes to its local date, so the part
+    of a night before midnight belongs to the previous date."""
+    readings = _dig(payload, "hrvReadings")
+    samples = []
+    for r in readings if isinstance(readings, list) else ():
+        t, local = _gmt(_dig(r, "readingTimeGMT")), _gmt(_dig(r, "readingTimeLocal"))
+        value = _dig(r, "hrvValue")
+        if t is None or local is None or not _positive(value):
+            continue
+        samples.append((_local_date(t, local - t), local - t, "hrv", t, value))
+    return samples
+
+
+def _parser(source: str, stats: Callable[[object, str], dict],
+            series: Callable[[object, str], list[Sample]] | None = None):
+    """The response's stats and raw payload belong to its own date; its
+    intraday samples (if ``series``) to their local dates. Each date's part
+    takes the offset of its first sample."""
     def parse(data: bytes, rec: WellnessRecord) -> dict[str, DayPart]:
         try:
             payload = json.loads(data)
         except ValueError as e:
             warnings.warn(f"unparseable {source} response for {rec.key}: {e}")
             return {}
-        return {rec.key: DayPart(stats(payload, rec.key), payload, {}, None)}
+        parts = {rec.key: DayPart(stats(payload, rec.key), payload, {}, None)}
+        for day, offset, channel, t, value in sorted(series(payload, rec.key) if series else (),
+                                                     key=lambda s: s[3]):
+            p = parts.setdefault(day, DayPart({}, None, {}, None))
+            if p.utc_offset_s is None:
+                p.utc_offset_s = offset
+            p.series.setdefault(channel, []).append((t, value))
+        return parts
     return parse
 
 
@@ -106,8 +185,14 @@ _STATS: dict[str, Callable[[object, str], dict]] = {
     "weight": _weight_stats,
     "spo2": lambda payload, date: _pick(payload, _SPO2),
 }
+# spo2 (pulse ox off: all null), body_battery (a few event points) and stress
+# (daily totals only) carry no intraday series worth keeping
+_SERIES: dict[str, Callable[[object, str], list[Sample]]] = {
+    "heart_rate": _heart_rate_series,
+    "hrv": _hrv_series,
+}
 for _source in ENDPOINTS:    # the rest are raw only
-    register(_source, _parser(_source, _STATS.get(_source, lambda payload, date: {})))
+    register(_source, _parser(_source, _STATS.get(_source, lambda payload, date: {}), _SERIES.get(_source)))
 
 
 def _start_dates(conn, today: Date, since: str | None) -> dict[str, Date]:
