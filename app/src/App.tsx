@@ -24,7 +24,7 @@ import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
 import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
 import { buildProfile } from "./profile";
-import { cursorLngLat } from "./routeCursor";
+import { markerPoint } from "./routeCursor";
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -199,9 +199,13 @@ export default function App() {
     [selectedDetail, selectedFeature],
   );
 
+  const selectedShown = useMemo(
+    () => selectedId != null && visible.some((f) => f.properties.id === selectedId),
+    [visible, selectedId],
+  );
   const cursorPoint = useMemo(
-    () => (selectedDetail ? cursorLngLat(selectedDetail, cursor) : null),
-    [selectedDetail, cursor],
+    () => markerPoint(selectedDetail, cursor, selectedShown),
+    [selectedDetail, cursor, selectedShown],
   );
 
   const panelBody = useMemo(() => {

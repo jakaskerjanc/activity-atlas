@@ -35,3 +35,15 @@ export function nearestSample(detail: DetailFile, lng: number, lat: number): num
   }
   return best;
 }
+
+/**
+ * Where the map marker goes: the cursor's position, but only while the selected
+ * route is drawn. A filtered-out route keeps its charts but gets no marker (#17).
+ */
+export function markerPoint(
+  detail: DetailFile | null,
+  i: number | null,
+  routeShown: boolean,
+): [number, number] | null {
+  return detail && routeShown ? cursorLngLat(detail, i) : null;
+}
