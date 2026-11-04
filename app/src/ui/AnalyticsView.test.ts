@@ -15,6 +15,7 @@ const render = (props: Partial<Props> = {}) =>
       filter,
       visible: visibleActivities(filter),
       sidePanelExpanded: true,
+      theme: "dark",
       isolation: null,
       onPickMonth: () => {},
       ...props,
@@ -30,19 +31,25 @@ describe("AnalyticsView", () => {
     expect(html).toContain("August 2024 — August 2024");
   });
 
-  test("shows the ridgeline once the route profiles load", () => {
-    expect(render()).toContain("Loading elevation profiles");
-    const html = render({ profiles: { status: "ready", profiles: { "s:1": [300, 350, 320] } } });
-    expect(html).toContain("Elevation by month");
-    expect(html).toContain('aria-label="August 2024 · 1 activity · 100 m gain"');
+  test("shows the hilliness ridgeline from the activities alone", () => {
+    const html = render();
+    expect(html).toContain("Hilliness by month");
+    expect(html).toContain('aria-label="August 2024 · 1 activity · 100 m gain · median 10 m/km"');
     expect(html).toContain("click a month to show only it");
+  });
+
+  test("shows the elevation heatmap once the route profiles load", () => {
+    expect(render()).toContain("Loading elevation profiles");
+    const ready = (profiles: Record<string, number[]>) =>
+      render({ profiles: { status: "ready", file: { v: 1, step: 100, profiles } } });
+    expect(ready({ "s:1": [0, 30, 10] })).toContain("1 activity, each measured from its start");
+    expect(ready({})).toContain("No visible activity has an elevation profile.");
     expect(render({ profiles: { status: "error" } })).toContain("Couldn&#x27;t load elevation profiles");
   });
 
   test("names the range a second click restores while a month is isolated", () => {
     const month = 2024 * 12 + 7;
     const html = render({
-      profiles: { status: "ready", profiles: {} },
       isolation: { month, fromMonth: month - 5, toMonth: month },
     });
     expect(html).toContain("Click August 2024 again for March 2024 — August 2024");
@@ -55,7 +62,8 @@ describe("AnalyticsView", () => {
     expect(html).toContain("No activities match the filter");
     expect(html).not.toContain("Consistency");
     expect(html).not.toContain("Activity calendar");
-    expect(html).not.toContain("Elevation by month");
+    expect(html).not.toContain("Hilliness by month");
+    expect(html).not.toContain("Elevation profiles");
   });
 
   test("renders just the page heading until the data loads", () => {

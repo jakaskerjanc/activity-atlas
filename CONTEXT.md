@@ -62,12 +62,16 @@ A calendar day (UTC, like the date range) with at least one visible activity.
 A run of consecutive active days.
 
 **Route profile**:
-An activity's elevation at 64 evenly spaced fractions of its distance (profiles.json): the shape of one outing, whatever its length.
+An activity's elevation every 100 m of distance, measured from its start (profiles.json), so a loop starts and ends near 0 wherever it was.
 _Avoid_: elevation profile (that is the selected activity's chart)
 
-**Month signature**:
-The per-point median of the route profiles of a month's visible activities, measured from its own lowest point.
+**Elevation heatmap**:
+The Analytics chart that overlays every visible activity's route profile against distance in km; the more profiles pass through a spot, the stronger its color, so repeated climbs stand out.
+_Avoid_: profile overlay
+
+**Hilliness**:
+An activity's elevation gain per km of distance (m/km). Unknown without both, and for activities under 1 km.
 
 **Ridgeline**:
-The Analytics chart with one ridge (a month signature) per month of the date range, oldest at the top, each labelled with the month's summed elevation gain.
-_Avoid_: joyplot, elevation view
+The Analytics chart with one ridge per month of the date range, oldest at the top: the month's visible activities spread out by hilliness, on one height scale shared by every month, labelled with the month's summed elevation gain.
+_Avoid_: joyplot

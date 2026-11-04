@@ -1,109 +1,138 @@
-// The ridgeline on the Analytics page (#20): one ridge per month of the date range,
-// oldest first, drawn from the visible activities. A ridge is the month signature: the
-// per-point median of its activities' route profiles (profiles.json), so one unusual
-// outing can't drag the shape. Each month also carries its known elevation gain, which
-// counts every visible activity, with or without a profile. Pure module, no React.
+// The hilliness ridgeline on the Analytics page (#20): one ridge per month of the date
+// range, oldest first. A ridge is the distribution of the month's visible activities
+// by hilliness (metres climbed per km), as a smoothed curve: a month of flat runs is a
+// sharp peak near 0, a month mixing runs and hikes has two humps. Ridges share one
+// scale in activities, so a busy month stands taller than a quiet one. Each month also
+// carries its summed elevation gain. Pure module, no React; reads only activities.json.
 
-import { aggregate } from "./stats";
+import { aggregate, median, quantile } from "./stats";
 import { formatMeters, formatMonth, monthIndex } from "./format";
 import type { ActivityRecord } from "./types";
+
+/** Shorter activities are left out of the distribution: a few metres of GPS noise over
+ * 300 m would read as a mountain. */
+export const MIN_DISTANCE_M = 1000;
+/** Points per ridge curve. */
+const POINTS = 96;
+/** The axis ends at this quantile of the visible hilliness, so one scramble doesn't
+ * squash every other month into the left edge. */
+const X_QUANTILE = 0.98;
+/** Curve smoothing (the kernel's standard deviation) as a share of the axis. */
+const BANDWIDTH = 1 / 40;
+
+/** Metres climbed per km; undefined when distance or gain is unknown, or under 1 km. */
+export function hilliness(a: ActivityRecord): number | undefined {
+  if (a.elevation_gain == null || a.distance == null || a.distance < MIN_DISTANCE_M) {
+    return undefined;
+  }
+  return a.elevation_gain / (a.distance / 1000);
+}
 
 export interface MonthRidge {
   /** Month index (see format.ts: monthIndex). */
   month: number;
   /** Visible activities that started this month. */
   count: number;
-  /** Of those, how many have a route profile, and so shape the ridge. */
-  profiled: number;
+  /** Of those, how many have a hilliness, and so shape the ridge. */
+  measured: number;
   /** Summed elevation gain where known; undefined when no activity this month has one. */
   gainM: number | undefined;
+  /** Median hilliness of the measured activities, m/km; undefined without any. */
+  medianMPerKm: number | undefined;
   /**
-   * The month signature as metres above its own lowest point, or null when no activity
-   * this month has a route profile (the row draws a flat baseline).
+   * The ridge: activities per m/km at POINTS evenly spaced hilliness values from 0 to
+   * the axis end. Null when no activity this month has a hilliness (a flat baseline).
    */
-  signature: number[] | null;
-  /** Highest point of the signature in metres above its lowest; 0 without a signature. */
-  relief: number;
+  density: number[] | null;
 }
 
-/** The middle value of a non-empty list (the mean of the two middle values when even). */
-export function median(values: readonly number[]): number {
-  const v = [...values].sort((a, b) => a - b);
-  const mid = v.length >> 1;
-  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+export interface HillinessRidgeline {
+  ridges: MonthRidge[];
+  /** Axis end in m/km (the axis starts at 0). */
+  xMax: number;
+  /** The highest density of any ridge: the shared height scale. */
+  maxDensity: number;
+}
+
+const SQRT_2PI = Math.sqrt(2 * Math.PI);
+
+/**
+ * A smoothed distribution of `values` at `xs`: a Gaussian kernel per value, reflected at
+ * 0 so the many near-flat activities don't lose half their weight below the axis. The
+ * area under the curve is the number of values.
+ */
+export function density(values: readonly number[], xs: readonly number[], bw: number): number[] {
+  return xs.map((x) => {
+    let sum = 0;
+    for (const v of values) {
+      const a = (x - v) / bw;
+      const b = (x + v) / bw;
+      sum += Math.exp(-0.5 * a * a) + Math.exp(-0.5 * b * b);
+    }
+    return sum / (bw * SQRT_2PI);
+  });
 }
 
 /**
  * One ridge per month from `fromMonth` to `toMonth` (inclusive), oldest first. Months
  * without visible activities are included, so the rows keep the calendar's rhythm.
  */
-export function monthRidges(
+export function hillinessRidgeline(
   activities: readonly ActivityRecord[],
-  profiles: Readonly<Record<string, readonly number[]>>,
   fromMonth: number,
   toMonth: number,
-): MonthRidge[] {
+): HillinessRidgeline {
   const byMonth = new Map<number, ActivityRecord[]>();
+  const all: number[] = [];
   for (const a of activities) {
     const m = monthIndex(a.ts);
     const list = byMonth.get(m);
     if (list) list.push(a);
     else byMonth.set(m, [a]);
+    const h = hilliness(a);
+    if (h != null) all.push(h);
   }
 
+  const xMax = all.length ? Math.max(10, Math.ceil(quantile(all, X_QUANTILE) / 10) * 10) : 10;
+  const xs = Array.from({ length: POINTS }, (_, i) => (xMax * i) / (POINTS - 1));
+  const bw = xMax * BANDWIDTH;
+
   const ridges: MonthRidge[] = [];
+  let maxDensity = 0;
   for (let month = fromMonth; month <= toMonth; month++) {
     const list = byMonth.get(month) ?? [];
-    const shapes = list.map((a) => profiles[a.id]).filter((p) => p != null);
+    const values = list.map(hilliness).filter((h) => h != null);
     const { elevation } = aggregate(list);
-    let signature: number[] | null = null;
-    let relief = 0;
-    if (shapes.length > 0) {
-      const bins = Math.min(...shapes.map((p) => p.length));
-      const med = Array.from({ length: bins }, (_, i) => median(shapes.map((p) => p[i])));
-      const low = Math.min(...med);
-      signature = med.map((v) => v - low);
-      relief = Math.max(...signature);
-    }
+    const curve = values.length ? density(values, xs, bw) : null;
+    if (curve) maxDensity = Math.max(maxDensity, ...curve);
     ridges.push({
       month,
       count: list.length,
-      profiled: shapes.length,
+      measured: values.length,
       gainM: elevation.n === 0 ? undefined : elevation.sum,
-      signature,
-      relief,
+      medianMPerKm: values.length ? median(values) : undefined,
+      density: curve,
     });
   }
-  return ridges;
-}
-
-/**
- * Ridge height in pixels for `metres` above a month's lowest point. One scale for every
- * row, so ridges compare fairly: the tallest relief in view (`maxRelief`) reaches
- * `maxPx`. The scale is a square root, so a month of rolling 30 m runs still shows a
- * shape beside a 700 m mountain month, and a taller ridge always means more relief.
- */
-export function ridgeHeight(metres: number, maxRelief: number, maxPx: number): number {
-  if (!(maxRelief > 0) || !(metres > 0)) return 0;
-  return maxPx * Math.sqrt(Math.min(metres, maxRelief) / maxRelief);
+  return { ridges, xMax, maxDensity };
 }
 
 /**
  * SVG path data for one ridge, with its baseline at y = 0 (up is negative y): the
  * outline `line`, and `area`, the outline closed down to the baseline. x runs from 0 to
- * `width`. Empty strings without a signature.
+ * `width`; the highest density of any ridge (`maxDensity`) reaches `maxPx`. Empty
+ * strings without a curve.
  */
 export function ridgePaths(
-  signature: readonly number[] | null,
+  curve: readonly number[] | null,
   width: number,
-  maxRelief: number,
+  maxDensity: number,
   maxPx: number,
 ): { line: string; area: string } {
-  if (!signature || signature.length < 2) return { line: "", area: "" };
-  const step = width / (signature.length - 1);
-  const pts = signature.map(
-    (m, i) => `${r(i * step)},${r(-ridgeHeight(m, maxRelief, maxPx))}`,
-  );
+  if (!curve || curve.length < 2) return { line: "", area: "" };
+  const step = width / (curve.length - 1);
+  const scale = maxDensity > 0 ? maxPx / maxDensity : 0;
+  const pts = curve.map((d, i) => `${r(i * step)},${r(-d * scale)}`);
   const line = `M${pts.join("L")}`;
   return { line, area: `${line}L${r(width)},0L0,0Z` };
 }
@@ -117,11 +146,12 @@ export function formatGain(metres: number | undefined): string {
   return `${(metres / 1000).toFixed(1)}k m`;
 }
 
-/** The row's accessible name, e.g. "August 2026 · 23 activities · 3,817 m gain". */
+/** The row's accessible name, e.g. "August 2026 · 23 activities · 3,817 m gain · median 12 m/km". */
 export function ridgeLabel(ridge: MonthRidge): string {
   const month = formatMonth(ridge.month);
   if (ridge.count === 0) return `${month} · no activities`;
   const count = `${ridge.count} ${ridge.count === 1 ? "activity" : "activities"}`;
   const gain = ridge.gainM == null ? "elevation gain unknown" : `${formatMeters(ridge.gainM)} m gain`;
-  return `${month} · ${count} · ${gain}`;
+  const hill = ridge.medianMPerKm == null ? "" : ` · median ${Math.round(ridge.medianMPerKm)} m/km`;
+  return `${month} · ${count} · ${gain}${hill}`;
 }

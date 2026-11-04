@@ -72,6 +72,7 @@ function analyticsTotals(filter: ActivityFilter): string[] {
       filter,
       visible: visibleActivities(filter),
       sidePanelExpanded: true,
+      theme: "dark",
       isolation: null,
       onPickMonth: () => {},
     }),

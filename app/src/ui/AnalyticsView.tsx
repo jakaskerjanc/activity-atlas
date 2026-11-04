@@ -7,6 +7,7 @@ import { useMemo, type CSSProperties } from "react";
 import { SectionHeading, StatsSection } from "./StatsSection";
 import { ActivityCalendar, CALENDAR_WIDTH } from "./ActivityCalendar";
 import { Ridgeline } from "./Ridgeline";
+import { ElevationHeatmap } from "./ElevationHeatmap";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { eyebrow, glass, MONO } from "./theme";
 import { useMediaQuery } from "./useMediaQuery";
@@ -20,10 +21,11 @@ import {
 } from "./layout";
 import { rangeTs, type ActivityFilter, type MonthIsolation } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
-import { monthRidges } from "../ridgeline";
+import { hillinessRidgeline } from "../ridgeline";
+import { heatmapGrid } from "../elevationHeatmap";
 import { totalCards } from "../stats";
 import { formatMonth } from "../format";
-import type { ActivityRecord } from "../types";
+import type { ActivityRecord, Theme } from "../types";
 
 interface Props {
   /** null until the data loads. */
@@ -31,6 +33,7 @@ interface Props {
   /** The visible activities, as App hands them to the map's totals too. */
   visible: ActivityRecord[];
   sidePanelExpanded: boolean;
+  theme: Theme;
   /** A month isolated from the ridgeline, while the range is still just that month. */
   isolation: MonthIsolation | null;
   /** A ridgeline row was clicked: isolate that month, or restore the range before. */
@@ -54,6 +57,7 @@ export function AnalyticsView({
   filter,
   visible,
   sidePanelExpanded,
+  theme,
   isolation,
   onPickMonth,
   profiles: given,
@@ -79,13 +83,19 @@ export function AnalyticsView({
     };
   }, [filter, visible]);
 
-  const ridges = useMemo(
-    () =>
-      filter && profiles.status === "ready"
-        ? monthRidges(visible, profiles.profiles, filter.fromMonth, filter.toMonth)
-        : [],
-    [filter, visible, profiles],
+  const ridgeline = useMemo(
+    () => (filter ? hillinessRidgeline(visible, filter.fromMonth, filter.toMonth) : null),
+    [filter, visible],
   );
+
+  const grid = useMemo(() => {
+    if (profiles.status !== "ready") return null;
+    const { profiles: byId, step } = profiles.file;
+    return heatmapGrid(
+      visible.map((a) => byId[a.id]).filter((p) => p != null),
+      step,
+    );
+  }, [visible, profiles]);
 
   return (
     <main
@@ -134,25 +144,36 @@ export function AnalyticsView({
                 </section>
                 <section style={card}>
                   <SectionHeading
-                    title="Elevation by month"
+                    title="Hilliness by month"
                     subtitle={
                       isolation
                         ? `Click ${formatMonth(isolation.month)} again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}`
-                        : "Median route profile and gain · click a month to show only it"
+                        : "Metres climbed per km, and gain · click a month to show only it"
                     }
                   />
-                  {profiles.status === "ready" ? (
+                  {ridgeline && (
                     <Ridgeline
-                      ridges={ridges}
+                      ridgeline={ridgeline}
                       isolatedMonth={isolation?.month ?? null}
                       onPickMonth={onPickMonth}
                     />
-                  ) : (
+                  )}
+                </section>
+                <section style={card}>
+                  <SectionHeading
+                    title="Elevation profiles"
+                    subtitle="Every route's climb against distance, overlaid"
+                  />
+                  {profiles.status !== "ready" ? (
                     <p style={statusText}>
                       {profiles.status === "loading"
                         ? "Loading elevation profiles…"
                         : "Couldn't load elevation profiles."}
                     </p>
+                  ) : grid ? (
+                    <ElevationHeatmap grid={grid} theme={theme} />
+                  ) : (
+                    <p style={statusText}>No visible activity has an elevation profile.</p>
                   )}
                 </section>
               </>
