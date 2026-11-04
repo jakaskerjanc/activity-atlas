@@ -32,12 +32,25 @@ class QueryError(Exception):
     """A raw query was refused, failed, or ran out of time."""
 
 
-def _authorize(action, arg1, arg2, _dbname, _trigger):
-    if action not in _ALLOWED_ACTIONS:
-        return sqlite3.SQLITE_DENY
-    if action == sqlite3.SQLITE_READ and (arg1, arg2) in BLOCKED_COLUMNS:
-        return sqlite3.SQLITE_IGNORE
-    return sqlite3.SQLITE_OK
+_SCHEMA_TABLES = {"sqlite_master", "sqlite_schema"}
+
+
+def _authorizer(tables: set[str]):
+    """Allow only reads, and only from the database's own tables and its schema
+    (not virtual tables such as dbstat or sqlite_dbpage, which would bypass the
+    column blocking)."""
+    def authorize(action, arg1, arg2, dbname, _trigger):
+        if action not in _ALLOWED_ACTIONS:
+            return sqlite3.SQLITE_DENY
+        if action == sqlite3.SQLITE_READ:
+            # A CTE or subquery read (e.g. count(*) over a WITH table) has no
+            # database name; every stored or virtual table has one.
+            if dbname is not None and arg1 not in tables:
+                return sqlite3.SQLITE_DENY
+            if (arg1, arg2) in BLOCKED_COLUMNS:
+                return sqlite3.SQLITE_IGNORE
+        return sqlite3.SQLITE_OK
+    return authorize
 
 
 def _open_ro(path: str) -> sqlite3.Connection:
@@ -57,7 +70,9 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         q = _open_ro(self.path)
         q.execute("PRAGMA query_only = ON")
-        q.set_authorizer(_authorize)
+        tables = {r[0] for r in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL%'")}
+        q.set_authorizer(_authorizer(tables | _SCHEMA_TABLES))
         q.set_progress_handler(self._over_time, 10_000)
         self.query_conn = q
 

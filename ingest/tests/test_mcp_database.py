@@ -50,6 +50,17 @@ def test_query_refuses_writes(db, sql):
     assert run_query(db, "select count(*) from activities")["data"]["rows"][0][0] == 7
 
 
+@pytest.mark.parametrize("sql", ["select * from dbstat", "select * from sqlite_dbpage"])
+def test_query_refuses_tables_outside_the_schema(db, sql):
+    with pytest.raises(QueryError):
+        run_query(db, sql)
+
+
+def test_query_can_read_the_schema(db):
+    r = run_query(db, "select name from sqlite_master where type = 'table' and name = 'activities'")
+    assert r["data"]["rows"] == [["activities"]]
+
+
 def test_query_time_limit(db, monkeypatch):
     monkeypatch.setattr("ingest.mcp_server.database.QUERY_TIME_LIMIT_S", 0.2)
     with pytest.raises(QueryError, match="time limit"):
