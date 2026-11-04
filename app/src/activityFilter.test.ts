@@ -3,8 +3,10 @@ import { featureFilter } from "mapbox-gl/dist/style-spec/index.es.js";
 import {
   createActivityFilter,
   filterExpression,
+  onlyMonth,
   setFromMonth,
   setToMonth,
+  toggleMonth,
   toggleType,
   typeCounts,
   typesByCount,
@@ -172,5 +174,44 @@ describe("with no activities", () => {
   test("still has a finite date range for the slider", () => {
     const f = createActivityFilter([]);
     expect([f.minMonth, f.maxMonth, f.fromMonth, f.toMonth].every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("isolating a month", () => {
+  test("onlyMonth narrows the range to that month", () => {
+    const f = onlyMonth(createActivityFilter(all), month(2024, 3));
+    expect([f.fromMonth, f.toMonth]).toEqual([month(2024, 3), month(2024, 3)]);
+    expect(visibleActivities(f)).toEqual([ride]);
+  });
+
+  test("onlyMonth clamps to the data's months", () => {
+    const f = createActivityFilter(all);
+    expect(onlyMonth(f, month(2020, 1)).fromMonth).toBe(month(2024, 1));
+    expect(onlyMonth(f, month(2030, 1)).toMonth).toBe(month(2024, 5));
+  });
+
+  test("a click isolates the month and keeps the type selection", () => {
+    const f = toggleType(setToMonth(createActivityFilter(all), month(2024, 4)), "Ride");
+    const [isolated, memory] = toggleMonth(f, month(2024, 1), null);
+    expect([isolated.fromMonth, isolated.toMonth]).toEqual([month(2024, 1), month(2024, 1)]);
+    expect(isolated.types).toBe(f.types);
+    expect(memory).toEqual({ month: month(2024, 1), fromMonth: month(2024, 1), toMonth: month(2024, 4) });
+  });
+
+  test("a second click on the isolated month restores the range before", () => {
+    const f = setFromMonth(createActivityFilter(all), month(2024, 2));
+    const [isolated, memory] = toggleMonth(f, month(2024, 3), null);
+    const [restored, cleared] = toggleMonth(isolated, month(2024, 3), memory);
+    expect([restored.fromMonth, restored.toMonth]).toEqual([month(2024, 2), month(2024, 5)]);
+    expect(cleared).toBeNull();
+  });
+
+  test("once the range moved some other way, a click isolates afresh", () => {
+    const f = createActivityFilter(all);
+    const [isolated, memory] = toggleMonth(f, month(2024, 3), null);
+    const widened = setToMonth(isolated, month(2024, 4));
+    const [again, next] = toggleMonth(widened, month(2024, 4), memory);
+    expect([again.fromMonth, again.toMonth]).toEqual([month(2024, 4), month(2024, 4)]);
+    expect(next).toEqual({ month: month(2024, 4), fromMonth: month(2024, 3), toMonth: month(2024, 4) });
   });
 });

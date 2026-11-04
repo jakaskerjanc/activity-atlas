@@ -72,6 +72,8 @@ function analyticsTotals(filter: ActivityFilter): string[] {
       filter,
       visible: visibleActivities(filter),
       sidePanelExpanded: true,
+      isolation: null,
+      onPickMonth: () => {},
     }),
   );
   expect(html).toContain("Totals");

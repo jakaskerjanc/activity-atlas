@@ -65,6 +65,49 @@ export function setToMonth(filter: ActivityFilter, month: number): ActivityFilte
   return { ...filter, toMonth: clamp(month, filter.fromMonth, filter.maxMonth) };
 }
 
+/** Narrow the date range to one month, clamped to the data's months. */
+export function onlyMonth(filter: ActivityFilter, month: number): ActivityFilter {
+  const m = clamp(month, filter.minMonth, filter.maxMonth);
+  return { ...filter, fromMonth: m, toMonth: m };
+}
+
+/** A month isolated with toggleMonth, and the date range it replaced. */
+export interface MonthIsolation {
+  readonly month: number;
+  readonly fromMonth: number;
+  readonly toMonth: number;
+}
+
+/** The isolation, while the range is still exactly its month; null once it moved. */
+export function activeIsolation(
+  filter: ActivityFilter,
+  isolation: MonthIsolation | null,
+): MonthIsolation | null {
+  return isolation && filter.fromMonth === isolation.month && filter.toMonth === isolation.month
+    ? isolation
+    : null;
+}
+
+/**
+ * Click on a month (a ridgeline row): isolate it with onlyMonth, remembering the range it
+ * replaces. Clicking the isolated month again restores that range. The memory only
+ * counts while the range is still exactly the isolated month; once the range has moved
+ * some other way, a click isolates afresh. The type selection is never touched.
+ */
+export function toggleMonth(
+  filter: ActivityFilter,
+  month: number,
+  isolation: MonthIsolation | null,
+): [ActivityFilter, MonthIsolation | null] {
+  const isolated = activeIsolation(filter, isolation);
+  if (isolated && month === isolated.month) {
+    return [{ ...filter, fromMonth: isolated.fromMonth, toMonth: isolated.toMonth }, null];
+  }
+  const next = onlyMonth(filter, month);
+  const before = isolated ?? { fromMonth: filter.fromMonth, toMonth: filter.toMonth };
+  return [next, { month: next.fromMonth, fromMonth: before.fromMonth, toMonth: before.toMonth }];
+}
+
 /** Inclusive epoch-second bounds of the date range. */
 export function rangeTs(filter: ActivityFilter): [number, number] {
   return [monthStart(filter.fromMonth), monthEnd(filter.toMonth)];

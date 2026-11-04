@@ -7,14 +7,18 @@ import { record } from "../testFixtures";
 
 const filter = createActivityFilter([record({ type: "Run" })]);
 
-const render = (props: Partial<Parameters<typeof AnalyticsView>[0]> = {}) =>
+type Props = Parameters<typeof AnalyticsView>[0];
+
+const render = (props: Partial<Props> = {}) =>
   renderToStaticMarkup(
     createElement(AnalyticsView, {
       filter,
       visible: visibleActivities(filter),
       sidePanelExpanded: true,
+      isolation: null,
+      onPickMonth: () => {},
       ...props,
-    }),
+    } as Props),
   );
 
 describe("AnalyticsView", () => {
@@ -26,12 +30,32 @@ describe("AnalyticsView", () => {
     expect(html).toContain("August 2024 — August 2024");
   });
 
+  test("shows the ridgeline once the route profiles load", () => {
+    expect(render()).toContain("Loading elevation profiles");
+    const html = render({ profiles: { status: "ready", profiles: { "s:1": [300, 350, 320] } } });
+    expect(html).toContain("Elevation by month");
+    expect(html).toContain('aria-label="August 2024 · 1 activity · 100 m gain"');
+    expect(html).toContain("click a month to show only it");
+    expect(render({ profiles: { status: "error" } })).toContain("Couldn&#x27;t load elevation profiles");
+  });
+
+  test("names the range a second click restores while a month is isolated", () => {
+    const month = 2024 * 12 + 7;
+    const html = render({
+      profiles: { status: "ready", profiles: {} },
+      isolation: { month, fromMonth: month - 5, toMonth: month },
+    });
+    expect(html).toContain("Click August 2024 again for March 2024 — August 2024");
+    expect(html).toContain('aria-pressed="true"');
+  });
+
   test("explains an empty filter instead of showing zeros", () => {
     const empty = toggleType(filter, "Run");
     const html = render({ filter: empty, visible: visibleActivities(empty) });
     expect(html).toContain("No activities match the filter");
     expect(html).not.toContain("Consistency");
     expect(html).not.toContain("Activity calendar");
+    expect(html).not.toContain("Elevation by month");
   });
 
   test("renders just the page heading until the data loads", () => {
