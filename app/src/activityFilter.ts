@@ -26,9 +26,19 @@ export interface ActivityFilter {
   readonly toMonth: number;
 }
 
-/** A filter over `activities` with every type on and the full date range. */
+/**
+ * The types switched on when the page opens: the outdoor ones with a route to draw.
+ * The rest (gym, swims, climbing…) are a click away in the type list.
+ */
+export const DEFAULT_TYPES: readonly string[] = ["Run", "Hike", "Walk", "Ride"];
+
+/**
+ * A filter over `activities` with the full date range and the default types on: those
+ * of DEFAULT_TYPES the data has, or every type when it has none of them.
+ */
 export function createActivityFilter(activities: readonly ActivityRecord[]): ActivityFilter {
   const availableTypes = [...new Set(activities.map((a) => a.type))].sort();
+  const defaults = availableTypes.filter((t) => DEFAULT_TYPES.includes(t));
   const months = activities.map((a) => monthIndex(a.ts));
   // No activities: any finite month will do, since nothing can be shown anyway.
   const minMonth = months.length ? Math.min(...months) : 0;
@@ -36,7 +46,7 @@ export function createActivityFilter(activities: readonly ActivityRecord[]): Act
   return {
     activities,
     availableTypes,
-    types: new Set(availableTypes),
+    types: new Set(defaults.length ? defaults : availableTypes),
     minMonth,
     maxMonth,
     fromMonth: minMonth,

@@ -82,7 +82,8 @@ function analyticsTotals(filter: ActivityFilter): string[] {
 
 describe("analytics totals reconcile with the map's totals", () => {
   const features = joinActivities(routes, activities).features;
-  const filter = createActivityFilter(activities.activities);
+  // Every type on, the gym session included (it is off by default).
+  const filter = toggleType(createActivityFilter(activities.activities), "WeightTraining");
 
   test("the map draws only the routed activities, but both pages total all of them", () => {
     expect(visibleFeatures(filter, features).map((f) => f.properties.id)).toEqual(["run", "hike"]);

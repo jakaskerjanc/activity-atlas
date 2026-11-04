@@ -21,7 +21,7 @@ The user's current choice of which activities are shown: a type selection plus a
 _Avoid_: activity window, view, selection
 
 **Type selection**:
-The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state.
+The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state. On load it holds Run, Hike, Walk and Ride (those the data has, or every type when it has none of them).
 _Avoid_: enabled types, type filter
 
 **Date range**:

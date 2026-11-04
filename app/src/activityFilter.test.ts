@@ -28,8 +28,24 @@ const run2 = record({ id: "s:4", type: "Run", ts: at("2024-05-02T07:00:00Z") });
 const all = [run, ride, hike, run2];
 
 describe("a new activity filter", () => {
-  test("shows every activity", () => {
+  test("shows every activity of the default types", () => {
     expect(visibleActivities(createActivityFilter(all))).toEqual(all);
+  });
+
+  test("starts with only Run, Hike, Walk and Ride on", () => {
+    const swim = record({ id: "s:9", type: "Swim", ts: at("2024-02-01T07:00:00Z") });
+    const walk = record({ id: "s:8", type: "Walk", ts: at("2024-02-02T07:00:00Z") });
+    const f = createActivityFilter([...all, swim, walk]);
+    expect([...f.types].sort()).toEqual(["Hike", "Ride", "Run", "Walk"]);
+    expect(f.availableTypes).toContain("Swim");
+    expect(visibleActivities(f)).not.toContain(swim);
+    expect(visibleActivities(toggleType(f, "Swim"))).toContain(swim);
+  });
+
+  test("turns every type on when the data has none of the defaults", () => {
+    const gym = record({ id: "g:1", type: "WeightTraining" });
+    const swim = record({ id: "g:2", type: "Swim" });
+    expect([...createActivityFilter([gym, swim]).types].sort()).toEqual(["Swim", "WeightTraining"]);
   });
 });
 
