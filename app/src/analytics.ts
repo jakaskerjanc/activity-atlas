@@ -99,6 +99,15 @@ export interface CalendarDay {
   movingSec: number | undefined;
   count: number;
   level: CalendarLevel;
+  /** The day's activities, earliest first, for the hover list. */
+  activities: CalendarActivity[];
+}
+
+export interface CalendarActivity {
+  id: string;
+  name: string;
+  /** Moving time; undefined when unknown. */
+  movingSec: number | undefined;
 }
 
 export interface CalendarYear {
@@ -154,7 +163,7 @@ export function activityCalendar(
     const yearMoving = { sum: 0, n: 0 };
     for (let day = Math.max(jan1, firstDay); day <= Math.min(dec31, lastDay); day++) {
       const pos = day - jan1 + offset;
-      const dayActivities = byDay.get(day) ?? [];
+      const dayActivities = (byDay.get(day) ?? []).sort((a, b) => a.ts - b.ts);
       const count = dayActivities.length;
       const moving = aggregate(dayActivities).moving;
       const movingSec = count === 0 ? 0 : moving.n === 0 ? undefined : moving.sum;
@@ -167,6 +176,7 @@ export function activityCalendar(
         movingSec,
         count,
         level: calendarLevel(movingSec, count),
+        activities: dayActivities.map((a) => ({ id: a.id, name: a.name, movingSec: a.moving_time })),
       };
       cal.days.push(d);
       if (count > 0) cal.activeDays += 1;

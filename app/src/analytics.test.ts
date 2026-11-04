@@ -228,6 +228,22 @@ describe("activityCalendar", () => {
     expect(year).toMatchObject({ movingSec: undefined, activeDays: 1 });
   });
 
+  test("lists each day's activities by name and moving time, earliest first", () => {
+    const [year] = activityCalendar(
+      [
+        record({ id: "b", name: "Evening walk", ts: utc(2024, 8, 18, 18), moving_time: undefined }),
+        record({ id: "a", name: "Morning run", ts: utc(2024, 8, 18, 8), moving_time: 3000 }),
+      ],
+      ...yearSpan(2024),
+    );
+    const day = (d: number) => year.days.find((x) => x.ts === dayStart(2024, 8, d))!;
+    expect(day(18).activities).toEqual([
+      { id: "a", name: "Morning run", movingSec: 3000 },
+      { id: "b", name: "Evening walk", movingSec: undefined },
+    ]);
+    expect(day(19).activities).toEqual([]);
+  });
+
   test("an empty span has no years", () => {
     expect(activityCalendar([], 1000, 999)).toEqual([]);
   });
