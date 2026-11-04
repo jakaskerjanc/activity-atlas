@@ -59,7 +59,7 @@ describe("buildProfile", () => {
     const t = speed.map((_, i) => i * 5);
     const pace = buildProfile(detail({ t, speed }), "Run")!.charts[0];
     expect(pace.domain[1]).toBeLessThan(400); // the outlier (~3,200 s/km) is clipped
-    expect(pace.domain[0]).toBeGreaterThan(300);
+    expect(pace.domain[0]).toBeGreaterThanOrEqual(300); // widened to the whole minute
   });
 
   test("pace axis stops at twice the median, so a slow climb doesn't squash the walking", () => {
@@ -76,6 +76,32 @@ describe("buildProfile", () => {
     const ticks = paceTicks(pace.domain[0], pace.domain[1]);
     expect(ticks.length).toBeGreaterThan(0);
     for (const t of ticks) expect(t % 60).toBe(0);
+  });
+
+  test("paceTicks only returns whole minutes, even on a narrow domain", () => {
+    expect(paceTicks(290, 320)).toEqual([300]);
+    expect(paceTicks(270, 330)).toEqual([300]);
+    for (const t of paceTicks(290, 320)) expect(t % 60).toBe(0);
+  });
+
+  test("paceTicks on a wide domain steps by nice whole minutes", () => {
+    const ticks = paceTicks(600, 1800);
+    expect(ticks.length).toBeGreaterThanOrEqual(2);
+    expect(ticks.length).toBeLessThanOrEqual(6);
+    for (const t of ticks) {
+      expect(t % 60).toBe(0);
+      expect(t).toBeGreaterThanOrEqual(600);
+      expect(t).toBeLessThanOrEqual(1800);
+    }
+  });
+
+  test("a steady run's narrow pace domain widens to whole minutes with >= 2 ticks", () => {
+    const speed = Array.from({ length: 100 }, (_, i) => 3.4 + ((i % 5) - 2) * 0.01); // ~294 s/km +- 2
+    const pace = buildProfile(detail({ t: speed.map((_, i) => i * 5), speed }), "Run")!.charts[0];
+    const [lo, hi] = pace.domain;
+    expect(lo % 60).toBe(0);
+    expect(hi % 60).toBe(0);
+    expect(paceTicks(lo, hi).length).toBeGreaterThanOrEqual(2);
   });
 
   test("speed is km/h from 0", () => {

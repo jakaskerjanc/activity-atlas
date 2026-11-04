@@ -299,7 +299,9 @@ Top to bottom:
   0.3 m/s (standing) is a gap, and the pace axis spans the 5th–95th
   percentile, capped at twice the median pace, so one stop or a long slow
   climb doesn't flatten the chart. Slower samples clip to the bottom edge;
-  the readout still shows their value.
+  the readout still shows their value. Ticks sit on whole minutes (changed
+  after the Task 7 review: when fewer than two whole minutes fall inside the
+  axis, as on a steady run, it widens outward to whole minutes).
 - **Hover:** pointer (mouse, pen or touch) over any chart sets one shared
   **cursor**: an index into the detail arrays. A vertical line crosses all
   charts at that point, and the readout fills in.
