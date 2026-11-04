@@ -52,6 +52,14 @@ This is plan 4 of 4.
   `+ 1`, a 5000 s activity gets 1001 points). Keys `t d lat lon alt hr speed cad`.
   Rounding: `t`, `d`, `hr`, `cad` integers; `lat`/`lon` 5 decimals; `alt`
   1 decimal; `speed` 2 decimals. No power, no temperature, no wellness.
+  `d` never decreases (changed after the final review: 2 of 530 real
+  activities reset their distance counter): it is the running total of the
+  positive steps between consecutive present raw distance samples, applied to
+  the raw stream before bucketing so speed derived from `d` sees it too.
+- **Rows missing start_time or type** (changed after the final review): an
+  activity row whose `start_time` is NULL or unparseable, or whose `type` is
+  NULL, is skipped entirely (no record, route or detail file) with a warning
+  naming its id. A NULL `name` falls back to the `type`.
 - **Charts:** elevation (`alt`), heart rate (`hr`), then pace for foot types
   (`isFootBased`) or speed for the rest (`speed`). Distance x axis when `d`
   exists, else time. No toggle. Cadence only in the readout.
@@ -62,6 +70,10 @@ This is plan 4 of 4.
   whole minutes (changed after the Task 7 review: when fewer than two whole
   minutes fall inside the domain, as on a steady run, it widens outward to
   whole minutes so there are always at least two ticks).
+  **Every chart axis shows at least two ticks** (changed after the final
+  review: 40 of 377 pace charts and about half the HR charts had one): when the
+  chosen step yields fewer than two ticks inside the domain, `paceTicks` and
+  `niceTicks` step down to the next smaller nice step (pace never below 1 min).
 - **Chart heights:** elevation 84 px, HR and pace/speed 52 px. Panel
   `maxHeight: "calc(100vh - 140px)"`.
 - **Neutral route color** for a missing ramp value: `NEUTRAL = "#7a7f8c"`.

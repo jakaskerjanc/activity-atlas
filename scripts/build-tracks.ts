@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
-import { toRecord, type ActivityRow } from "./numbers.ts";
+import { isUsable, toRecord, type ActivityRow } from "./numbers.ts";
 import { decodeChannel, type StreamChannel } from "./codec.ts";
 import { buildDetail, type Streams } from "./detail.ts";
 import type {
@@ -135,6 +135,10 @@ export function readDisplayFiles(
     const streams = db.prepare(`SELECT ${DETAIL_CHANNELS.join(",")} FROM streams WHERE file_sha256 = ?`);
     const files = emptyFiles(stats);
     for (const row of rows) {
+      if (!isUsable(row)) {
+        warn(`Skipping activity ${row.id}: missing type or unparseable start_time.`);
+        continue;
+      }
       const route = wireRoute(row.polyline, stats);
       if (route) files.routes.routes[row.id] = route;
       const detail = readDetail(streams, row.streams_sha256);

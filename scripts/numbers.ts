@@ -7,9 +7,9 @@ import type { ActivityRecord, ActivitySource, Channel } from "./types.ts";
 /** The activities columns the display build reads. Numbers may be NULL. */
 export interface ActivityRow {
   id: string;
-  name: string;
-  type: string;
-  start_time: string;
+  name: string | null;
+  type: string | null;
+  start_time: string | null;
   start_local: string | null;
   distance: number | null;
   moving_time: number | null;
@@ -27,6 +27,13 @@ export interface ActivityRow {
   has_power: number;
   polyline: string;
   streams_sha256: string | null;
+}
+
+/** A row that can become a record: it has a type and a parseable start_time. */
+export type UsableRow = ActivityRow & { type: string; start_time: string };
+
+export function isUsable(row: ActivityRow): row is UsableRow {
+  return row.type != null && row.start_time != null && !Number.isNaN(Date.parse(row.start_time));
 }
 
 const CHANNEL_FLAGS: [Channel, keyof ActivityRow][] = [
@@ -55,7 +62,7 @@ function hrZones(text: string | null, hasHr: boolean): number[] | undefined {
   return Array.isArray(zones) && zones.some((s) => s > 0) ? zones : undefined;
 }
 
-export function toRecord(row: ActivityRow, sources: ActivitySource[], hasDetail: boolean): ActivityRecord {
+export function toRecord(row: UsableRow, sources: ActivitySource[], hasDetail: boolean): ActivityRecord {
   const hasAlt = row.has_altitude === 1;
   const optional: Partial<ActivityRecord> = {
     start_local: row.start_local ?? undefined,
@@ -70,7 +77,7 @@ export function toRecord(row: ActivityRow, sources: ActivitySource[], hasDetail:
   };
   const rec: ActivityRecord = {
     id: row.id,
-    name: row.name,
+    name: row.name ?? row.type,
     type: row.type,
     ts: Math.floor(Date.parse(row.start_time) / 1000),
     start_date: row.start_time,

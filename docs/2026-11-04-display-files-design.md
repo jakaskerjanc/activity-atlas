@@ -210,6 +210,10 @@ also in these cases where the provider wrote `0` for "not measured":
 
 A flat run with an altimeter keeps its real `elevation_gain: 0`.
 
+A row whose `start_time` is NULL or unparseable, or whose `type` is NULL, is
+skipped entirely (no record, route or detail file) with a warning naming its
+id (changed after the final review). A NULL `name` falls back to the `type`.
+
 ### `data/activity/<id>.json`, v1
 
 ```json
@@ -244,6 +248,10 @@ A flat run with an altimeter keeps its real `elevation_gain: 0`.
   | `speed` | m/s | 2 decimals | speed, else derived from `d` |
   | `cad` | rpm / spm as stored | integer | cadence |
 
+- `d` never decreases (changed after the final review): it is the running
+  total of the positive steps between consecutive present raw distance samples,
+  so a counter reset or backward jitter adds 0. Speed derived from `d` uses
+  this corrected series.
 - All arrays have the same length as `t`. `t` never holds `null`.
 - A channel is left out when it has no present value. `d` and `speed` are
   also left out when they never exceed 0 (indoor sessions whose distance
@@ -301,7 +309,9 @@ Top to bottom:
   climb doesn't flatten the chart. Slower samples clip to the bottom edge;
   the readout still shows their value. Ticks sit on whole minutes (changed
   after the Task 7 review: when fewer than two whole minutes fall inside the
-  axis, as on a steady run, it widens outward to whole minutes).
+  axis, as on a steady run, it widens outward to whole minutes). Every chart
+  axis shows at least two ticks (changed after the final review): the tick
+  step shrinks until two fit.
 - **Hover:** pointer (mouse, pen or touch) over any chart sets one shared
   **cursor**: an index into the detail arrays. A vertical line crosses all
   charts at that point, and the readout fills in.

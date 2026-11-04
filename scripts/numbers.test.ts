@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toRecord, type ActivityRow } from "./numbers.ts";
+import { toRecord, type ActivityRow, type UsableRow } from "./numbers.ts";
 
-function row(over: Partial<ActivityRow> = {}): ActivityRow {
+function row(over: Partial<ActivityRow> = {}): UsableRow {
   return {
     id: "abc", name: "Hike", type: "Hike",
     start_time: "2026-08-01T06:30:00+00:00", start_local: "2026-08-01T08:30:00",
@@ -12,7 +12,7 @@ function row(over: Partial<ActivityRow> = {}): ActivityRow {
     has_gps: 1, has_hr: 1, has_altitude: 1, has_cadence: 1, has_power: 1,
     polyline: "", streams_sha256: null,
     ...over,
-  };
+  } as UsableRow;
 }
 
 const NUMBERS = ["distance", "moving_time", "elapsed_time", "elevation_gain", "elevation_loss", "avg_hr", "max_hr"] as const;
