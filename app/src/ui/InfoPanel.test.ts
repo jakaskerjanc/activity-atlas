@@ -32,3 +32,23 @@ describe("InfoPanel anchoring", () => {
     expect(html).toContain("cursor:pointer");
   });
 });
+
+describe("InfoPanel body", () => {
+  test("renders the body under the cards", () => {
+    const html = renderToStaticMarkup(
+      createElement(InfoPanel, { ...props, body: createElement("p", null, "charts here") }),
+    );
+    expect(html.indexOf("charts here")).toBeGreaterThan(html.indexOf("Activities"));
+  });
+
+  test("compact cards use four columns", () => {
+    const html = renderToStaticMarkup(createElement(InfoPanel, { ...props, compactCards: true }));
+    expect(html).toContain("repeat(4, 1fr)");
+    const wide = renderToStaticMarkup(createElement(InfoPanel, props));
+    expect(wide).toContain("1fr 1fr");
+  });
+
+  test("scrolls instead of outgrowing the viewport", () => {
+    expect(renderToStaticMarkup(createElement(InfoPanel, props))).toContain("calc(100vh - 140px)");
+  });
+});

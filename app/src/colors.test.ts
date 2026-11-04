@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   ACCENT,
+  NEUTRAL,
   computeDomain,
   lineColorExpression,
   legendFor,
@@ -22,6 +23,7 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
       distance: 10000,
       moving_time: 3600,
       elevation_gain: 100,
+      channels: [],
       sources: [],
       ...props,
     },
@@ -94,6 +96,43 @@ describe("computeDomain", () => {
   });
 });
 
+describe("unknown values", () => {
+  test("domain ignores activities without elevation", () => {
+    const d = computeDomain([
+      feature({ elevation_gain: 300 }),
+      feature({ elevation_gain: undefined }),
+      feature({ elevation_gain: 700 }),
+    ]);
+    expect(d.elevMin).toBe(300);
+    expect(d.elevMax).toBe(700);
+  });
+
+  test("domain ignores activities without distance or moving time for speed", () => {
+    const d = computeDomain([
+      feature({ distance: 10000, moving_time: 3600 }),
+      feature({ distance: undefined }),
+      feature({ moving_time: undefined }),
+    ]);
+    expect(d.speedMin).toBeCloseTo(10);
+    expect(d.speedMax).toBeCloseTo(10);
+  });
+
+  test("elevation expression falls back to NEUTRAL when absent", () => {
+    const e = lineColorExpression("elevation", domain()) as unknown[];
+    expect(e[0]).toBe("case");
+    expect(e[1]).toEqual(["has", "elevation_gain"]);
+    expect((e[2] as unknown[])[0]).toBe("interpolate");
+    expect(e[e.length - 1]).toBe(NEUTRAL);
+  });
+
+  test("speed expression falls back to NEUTRAL when distance or time is absent", () => {
+    const e = lineColorExpression("speed", domain()) as unknown[];
+    expect(e[0]).toBe("case");
+    expect(e[1]).toEqual(["all", ["has", "distance"], ["has", "moving_time"]]);
+    expect(e[e.length - 1]).toBe(NEUTRAL);
+  });
+});
+
 describe("lineColorExpression", () => {
   test("uniform and heat are the plain accent color", () => {
     expect(lineColorExpression("uniform", domain())).toBe(ACCENT);
@@ -115,7 +154,7 @@ describe("lineColorExpression", () => {
 
   test("degenerate domain (min == max) still yields a valid ascending ramp", () => {
     const expr = lineColorExpression("elevation", domain({ elevMin: 42, elevMax: 42 }));
-    const arr = expr as unknown[];
+    const arr = (expr as unknown[])[2] as unknown[]; // the ramp inside the NEUTRAL case
     expect(Number(arr[3])).toBeLessThan(Number(arr[arr.length - 2]));
   });
 

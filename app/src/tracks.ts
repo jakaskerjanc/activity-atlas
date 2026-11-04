@@ -1,47 +1,47 @@
-// Decode the compact tracks.json wire format into the GeoJSON FeatureCollection
-// the map + panels consume. The build ships Google-encoded polylines instead of
-// decoded coordinate arrays (~2x smaller, cheaper to parse); we expand them here.
+// Join routes.json and activities.json into the GeoJSON FeatureCollection the map +
+// panels consume. Routes ship as Google-encoded polylines keyed by activity id; we
+// expand them here. Only activities with a route become features: the map has no
+// line to draw or click for the rest (they stay in activities.json for analytics).
 // Keep in sync with scripts/build-tracks.ts (the encoder side).
 
 import polyline from "@mapbox/polyline";
 import type {
+  ActivitiesFile,
   ActivityFeature,
   ActivityFeatureCollection,
-  EncodedTrack,
-  TrackPayload,
+  ActivityRecord,
+  RoutesFile,
 } from "./types";
 
-/** Wire-format version this decoder understands (see scripts/build-tracks.ts). */
-export const PAYLOAD_VERSION = 3;
+/** Wire-format versions this app understands (see scripts/build-tracks.ts). */
+export const ROUTES_VERSION = 4;
+export const ACTIVITIES_VERSION = 1;
 
-function toFeature(track: EncodedTrack): ActivityFeature | null {
-  const { poly, ...properties } = track;
+function toFeature(record: ActivityRecord, poly: string): ActivityFeature | null {
   // @mapbox/polyline decodes to [lat, lng]; GeoJSON needs [lng, lat].
-  const coordinates = polyline
-    .decode(poly)
-    .map(([lat, lng]) => [lng, lat] as [number, number]);
-  // A LineString needs >= 2 points. The builder guarantees this, but guard
-  // here too since decode is the app's only ingestion point — a corrupt or
+  const coordinates = polyline.decode(poly).map(([lat, lng]) => [lng, lat] as [number, number]);
+  // A LineString needs >= 2 points. The builder guarantees this, but a corrupt or
   // truncated payload shouldn't reach the map as a degenerate geometry.
   if (coordinates.length < 2) return null;
-  return {
-    type: "Feature",
-    geometry: { type: "LineString", coordinates },
-    properties,
-  };
+  return { type: "Feature", geometry: { type: "LineString", coordinates }, properties: record };
 }
 
-/** Expand a tracks.json payload into the GeoJSON FeatureCollection the UI uses. */
-export function decodeTracks(payload: TrackPayload): ActivityFeatureCollection {
-  if (payload.v !== PAYLOAD_VERSION) {
-    throw new Error(
-      `Unsupported tracks payload version ${payload.v} (expected ${PAYLOAD_VERSION})`,
-    );
+/** Activities with a route, in activities.json order, as map features. */
+export function joinActivities(
+  routes: RoutesFile,
+  activities: ActivitiesFile,
+): ActivityFeatureCollection {
+  if (routes.v !== ROUTES_VERSION) {
+    throw new Error(`Unsupported routes version ${routes.v} (expected ${ROUTES_VERSION})`);
   }
-  return {
-    type: "FeatureCollection",
-    features: payload.tracks
-      .map(toFeature)
-      .filter((f): f is ActivityFeature => f !== null),
-  };
+  if (activities.v !== ACTIVITIES_VERSION) {
+    throw new Error(`Unsupported activities version ${activities.v} (expected ${ACTIVITIES_VERSION})`);
+  }
+  const features: ActivityFeature[] = [];
+  for (const record of activities.activities) {
+    const poly = routes.routes[record.id];
+    const f = poly ? toFeature(record, poly) : null;
+    if (f) features.push(f);
+  }
+  return { type: "FeatureCollection", features };
 }

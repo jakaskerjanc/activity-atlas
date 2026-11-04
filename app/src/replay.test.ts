@@ -22,6 +22,7 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
       distance: 10000,
       moving_time: 3000,
       elevation_gain: 100,
+      channels: [],
       sources: [],
       ...props,
     },

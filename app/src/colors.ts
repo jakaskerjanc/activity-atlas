@@ -9,6 +9,8 @@ import type { ActivityFeature } from "./types";
 import { formatDate } from "./format";
 
 export const ACCENT = "#ff6b3d";
+/** Routes whose colored value is unknown: grey, so they never read as the ramp's low end. */
+export const NEUTRAL = "#7a7f8c";
 
 export type ColorMode =
   | "uniform"
@@ -63,9 +65,11 @@ export interface ColorDomain {
   types: string[];
 }
 
-/** km/h from a feature's distance (m) and moving time (s). */
-function speedKmh(f: ActivityFeature): number {
-  return (f.properties.distance * 3.6) / Math.max(f.properties.moving_time, 1);
+/** km/h from a feature's distance (m) and moving time (s); undefined when either is unknown. */
+function speedKmh(f: ActivityFeature): number | undefined {
+  const { distance, moving_time } = f.properties;
+  if (distance == null || moving_time == null) return undefined;
+  return (distance * 3.6) / Math.max(moving_time, 1);
 }
 
 /**
@@ -89,22 +93,29 @@ export function computeDomain(features: ActivityFeature[]): ColorDomain {
     const s = speedKmh(f);
     if (p.ts < tsMin) tsMin = p.ts;
     if (p.ts > tsMax) tsMax = p.ts;
-    if (p.elevation_gain < elevMin) elevMin = p.elevation_gain;
-    if (p.elevation_gain > elevMax) elevMax = p.elevation_gain;
-    if (s < speedMin) speedMin = s;
-    if (s > speedMax) speedMax = s;
+    // Unknown values stay out of the domain (they draw NEUTRAL, see lineColorExpression).
+    if (p.elevation_gain != null) {
+      elevMin = Math.min(elevMin, p.elevation_gain);
+      elevMax = Math.max(elevMax, p.elevation_gain);
+    }
+    if (s != null) {
+      speedMin = Math.min(speedMin, s);
+      speedMax = Math.max(speedMax, s);
+    }
     types.add(p.type);
   }
   if (features.length === 0) {
     return { tsMin: 0, tsMax: 0, elevMin: 0, elevMax: 0, speedMin: 0, speedMax: 0, types: [] };
   }
+  // A set where nobody has the value collapses to 0..0 rather than ±Infinity.
+  const finite = (v: number) => (Number.isFinite(v) ? v : 0);
   return {
     tsMin,
     tsMax,
-    elevMin,
-    elevMax,
-    speedMin,
-    speedMax,
+    elevMin: finite(elevMin),
+    elevMax: finite(elevMax),
+    speedMin: finite(speedMin),
+    speedMax: finite(speedMax),
     types: [...types].sort(),
   };
 }
@@ -145,6 +156,11 @@ function ramp(
   return expr as unknown as ExpressionSpecification;
 }
 
+/** `color` where the activity has the value, NEUTRAL where it doesn't. */
+function whenKnown(test: unknown[], color: ExpressionSpecification): ExpressionSpecification {
+  return ["case", test, color, NEUTRAL] as unknown as ExpressionSpecification;
+}
+
 /** Deterministic categorical color per activity type (wraps the palette). */
 export function typeColor(type: string, types: string[]): string {
   const i = types.indexOf(type);
@@ -175,9 +191,15 @@ export function lineColorExpression(
     case "recency":
       return ramp(get("ts"), domain.tsMin, domain.tsMax, RECENCY_STOPS);
     case "elevation":
-      return ramp(get("elevation_gain"), domain.elevMin, domain.elevMax, ELEVATION_STOPS);
+      return whenKnown(
+        ["has", "elevation_gain"],
+        ramp(get("elevation_gain"), domain.elevMin, domain.elevMax, ELEVATION_STOPS),
+      );
     case "speed":
-      return ramp(speedExpr(), domain.speedMin, domain.speedMax, SPEED_STOPS);
+      return whenKnown(
+        ["all", ["has", "distance"], ["has", "moving_time"]],
+        ramp(speedExpr(), domain.speedMin, domain.speedMax, SPEED_STOPS),
+      );
     case "type":
       return typeMatch(domain.types);
   }
