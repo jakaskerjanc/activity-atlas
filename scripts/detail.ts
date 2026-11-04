@@ -51,6 +51,23 @@ function round(v: number | null, dp: number): number | null {
 const hasValue = (s: Series) => s.some((v) => v != null);
 const hasPositive = (s: Series) => s.some((v) => v != null && v > 0);
 
+/**
+ * Distance as a running total of the positive steps between consecutive present samples:
+ * a drop (a counter reset, backward jitter) adds 0 and later increases carry on from the
+ * total, so the series never decreases. Missing samples stay missing.
+ */
+function nonDecreasing(d: Series): Series {
+  let total = 0;
+  let prev: number | null = null;
+  return d.map((v) => {
+    if (v == null) return null;
+    if (prev == null) total = v;
+    else if (v > prev) total += v - prev;
+    prev = v;
+    return total;
+  });
+}
+
 /** Bucket means: the mean time per bucket and the mean of each channel's present values. */
 function bucketMeans(s: Streams, step: number, t0: number) {
   const channels = OUTPUT.map(([src]) => src).filter((c) => s[c] != null);
@@ -117,7 +134,7 @@ export function buildDetail(s: Streams): DetailFile | null {
   if (times.length === 0) return null;
   const t0 = times[0];
   const step = detailStep(times[times.length - 1] - t0);
-  const { t, out } = bucketMeans(s, step, t0);
+  const { t, out } = bucketMeans(s.distance ? { ...s, distance: nonDecreasing(s.distance) } : s, step, t0);
 
   // Indoor sessions carry a distance/speed stream of zeros: that is "no distance".
   const d = out.get("distance");
