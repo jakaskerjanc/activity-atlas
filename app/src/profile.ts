@@ -82,6 +82,12 @@ function paceChart(speed: Series): ChartSeries | null {
   let lo = percentile(sorted, 0.05);
   let hi = Math.min(percentile(sorted, 0.95), 2 * percentile(sorted, 0.5));
   if (hi - lo < 30) [lo, hi] = [(lo + hi) / 2 - 15, (lo + hi) / 2 + 15];
+  // The axis is labelled on whole minutes: when fewer than two fall inside (a steady
+  // run), widen outward to whole minutes so there are always at least two ticks.
+  if (Math.floor(hi / 60) - Math.ceil(lo / 60) + 1 < 2) {
+    lo = Math.floor(lo / 60) * 60;
+    hi = Math.max(Math.ceil(hi / 60) * 60, lo + 60);
+  }
   return chart("pace", values, [lo, hi], true);
 }
 
@@ -123,9 +129,14 @@ export function niceTicks(lo: number, hi: number, count = 3): number[] {
   return ticks;
 }
 
-/** Pace ticks (seconds per km) on whole minutes. */
+/** Pace ticks (seconds per km): multiples of a nice whole-minute step (>= 1 min) inside [lo, hi]. */
 export function paceTicks(lo: number, hi: number): number[] {
-  return niceTicks(lo / 60, hi / 60, 3).map((m) => Math.round(m * 60));
+  const raw = (hi - lo) / 60 / 3;
+  const steps = [1, 2, 5, 10, 15, 30, 60];
+  const step = 60 * (steps.find((s) => s >= raw) ?? 120);
+  const ticks: number[] = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(v);
+  return ticks;
 }
 
 const pt = (x: number, y: number) => `${x.toFixed(1)},${y.toFixed(1)}`;

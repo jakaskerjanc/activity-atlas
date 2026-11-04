@@ -59,7 +59,9 @@ This is plan 4 of 4.
   gap; y domain is the 5th–95th percentile of pace, capped at twice the
   median (added in Task 7 after the real-data check: a hike's slow climbing
   squashed its walking pace into the top tenth); faster at the top; ticks on
-  whole minutes.
+  whole minutes (changed after the Task 7 review: when fewer than two whole
+  minutes fall inside the domain, as on a steady run, it widens outward to
+  whole minutes so there are always at least two ticks).
 - **Chart heights:** elevation 84 px, HR and pace/speed 52 px. Panel
   `maxHeight: "calc(100vh - 140px)"`.
 - **Neutral route color** for a missing ramp value: `NEUTRAL = "#7a7f8c"`.
@@ -523,7 +525,9 @@ switches the app, so the site works at every commit.
     to the x domain, then calls `onCursor(nearestIndex(...))`.
     `onPointerLeave` calls `onCursor(null)`. Use `touch-action: pan-y`.
   - **Colors:** elevation fill `var(--accent)` at 0.18 opacity with an
-    accent stroke; HR `#ff5d73`; pace/speed `#4cc9f0`; gridlines
+    accent stroke; HR `#b07cff`; pace/speed `#3fb8e0` (changed in Task 6: the planned
+    red was ΔE 7.3 from the orange accent and failed the dataviz palette
+    validator); gridlines
     `var(--card-grid)`.
   - **Cursor:** a vertical line, plus a dot on each chart that has a value
     there.
