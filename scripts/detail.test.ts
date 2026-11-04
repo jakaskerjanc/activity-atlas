@@ -77,3 +77,21 @@ test("streams type accepts every shipped channel", () => {
   const s: Streams = { time: [0], distance: [0], lat: [0], lon: [0], altitude: [0], hr: [0], speed: [0], cadence: [0] };
   assert.ok(s);
 });
+
+test("a distance reset doesn't make d decrease: only increases accumulate", () => {
+  // raw 0,100,200,0,50 -> running total 0,100,200,200,250; one sample per 5 s bucket
+  const d = buildDetail({ time: [0, 5, 10, 15, 20], distance: [0, 100, 200, 0, 50], hr: range(5, () => 120) })!;
+  assert.deepEqual(d.d, [0, 100, 200, 200, 250]);
+});
+
+test("backward jitter in distance contributes nothing, and nulls keep the running total", () => {
+  const d = buildDetail({ time: [0, 5, 10, 15, 20], distance: [0, 100, null, 98, 150], hr: range(5, () => 120) })!;
+  assert.deepEqual(d.d, [0, 100, null, 100, 152]);
+  const p = d.d!.filter((v): v is number => v != null);
+  assert.ok(p.every((v, i) => i === 0 || v >= p[i - 1]));
+});
+
+test("speed derived from distance sees the corrected series", () => {
+  const d = buildDetail({ time: [0, 5, 10, 15], distance: [0, 50, 0, 50] })!;
+  assert.deepEqual(d.speed, [10, 10, 0, 10]);
+});
