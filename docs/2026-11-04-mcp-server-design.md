@@ -2,8 +2,8 @@
 
 Date: 2026-11-04
 Status: draft for the owner's review
-Depends on: the `fix/api-intraday-series` PR (API heart rate and HRV readings
-into `daily_series`), being built in parallel. This branch rebases on it.
+Builds on: PR #30 (API heart rate and HRV readings into `daily_series`) and
+PR #31 (daily respiration columns), both merged into `main`.
 
 ## Intent
 
@@ -227,12 +227,17 @@ climbed this year?"). Nothing for that is built now.
 ## Wellness coverage
 
 - `daily_stats` covers 2025-04-19 to today.
-- `daily_series` (all-day HR, stress, respiration) currently ends 2026-09-05,
-  the date of the Garmin export. The parallel PR unpacks the API's all-day
-  heart rate and overnight HRV readings into `daily_series`, so after it
-  merges and the owner rebuilds R2, HR and HRV run to today. Stress and
-  respiration through the day stay export-only (the API has only daily stress
-  totals and no respiration). The guide states these coverage limits.
+- `daily_series`: PR #30 (merged) fills the `hr` channel and a new `hrv`
+  channel from the API's saved responses, so after the R2 rebuild they run to
+  today; the export's watch-file HR wins where both exist. `stress` and
+  `respiration` through the day stay export-only and end 2026-09-05: the
+  Personal API has no intraday stress or respiration at all (checked against
+  its spec).
+- PR #31 (merged) added daily respiration columns to `daily_stats`
+  (`respiration_avg`, `respiration_min`, `respiration_max`,
+  `sleep_respiration_avg`), which `wellness` exposes like the other columns.
+- The guide states these coverage limits per channel, read from the data at
+  run time rather than hard-coded.
 
 ## Setup the owner does once
 
