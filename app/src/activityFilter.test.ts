@@ -7,6 +7,7 @@ import {
   setToMonth,
   toggleType,
   typeCounts,
+  typesByCount,
   visibleActivities,
   visibleFeatures,
 } from "./activityFilter";
@@ -100,6 +101,21 @@ describe("type counts", () => {
   test("only count activities inside the date range", () => {
     const f = setFromMonth(createActivityFilter(all), month(2024, 4));
     expect(typeCounts(f)).toEqual({ Run: 1, Hike: 1 });
+  });
+});
+
+describe("types by count", () => {
+  test("list the most frequent type first, ties by name", () => {
+    expect(typesByCount(createActivityFilter(all))).toEqual(["Run", "Hike", "Ride"]);
+  });
+
+  test("keep their order when the date range or selection changes", () => {
+    const f = toggleType(setFromMonth(createActivityFilter(all), month(2024, 4)), "Run");
+    expect(typesByCount(f)).toEqual(["Run", "Hike", "Ride"]);
+  });
+
+  test("leave availableTypes alphabetical, since type colors are keyed to it", () => {
+    expect(createActivityFilter(all).availableTypes).toEqual(["Hike", "Ride", "Run"]);
   });
 });
 
