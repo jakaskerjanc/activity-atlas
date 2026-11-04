@@ -13,10 +13,13 @@ import { AnalyticsView } from "./ui/AnalyticsView";
 import { useView } from "./ui/useView";
 import {
   createActivityFilter,
+  activeIsolation,
   filterExpression,
+  toggleMonth,
   visibleActivities,
   visibleFeatures,
   type ActivityFilter,
+  type MonthIsolation,
 } from "./activityFilter";
 import type { ActivitiesFile, ActivityFeatureCollection, RoutesFile, Theme } from "./types";
 import { joinActivities } from "./tracks";
@@ -70,6 +73,14 @@ export default function App() {
 
   // Which activities are shown. null until data loads.
   const [filter, setFilter] = useState<ActivityFilter | null>(null);
+  // A month isolated from the ridgeline and the range it replaced, for the second click.
+  const [isolation, setIsolation] = useState<MonthIsolation | null>(null);
+  const pickMonth = (month: number) => {
+    if (!filter) return;
+    const [next, memory] = toggleMonth(filter, month, isolation);
+    setFilter(next);
+    setIsolation(memory);
+  };
 
   const [colorMode, setColorMode] = useState<ColorMode>("uniform");
 
@@ -319,6 +330,8 @@ export default function App() {
           filter={filter}
           visible={visible}
           sidePanelExpanded={!panels.sideCollapsed}
+          isolation={filter && activeIsolation(filter, isolation)}
+          onPickMonth={pickMonth}
         />
       )}
 

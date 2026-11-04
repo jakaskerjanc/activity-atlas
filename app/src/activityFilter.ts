@@ -26,9 +26,19 @@ export interface ActivityFilter {
   readonly toMonth: number;
 }
 
-/** A filter over `activities` with every type on and the full date range. */
+/**
+ * The types switched on when the page opens: the outdoor ones with a route to draw.
+ * The rest (gym, swims, climbing…) are a click away in the type list.
+ */
+export const DEFAULT_TYPES: readonly string[] = ["Run", "Hike", "Walk", "Ride"];
+
+/**
+ * A filter over `activities` with the full date range and the default types on: those
+ * of DEFAULT_TYPES the data has, or every type when it has none of them.
+ */
 export function createActivityFilter(activities: readonly ActivityRecord[]): ActivityFilter {
   const availableTypes = [...new Set(activities.map((a) => a.type))].sort();
+  const defaults = availableTypes.filter((t) => DEFAULT_TYPES.includes(t));
   const months = activities.map((a) => monthIndex(a.ts));
   // No activities: any finite month will do, since nothing can be shown anyway.
   const minMonth = months.length ? Math.min(...months) : 0;
@@ -36,7 +46,7 @@ export function createActivityFilter(activities: readonly ActivityRecord[]): Act
   return {
     activities,
     availableTypes,
-    types: new Set(availableTypes),
+    types: new Set(defaults.length ? defaults : availableTypes),
     minMonth,
     maxMonth,
     fromMonth: minMonth,
@@ -63,6 +73,49 @@ export function setFromMonth(filter: ActivityFilter, month: number): ActivityFil
 /** Move the date range's end month; it can't pass the start or leave the data's months. */
 export function setToMonth(filter: ActivityFilter, month: number): ActivityFilter {
   return { ...filter, toMonth: clamp(month, filter.fromMonth, filter.maxMonth) };
+}
+
+/** Narrow the date range to one month, clamped to the data's months. */
+export function onlyMonth(filter: ActivityFilter, month: number): ActivityFilter {
+  const m = clamp(month, filter.minMonth, filter.maxMonth);
+  return { ...filter, fromMonth: m, toMonth: m };
+}
+
+/** A month isolated with toggleMonth, and the date range it replaced. */
+export interface MonthIsolation {
+  readonly month: number;
+  readonly fromMonth: number;
+  readonly toMonth: number;
+}
+
+/** The isolation, while the range is still exactly its month; null once it moved. */
+export function activeIsolation(
+  filter: ActivityFilter,
+  isolation: MonthIsolation | null,
+): MonthIsolation | null {
+  return isolation && filter.fromMonth === isolation.month && filter.toMonth === isolation.month
+    ? isolation
+    : null;
+}
+
+/**
+ * Click on a month (a ridgeline row): isolate it with onlyMonth, remembering the range it
+ * replaces. Clicking the isolated month again restores that range. The memory only
+ * counts while the range is still exactly the isolated month; once the range has moved
+ * some other way, a click isolates afresh. The type selection is never touched.
+ */
+export function toggleMonth(
+  filter: ActivityFilter,
+  month: number,
+  isolation: MonthIsolation | null,
+): [ActivityFilter, MonthIsolation | null] {
+  const isolated = activeIsolation(filter, isolation);
+  if (isolated && month === isolated.month) {
+    return [{ ...filter, fromMonth: isolated.fromMonth, toMonth: isolated.toMonth }, null];
+  }
+  const next = onlyMonth(filter, month);
+  const before = isolated ?? { fromMonth: filter.fromMonth, toMonth: filter.toMonth };
+  return [next, { month: next.fromMonth, fromMonth: before.fromMonth, toMonth: before.toMonth }];
 }
 
 /** Inclusive epoch-second bounds of the date range. */
