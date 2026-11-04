@@ -6,7 +6,9 @@
 import { useMemo, type CSSProperties } from "react";
 import { SectionHeading, StatsSection } from "./StatsSection";
 import { ActivityCalendar, CALENDAR_WIDTH } from "./ActivityCalendar";
-import { eyebrow, glass } from "./theme";
+import { Ridgeline } from "./Ridgeline";
+import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
+import { eyebrow, glass, MONO } from "./theme";
 import { useMediaQuery } from "./useMediaQuery";
 import {
   COLLAPSE_QUERY,
@@ -16,8 +18,9 @@ import {
   SIDE_PANEL_LEFT,
   SIDE_PANEL_TOP,
 } from "./layout";
-import { rangeTs, type ActivityFilter } from "../activityFilter";
+import { rangeTs, type ActivityFilter, type MonthIsolation } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
+import { monthRidges } from "../ridgeline";
 import { totalCards } from "../stats";
 import { formatMonth } from "../format";
 import type { ActivityRecord } from "../types";
@@ -28,6 +31,12 @@ interface Props {
   /** The visible activities, as App hands them to the map's totals too. */
   visible: ActivityRecord[];
   sidePanelExpanded: boolean;
+  /** A month isolated from the ridgeline, while the range is still just that month. */
+  isolation: MonthIsolation | null;
+  /** A ridgeline row was clicked: isolate that month, or restore the range before. */
+  onPickMonth: (month: number) => void;
+  /** The route profiles' load state; tests pass one in, the page fetches them otherwise. */
+  profiles?: ProfilesState;
 }
 
 const EDGE = 24;
@@ -41,7 +50,16 @@ const COLUMN_WIDTH = CALENDAR_WIDTH + 2 * CARD_PADDING;
 // Below this the stat cards fall back from one row of four to the 2x2 grid.
 const STATS_ROW_QUERY = "(max-width: 640px)";
 
-export function AnalyticsView({ filter, visible, sidePanelExpanded }: Props) {
+export function AnalyticsView({
+  filter,
+  visible,
+  sidePanelExpanded,
+  isolation,
+  onPickMonth,
+  profiles: given,
+}: Props) {
+  const fetched = useRouteProfiles();
+  const profiles = given ?? fetched;
   // On a narrow screen an opened side panel overlays the page, as it does the map,
   // instead of squeezing the content off-screen.
   const narrow = useMediaQuery(COLLAPSE_QUERY);
@@ -60,6 +78,14 @@ export function AnalyticsView({ filter, visible, sidePanelExpanded }: Props) {
       calendar: activityCalendar(visible, from, end),
     };
   }, [filter, visible]);
+
+  const ridges = useMemo(
+    () =>
+      filter && profiles.status === "ready"
+        ? monthRidges(visible, profiles.profiles, filter.fromMonth, filter.toMonth)
+        : [],
+    [filter, visible, profiles],
+  );
 
   return (
     <main
@@ -106,6 +132,29 @@ export function AnalyticsView({ filter, visible, sidePanelExpanded }: Props) {
                   <SectionHeading title="Activity calendar" subtitle="Moving time per day (UTC)" />
                   <ActivityCalendar years={calendar} />
                 </section>
+                <section style={card}>
+                  <SectionHeading
+                    title="Elevation by month"
+                    subtitle={
+                      isolation
+                        ? `Click ${formatMonth(isolation.month)} again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}`
+                        : "Median route profile and gain · click a month to show only it"
+                    }
+                  />
+                  {profiles.status === "ready" ? (
+                    <Ridgeline
+                      ridges={ridges}
+                      isolatedMonth={isolation?.month ?? null}
+                      onPickMonth={onPickMonth}
+                    />
+                  ) : (
+                    <p style={statusText}>
+                      {profiles.status === "loading"
+                        ? "Loading elevation profiles…"
+                        : "Couldn't load elevation profiles."}
+                    </p>
+                  )}
+                </section>
               </>
             )}
           </>
@@ -144,6 +193,13 @@ const card: CSSProperties = {
   borderRadius: 16,
   padding: CARD_PADDING,
   marginTop: 18,
+};
+
+const statusText: CSSProperties = {
+  margin: 0,
+  fontFamily: MONO,
+  fontSize: 11,
+  color: "var(--text-muted)",
 };
 
 const emptyText: CSSProperties = {

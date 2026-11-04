@@ -14,7 +14,8 @@ deploys a static site to GitHub Pages.
 data/activities.sqlite ──▶ build-tracks.ts ──▶ app/public/data/ ──▶ site
                                                  ├─ routes.json
                                                  ├─ activities.json
-                                                 └─ activity/<id>.json
+                                                 ├─ activity/<id>.json
+                                                 └─ profiles.json
 ```
 
 `data/activities.sqlite` is a SQLite database of deduped activities from
@@ -40,6 +41,14 @@ leaves a stale file behind):
   and capped at 1000 points, so each file is about 5–15 KB gzipped. The app
   fetches one only when that activity is opened, to draw its elevation, heart
   rate and pace charts and the marker that follows them along the route.
+- **`profiles.json`** (`v: 1`): each activity's route profile, its elevation
+  in whole metres at 64 evenly spaced fractions of its distance, taken from
+  the detail samples and lightly smoothed (436 activities, about 39 KB
+  gzipped). Only the Analytics page fetches it, for the ridgeline: one ridge
+  per month of the date range, the per-point median of that month's visible
+  activities, on a shared square-root height scale. Activities without
+  distance and altitude samples are left out; their elevation gain still
+  counts in the month's label.
 
 The database stores streams as compressed delta-encoded blobs
 (`ingest/codec.py`); `scripts/codec.ts` decodes them, checked against

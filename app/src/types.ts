@@ -63,6 +63,17 @@ export interface ActivitiesFile {
   activities: ActivityRecord[];
 }
 
+/**
+ * Root of profiles.json: each activity's route profile (its elevation in whole metres at
+ * `bins` evenly spaced fractions of its distance), keyed by activity id. Activities
+ * without distance and altitude samples are left out.
+ */
+export interface ProfilesFile {
+  v: 1;
+  bins: number;
+  profiles: Record<string, number[]>;
+}
+
 /** activity/<id>.json: downsampled samples; every array is as long as `t`. */
 export interface DetailFile {
   v: 1;

@@ -25,7 +25,7 @@ The set of activity types currently switched on. Empty means no activities are s
 _Avoid_: enabled types, type filter
 
 **Date range**:
-An inclusive span of whole calendar months (UTC) that an activity's start must fall within.
+An inclusive span of whole calendar months (UTC) that an activity's start must fall within. Clicking a month in the ridgeline narrows it to that month (isolating the month); clicking the month again restores the range it had before.
 _Avoid_: date window, time window
 
 **Visible activities**:
@@ -60,3 +60,14 @@ A calendar day (UTC, like the date range) with at least one visible activity.
 
 **Streak**:
 A run of consecutive active days.
+
+**Route profile**:
+An activity's elevation at 64 evenly spaced fractions of its distance (profiles.json): the shape of one outing, whatever its length.
+_Avoid_: elevation profile (that is the selected activity's chart)
+
+**Month signature**:
+The per-point median of the route profiles of a month's visible activities, measured from its own lowest point.
+
+**Ridgeline**:
+The Analytics chart with one ridge (a month signature) per month of the date range, oldest at the top, each labelled with the month's summed elevation gain.
+_Avoid_: joyplot, elevation view

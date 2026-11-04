@@ -5,6 +5,7 @@
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
 //   activities.json     v1  every visible activity's numbers; unknown values left out
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
+//   profiles.json       v1  every activity's elevation by % of distance, for the analytics ridgeline
 //
 // Hidden and deleted activities never reach these files, and the folder is
 // emptied before each write so a stale file cannot survive.
@@ -19,10 +20,12 @@ import { simplifyLngLat } from "./simplify.ts";
 import { isUsable, toRecord, type ActivityRow } from "./numbers.ts";
 import { decodeChannel, type StreamChannel } from "./codec.ts";
 import { buildDetail, type Streams } from "./detail.ts";
+import { PROFILE_BINS, PROFILES_VERSION, routeProfile } from "./routeProfile.ts";
 import type {
   ActivitiesFile,
   ActivitySource,
   DetailFile,
+  ProfilesFile,
   RoutesFile,
 } from "./types.ts";
 
@@ -45,6 +48,7 @@ export interface DisplayFiles {
   routes: RoutesFile;
   activities: ActivitiesFile;
   details: Map<string, DetailFile>;
+  profiles: ProfilesFile;
   stats: Stats;
 }
 
@@ -104,6 +108,7 @@ function emptyFiles(stats: Stats): DisplayFiles {
     routes: { v: ROUTES_VERSION, routes: {} },
     activities: { v: ACTIVITIES_VERSION, activities: [] },
     details: new Map(),
+    profiles: { v: PROFILES_VERSION, bins: PROFILE_BINS, profiles: {} },
     stats,
   };
 }
@@ -142,7 +147,11 @@ export function readDisplayFiles(
       const route = wireRoute(row.polyline, stats);
       if (route) files.routes.routes[row.id] = route;
       const detail = readDetail(streams, row.streams_sha256);
-      if (detail) files.details.set(row.id, detail);
+      if (detail) {
+        files.details.set(row.id, detail);
+        const profile = routeProfile(detail);
+        if (profile) files.profiles.profiles[row.id] = profile;
+      }
       files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null));
     }
     return files;
@@ -157,6 +166,7 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
   await mkdir(join(outDir, "activity"), { recursive: true });
   await writeFile(join(outDir, "routes.json"), JSON.stringify(files.routes));
   await writeFile(join(outDir, "activities.json"), JSON.stringify(files.activities));
+  await writeFile(join(outDir, "profiles.json"), JSON.stringify(files.profiles));
   for (const [id, detail] of files.details) {
     await writeFile(join(outDir, "activity", `${id}.json`), JSON.stringify(detail));
   }
@@ -170,7 +180,8 @@ async function main() {
   const { stats } = files;
   console.log(
     `Wrote ${Object.keys(files.routes.routes).length} routes, ${files.activities.activities.length} activities, ` +
-      `${files.details.size} detail files to ${OUT_DIR}; route points ${stats.rawPoints} -> ${stats.keptPoints} ` +
+      `${files.details.size} detail files, ${Object.keys(files.profiles.profiles).length} route profiles ` +
+      `to ${OUT_DIR}; route points ${stats.rawPoints} -> ${stats.keptPoints} ` +
       `after ${SIMPLIFY_TOLERANCE_M}m simplify.`,
   );
 }

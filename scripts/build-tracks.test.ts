@@ -91,6 +91,7 @@ test("missing database yields empty files and a sync warning", () => {
   assert.deepEqual(files.routes, { v: 4, routes: {} });
   assert.deepEqual(files.activities, { v: 1, activities: [] });
   assert.equal(files.details.size, 0);
+  assert.deepEqual(files.profiles, { v: 1, bins: 64, profiles: {} });
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /sync/);
 });
@@ -105,6 +106,11 @@ test("writeDisplayFiles empties the output folder first", async () => {
     assert.ok(!existsSync(join(dir, "activity", "stale.json")));
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "routes.json"), "utf8")), { v: 4, routes: {} });
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "activities.json"), "utf8")), { v: 1, activities: [] });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")), {
+      v: 1,
+      bins: 64,
+      profiles: {},
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -126,6 +132,31 @@ test("writes a detail file and sets detail for an activity with streams", () => 
       const d = details.get("run")!;
       assert.deepEqual(d.hr, [102, 107]);
       assert.deepEqual(d.alt, [300, 301]);
+    },
+  );
+});
+
+test("a route profile for an activity with distance and altitude, none without", () => {
+  const time = Array.from({ length: 100 }, (_, i) => i);
+  withDb(
+    (db) => {
+      addActivity(db, "hike", { streams_sha256: "sha1" });
+      addStreams(db, "sha1", {
+        time,
+        distance: time.map((t) => t * 3),
+        altitude: time.map((t) => 400 + t),
+      });
+      addActivity(db, "treadmill", { streams_sha256: "sha2", polyline: "", has_gps: 0 });
+      addStreams(db, "sha2", { time, hr: time.map(() => 140) });
+      addActivity(db, "hidden", { streams_sha256: "sha3", visible: 0 });
+      addStreams(db, "sha3", { time, distance: time, altitude: time });
+    },
+    (path) => {
+      const { profiles } = readDisplayFiles(path);
+      assert.deepEqual(Object.keys(profiles.profiles), ["hike"]);
+      const p = profiles.profiles.hike;
+      assert.equal(p.length, 64);
+      assert.ok(p[0] < p[63], "the climb rises along the profile");
     },
   );
 });
