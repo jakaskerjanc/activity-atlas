@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { activityCalendar, calendarLevel, consistency, consistencyCards } from "./analytics";
-import { activity } from "./testFixtures";
+import { record } from "./testFixtures";
 
 /** Epoch seconds for a UTC wall-clock time in August 2024. */
 const aug = (day: number, hour = 10, minute = 0) => Date.UTC(2024, 7, day, hour, minute) / 1000;
@@ -12,7 +12,7 @@ const TO = aug(15, 0) - 1;
 describe("consistency", () => {
   test("counts each UTC day with an activity once", () => {
     const c = consistency(
-      [activity({ ts: aug(1, 8) }), activity({ ts: aug(1, 18) }), activity({ ts: aug(3) })],
+      [record({ ts: aug(1, 8) }), record({ ts: aug(1, 18) }), record({ ts: aug(3) })],
       FROM,
       TO,
     );
@@ -21,7 +21,7 @@ describe("consistency", () => {
 
   test("splits days at UTC midnight", () => {
     const c = consistency(
-      [activity({ ts: aug(1, 23, 30) }), activity({ ts: aug(2, 0, 30) })],
+      [record({ ts: aug(1, 23, 30) }), record({ ts: aug(2, 0, 30) })],
       FROM,
       TO,
     );
@@ -32,7 +32,7 @@ describe("consistency", () => {
   test("longest streak is the longest run of consecutive active days, in any order", () => {
     const days = [6, 1, 5, 2, 3];
     const c = consistency(
-      days.map((d) => activity({ ts: aug(d) })),
+      days.map((d) => record({ ts: aug(d) })),
       FROM,
       TO,
     );
@@ -42,10 +42,10 @@ describe("consistency", () => {
   test("averages activities and distance per week over the span", () => {
     const c = consistency(
       [
-        activity({ ts: aug(1), distance: 10000 }),
-        activity({ ts: aug(4), distance: 10000 }),
-        activity({ ts: aug(8), distance: 10000 }),
-        activity({ ts: aug(12), distance: 10000 }),
+        record({ ts: aug(1), distance: 10000 }),
+        record({ ts: aug(4), distance: 10000 }),
+        record({ ts: aug(8), distance: 10000 }),
+        record({ ts: aug(12), distance: 10000 }),
       ],
       FROM,
       TO,
@@ -55,18 +55,34 @@ describe("consistency", () => {
   });
 
   test("a span shorter than a week counts as one week", () => {
-    const c = consistency([activity({ ts: aug(1), distance: 5000 })], aug(1, 0), aug(3, 0));
+    const c = consistency([record({ ts: aug(1), distance: 5000 })], aug(1, 0), aug(3, 0));
     expect(c.activitiesPerWeek).toBe(1);
     expect(c.distancePerWeekM).toBe(5000);
   });
 
-  test("no activities is all zeros", () => {
+  test("no activities: zero counts and an unknown distance, as the totals' dash", () => {
     expect(consistency([], FROM, TO)).toEqual({
       activeDays: 0,
       longestStreak: 0,
       activitiesPerWeek: 0,
-      distancePerWeekM: 0,
+      distancePerWeekM: undefined,
     });
+  });
+
+  test("distance per week sums only the known distances", () => {
+    const c = consistency(
+      [record({ ts: aug(1), distance: 14000 }), record({ ts: aug(2), distance: undefined })],
+      FROM,
+      TO,
+    );
+    expect(c.activitiesPerWeek).toBe(1);
+    expect(c.distancePerWeekM).toBe(7000);
+  });
+
+  test("distance per week is unknown when no activity has a distance", () => {
+    const c = consistency([record({ ts: aug(1), distance: undefined })], FROM, TO);
+    expect(c.distancePerWeekM).toBeUndefined();
+    expect(consistencyCards(c)[1]).toEqual({ value: "—", label: "Km / week", accent: true });
   });
 });
 
@@ -118,14 +134,18 @@ describe("calendarLevel", () => {
   test("a day with an activity never reads as empty, even with no moving time", () => {
     expect(calendarLevel(0, 1)).toBe(1);
   });
+
+  test("a day whose moving time is unknown is still an active day", () => {
+    expect(calendarLevel(undefined, 1)).toBe(1);
+  });
 });
 
 describe("activityCalendar", () => {
   test("sums moving time and counts activities per UTC day", () => {
     const [year] = activityCalendar(
       [
-        activity({ ts: utc(2024, 8, 18, 8), moving_time: 3000 }),
-        activity({ ts: utc(2024, 8, 18, 18), moving_time: 1800 }),
+        record({ ts: utc(2024, 8, 18, 8), moving_time: 3000 }),
+        record({ ts: utc(2024, 8, 18, 18), moving_time: 1800 }),
       ],
       ...yearSpan(2024),
     );
@@ -170,10 +190,10 @@ describe("activityCalendar", () => {
   test("totals moving time and active days per year", () => {
     const years = activityCalendar(
       [
-        activity({ ts: utc(2024, 1, 5), moving_time: 3600 }),
-        activity({ ts: utc(2024, 1, 5), moving_time: 600 }),
-        activity({ ts: utc(2024, 3, 1), moving_time: 1200 }),
-        activity({ ts: utc(2023, 12, 31), moving_time: 900 }),
+        record({ ts: utc(2024, 1, 5), moving_time: 3600 }),
+        record({ ts: utc(2024, 1, 5), moving_time: 600 }),
+        record({ ts: utc(2024, 3, 1), moving_time: 1200 }),
+        record({ ts: utc(2023, 12, 31), moving_time: 900 }),
       ],
       dayStart(2023, 12, 1),
       dayStart(2024, 4, 1) - 1,
@@ -182,6 +202,30 @@ describe("activityCalendar", () => {
       { year: 2024, movingSec: 5400, activeDays: 2 },
       { year: 2023, movingSec: 900, activeDays: 1 },
     ]);
+  });
+
+  test("skips unknown moving times instead of counting them as zero", () => {
+    const [year] = activityCalendar(
+      [
+        record({ ts: utc(2024, 8, 18, 8), moving_time: 5000 }),
+        record({ ts: utc(2024, 8, 18, 18), moving_time: undefined }),
+        record({ ts: utc(2024, 8, 20), moving_time: undefined }),
+      ],
+      ...yearSpan(2024),
+    );
+    const day = (d: number) => year.days.find((x) => x.ts === dayStart(2024, 8, d));
+    expect(day(18)).toMatchObject({ movingSec: 5000, count: 2, level: 2 });
+    expect(day(20)).toMatchObject({ movingSec: undefined, count: 1, level: 1 });
+    expect(day(19)).toMatchObject({ movingSec: 0, count: 0, level: 0 });
+    expect(year).toMatchObject({ movingSec: 5000, activeDays: 2 });
+  });
+
+  test("a year whose active days all lack a moving time has an unknown total", () => {
+    const [year] = activityCalendar(
+      [record({ ts: utc(2024, 8, 20), moving_time: undefined })],
+      ...yearSpan(2024),
+    );
+    expect(year).toMatchObject({ movingSec: undefined, activeDays: 1 });
   });
 
   test("an empty span has no years", () => {

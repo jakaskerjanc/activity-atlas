@@ -6,10 +6,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SidePanel } from "./SidePanel";
 import { createActivityFilter } from "../activityFilter";
-import { activity } from "../testFixtures";
+import { record } from "../testFixtures";
 
 const props = {
-  filter: createActivityFilter([activity()]),
+  filter: createActivityFilter([record()]),
   onFilterChange: () => {},
   colorMode: "recency" as const,
   colorDomain: {

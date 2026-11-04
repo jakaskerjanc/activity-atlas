@@ -22,11 +22,14 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
   };
 }
 
+/** The record alone: totals read activities.json records, with or without a route. */
+const rec = (props: Partial<ActivityFeatureProps>) => feature(props).properties;
+
 describe("aggregate", () => {
   test("sums distance, elevation, moving time and counts features", () => {
     const agg = aggregate([
-      feature({ distance: 10000, elevation_gain: 100, moving_time: 3000 }),
-      feature({ distance: 5000, elevation_gain: 50, moving_time: 1800 }),
+      rec({ distance: 10000, elevation_gain: 100, moving_time: 3000 }),
+      rec({ distance: 5000, elevation_gain: 50, moving_time: 1800 }),
     ]);
     expect(agg).toEqual({
       count: 2,
@@ -49,9 +52,9 @@ describe("aggregate", () => {
 describe("coverage", () => {
   test("aggregate counts coverage per value", () => {
     const agg = aggregate([
-      feature({ elevation_gain: 100 }),
-      feature({ elevation_gain: undefined }),
-      feature({ elevation_gain: 50 }),
+      rec({ elevation_gain: 100 }),
+      rec({ elevation_gain: undefined }),
+      rec({ elevation_gain: 50 }),
     ]);
     expect(agg.count).toBe(3);
     expect(agg.elevation).toEqual({ sum: 150, n: 2 });
@@ -59,15 +62,15 @@ describe("coverage", () => {
 
   test("totalCards sums partial coverage without a note", () => {
     const cards = totalCards([
-      feature({ elevation_gain: 100 }),
-      feature({ elevation_gain: undefined }),
-      feature({ elevation_gain: 50 }),
+      rec({ elevation_gain: 100 }),
+      rec({ elevation_gain: undefined }),
+      rec({ elevation_gain: 50 }),
     ]);
     expect(cards[2]).toEqual({ value: "150", label: "Elevation m" });
   });
 
   test("totalCards dashes a value nobody has", () => {
-    const cards = totalCards([feature({ distance: undefined }), feature({ distance: undefined })]);
+    const cards = totalCards([rec({ distance: undefined }), rec({ distance: undefined })]);
     expect(cards[1]).toEqual({ value: "—", label: "Total km", accent: true });
   });
 
@@ -82,8 +85,8 @@ describe("coverage", () => {
 describe("totalCards", () => {
   test("produces Activities / Total km / Elevation / Moving cards", () => {
     const cards = totalCards([
-      feature({ distance: 10000, elevation_gain: 100, moving_time: 3000 }),
-      feature({ distance: 5000, elevation_gain: 50, moving_time: 1800 }),
+      rec({ distance: 10000, elevation_gain: 100, moving_time: 3000 }),
+      rec({ distance: 5000, elevation_gain: 50, moving_time: 1800 }),
     ]);
     expect(cards).toEqual([
       { value: "2", label: "Activities" },

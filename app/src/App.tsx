@@ -15,6 +15,7 @@ import {
   createActivityFilter,
   filterExpression,
   visibleActivities,
+  visibleFeatures,
   type ActivityFilter,
 } from "./activityFilter";
 import type { ActivitiesFile, ActivityFeatureCollection, RoutesFile, Theme } from "./types";
@@ -91,26 +92,34 @@ export default function App() {
       .then(([routes, activities]) => {
         const decoded = joinActivities(routes, activities);
         setData(decoded);
-        setFilter(createActivityFilter(decoded.features));
+        // Over every record, routed or not: the analytics page reads them all, and the
+        // map draws the ones with a route (visibleFeatures).
+        setFilter(createActivityFilter(activities.activities));
       })
       .catch((e) => setError(String(e)));
   }, []);
 
+  // Visible activities: what both pages count and total. The map draws the subset with
+  // a route.
   const visible = useMemo(() => (filter ? visibleActivities(filter) : []), [filter]);
+  const visibleOnMap = useMemo(
+    () => (filter && data ? visibleFeatures(filter, data.features) : []),
+    [filter, data],
+  );
   const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
   // Color scale domain from the visible set, so recency/elevation/speed ramps
   // span what's actually shown. Type→color stays keyed to the full type list
   // (availableTypes) so a type doesn't change color as others are toggled off.
   const colorDomain = useMemo(
-    () => ({ ...computeDomain(visible), types: [...(filter?.availableTypes ?? [])] }),
-    [visible, filter?.availableTypes],
+    () => ({ ...computeDomain(visibleOnMap), types: [...(filter?.availableTypes ?? [])] }),
+    [visibleOnMap, filter?.availableTypes],
   );
 
   // Chronological step list for the visible activities, and the frame the
   // current progress resolves to. Memoized so MapView's frame effect only fires
   // when the resolved frame actually changes.
-  const timeline = useMemo(() => buildTimeline(visible), [visible]);
+  const timeline = useMemo(() => buildTimeline(visibleOnMap), [visibleOnMap]);
   const replayFrame = useMemo(
     () => (replaying ? frameAt(timeline, progress) : null),
     [replaying, timeline, progress],
@@ -183,11 +192,13 @@ export default function App() {
   };
 
   // Analytics hides the replay transport and covers the map, so leave replay and drop the
-  // hover (the map won't see the pointer leave). An effect, so back/forward counts too.
+  // hover and the chart cursor (the map won't see the pointer leave). An effect, so
+  // back/forward counts too.
   useEffect(() => {
     if (view === "map") return;
     exitReplay();
     setHoverId(null);
+    setCursor(null);
   }, [view]);
 
   // If the filter empties the set mid-replay, back out gracefully.
@@ -215,8 +226,8 @@ export default function App() {
   );
 
   const selectedShown = useMemo(
-    () => selectedId != null && visible.some((f) => f.properties.id === selectedId),
-    [visible, selectedId],
+    () => selectedId != null && visibleOnMap.some((f) => f.properties.id === selectedId),
+    [visibleOnMap, selectedId],
   );
   const cursorPoint = useMemo(
     () => markerPoint(selectedDetail, cursor, selectedShown),
@@ -271,7 +282,7 @@ export default function App() {
           theme={theme}
           data={data}
           mapFilter={mapFilter}
-          visible={visible}
+          visible={visibleOnMap}
           colorMode={colorMode}
           colorDomain={colorDomain}
           hoverId={hoverId}

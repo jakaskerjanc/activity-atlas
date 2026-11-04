@@ -3,9 +3,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AnalyticsView } from "./AnalyticsView";
 import { createActivityFilter, toggleType, visibleActivities } from "../activityFilter";
-import { activity } from "../testFixtures";
+import { record } from "../testFixtures";
 
-const filter = createActivityFilter([activity({ type: "Run" })]);
+const filter = createActivityFilter([record({ type: "Run" })]);
 
 const render = (props: Partial<Parameters<typeof AnalyticsView>[0]> = {}) =>
   renderToStaticMarkup(
