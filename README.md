@@ -189,6 +189,24 @@ database's `daily_stats` (wellness is stored, never published): `daily_summary`,
 `weight`. The responses of `daily_summary`, `sleep`, `hrv`, `weight` and `spo2`
 also fill typed `daily_stats` columns; the others are kept raw only.
 
+Two responses also fill `daily_series`, so the intraday series continue past
+the export's monitoring FITs:
+
+- `heart_rate`: its `heartRateValues` (one per 2 minutes, nulls dropped) go to
+  the `hr` channel of the response's local date. Where a monitoring FIT also
+  has heart rate for the date, the FIT's samples (about one a minute) are kept
+  whole and the API's are added only at least 120 s from every FIT sample, so
+  they fill the hours after an export and the gaps in the FIT but never
+  duplicate it. The API's values are 2-minute summaries that differ from the
+  FIT's at the same instant, which is why the FIT wins.
+- `hrv`: its `hrvReadings` (one per 5 minutes of the night, in ms) go to the
+  `hrv` channel of each reading's local date, so readings before midnight
+  belong to the previous date.
+
+`spo2` (all null with pulse ox off), `body_battery` (a few event points) and
+`stress` (daily totals only) add no series. The series are parsed from the
+archived responses, so a rebuild reproduces them without calling the API.
+
 - Each endpoint's window starts 7 days before its own last stored day and ends
   today, so days an endpoint missed while it was skipped are fetched on the
   next run. On the first run it is the last 30 days. An endpoint with nothing
