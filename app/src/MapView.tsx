@@ -16,7 +16,8 @@ import {
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
 import { fitPadding } from "./ui/layout";
-import type { ActivityFeature, ActivityFeatureCollection, Theme } from "./types";
+import { nearestSample } from "./routeCursor";
+import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -38,7 +39,13 @@ const ACTIVE_GLOW_ID = "activities-active-glow";
 const ACTIVE_CORE_ID = "activities-active-core";
 const HOVER_GLOW_ID = "activities-hover-glow";
 const HOVER_CORE_ID = "activities-hover-core";
+// The chart/map cursor (#17): a ringed dot on the selected route at the hovered sample.
+const CURSOR_SOURCE_ID = "activity-cursor";
+const CURSOR_RING_ID = "activity-cursor-ring";
+const CURSOR_DOT_ID = "activity-cursor-dot";
 const FADE_MS = 1200;
+
+const NO_POINTS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Per-feature highlight gate. Toggling feature-state is cheap; swapping paint
  * expressions would force Mapbox to reload the whole source on every hover. */
@@ -80,6 +87,12 @@ interface Props {
   onReplayReady: () => void;
   /** Reserves room for the left panel when fitting a track; false when it is collapsed. */
   sidePanelExpanded: boolean;
+  /** [lng, lat] of the cursor sample, or null (no cursor, or no position there). */
+  cursorPoint: [number, number] | null;
+  /** The selected activity's samples, once loaded; enables route hover -> cursor. */
+  selectedDetail: DetailFile | null;
+  /** Set (or clear) the cursor from a pointer over the selected route. */
+  onCursor: (i: number | null) => void;
 }
 
 /** Home view on initial load: Slovenia, centered on Ljubljana. */
@@ -109,6 +122,9 @@ export function MapView(props: Props) {
   const rafRef = useRef<number | null>(null);
 
   const syncedActiveRef = useRef<string | null>(null);
+  // True while the cursor was last set by the map, so map events never clear a
+  // cursor the charts own.
+  const mapOwnsCursorRef = useRef(false);
 
   /** Single source of truth for the highlighted track: hover beats selection, and
    * replay suspends highlighting. Both the base-layer dimming and the feature-state
@@ -227,6 +243,31 @@ export function MapView(props: Props) {
     const tail: [number, number] = [frame.trim, 1];
     map.setPaintProperty(ACTIVE_GLOW_ID, "line-trim-offset", tail);
     map.setPaintProperty(ACTIVE_CORE_ID, "line-trim-offset", tail);
+  }
+
+  /** Show the cursor dot at cursorPoint; hidden while replaying. */
+  function applyCursor() {
+    const map = mapRef.current;
+    const src = map?.getSource(CURSOR_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (!src) return;
+    const { cursorPoint, replaying } = propsRef.current;
+    src.setData(
+      cursorPoint && !replaying
+        ? {
+            type: "FeatureCollection",
+            features: [
+              { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: cursorPoint } },
+            ],
+          }
+        : NO_POINTS,
+    );
+  }
+
+  /** Clear the cursor if the map set it (pointer left the selected route). */
+  function releaseCursor() {
+    if (!mapOwnsCursorRef.current) return;
+    mapOwnsCursorRef.current = false;
+    propsRef.current.onCursor(null);
   }
 
   /** Animate the reveal from opacity 0 to full. */
@@ -354,8 +395,29 @@ export function MapView(props: Props) {
         },
       });
     }
+    // Cursor marker — topmost: a light ring under an accent dot.
+    if (!map.getSource(CURSOR_SOURCE_ID)) {
+      map.addSource(CURSOR_SOURCE_ID, { type: "geojson", data: NO_POINTS });
+    }
+    if (!map.getLayer(CURSOR_RING_ID)) {
+      map.addLayer({
+        id: CURSOR_RING_ID,
+        type: "circle",
+        source: CURSOR_SOURCE_ID,
+        paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-opacity": 0.95 },
+      });
+    }
+    if (!map.getLayer(CURSOR_DOT_ID)) {
+      map.addLayer({
+        id: CURSOR_DOT_ID,
+        type: "circle",
+        source: CURSOR_SOURCE_ID,
+        paint: { "circle-radius": 4.5, "circle-color": ACCENT },
+      });
+    }
     applyBaseFilter(map, propsRef.current.mapFilter);
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
+    applyCursor();
   }
 
   // Init map once.
@@ -391,16 +453,28 @@ export function MapView(props: Props) {
     });
 
     // Hover highlighting (glow is the wider hit target). Suspended during replay.
+    // Over the selected route (once its samples are loaded) it also drives the cursor.
     map.on("mousemove", GLOW_ID, (e) => {
-      if (propsRef.current.replaying) return;
+      const p = propsRef.current;
+      if (p.replaying) return;
       const id = e.features?.[0]?.properties?.id as string | undefined;
       map.getCanvas().style.cursor = "pointer";
-      if (id != null) propsRef.current.onHover(id);
+      if (id != null) p.onHover(id);
+      const onSelected = e.features?.some((f) => f.properties?.id === p.selectedId) ?? false;
+      const i = onSelected && p.selectedDetail ? nearestSample(p.selectedDetail, e.lngLat.lng, e.lngLat.lat) : null;
+      if (i != null) {
+        mapOwnsCursorRef.current = true;
+        p.onCursor(i);
+      } else {
+        releaseCursor();
+      }
     });
     map.on("mouseleave", GLOW_ID, () => {
       map.getCanvas().style.cursor = "";
       propsRef.current.onHover(null);
+      releaseCursor();
     });
+    map.on("mouseout", releaseCursor);
 
     // Click a track selects it; click on empty map deselects. Inert during replay.
     map.on("click", (e) => {
@@ -438,6 +512,7 @@ export function MapView(props: Props) {
       fadeRef.current = 1;
       if (propsRef.current.replaying) applyReplay(propsRef.current.replayFrame);
       applyPaint();
+      applyCursor();
     });
     map.setStyle(url);
   }, [props.theme]);
@@ -478,6 +553,17 @@ export function MapView(props: Props) {
     if (!loadedRef.current) return;
     syncFeatureState();
   }, [hoverId, selectedId, replaying]);
+
+  // Move (or hide) the cursor marker.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    applyCursor();
+  }, [props.cursorPoint, replaying]);
+
+  // A new selection starts with no map-owned cursor.
+  useEffect(() => {
+    mapOwnsCursorRef.current = false;
+  }, [selectedId]);
 
   // Reflect each replay frame (also restores the base filter when it goes null).
   useEffect(() => {
