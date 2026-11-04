@@ -10,12 +10,16 @@ daily_series holds one row per (date, channel):
   "time" (each sample shifted by its own input's UTC offset; UTC midnight when
   the input has no offset);
 - ``data``: the values, encoded as the row's channel ("hr" from
-  CHANNEL_SCALES, "stress" / "respiration" from SERIES_SCALES);
-- ``utc_offset_s``: the offset of the first input (by provider, source, key)
-  that has samples for the channel.
-Samples are the union over the inputs, sorted by (unix_s, value), keeping the
-first sample per instant.
+  CHANNEL_SCALES, "stress" / "respiration" / "hrv" from SERIES_SCALES);
+- ``utc_offset_s``: the offset of the first input in series precedence (see
+  _series_rank; then by provider, key) that has samples for the channel.
+Samples come from monitoring FITs (hr, stress, respiration) and from the
+Personal API's heart_rate (hr) and hrv (hrv) responses. Within a source they
+are the union over its inputs, sorted by (unix_s, value), keeping the first
+sample per instant; a source ranked later only adds samples at least
+SERIES_OVERLAP_S from every sample already kept (see _merge_series).
 """
+import bisect
 import importlib
 import json
 import warnings
@@ -105,6 +109,47 @@ def _stats_columns(conn) -> list[str]:
     return [r[1] for r in conn.execute("PRAGMA table_info(daily_stats)") if r[1] not in ("date", "raw")]
 
 
+# A source's sample is dropped when a sample of a source ranked before it lies
+# closer than this: the API's heart rate is a 2-minute series.
+SERIES_OVERLAP_S = 120
+
+
+def _series_rank(source: str) -> tuple[bool, str]:
+    """Series precedence, the reverse of the stats': a monitoring FIT holds
+    the watch's own samples (about one a minute), while the API's heart rate
+    is a 2-minute summary of the same readings that differs from them at the
+    instants both have. So the FIT's samples are kept whole and the API's only
+    fill the stretches the FIT does not cover (the hours after an export, the
+    days after it, the gaps in it)."""
+    return (source != MONITORING_FIT, source)
+
+
+def _merge_series(inputs: list[tuple[str, list[tuple[int, float, int]]]]) -> list[tuple]:
+    """inputs: (source, [(unix_s, value, time_of_day)]) in precedence order.
+    Within a source the samples are unioned, keeping the lowest value per
+    instant; a later source adds only its samples at least SERIES_OVERLAP_S
+    from every sample kept from the sources before it. So no instant is
+    sampled twice, and a later source only fills gaps of the earlier ones
+    (at least 2 * SERIES_OVERLAP_S wide inside their span)."""
+    kept: list[tuple] = []
+    by_source: dict[str, list[tuple]] = {}
+    for source, samples in inputs:
+        by_source.setdefault(source, []).extend(samples)
+    for source, samples in by_source.items():
+        earlier = [s[0] for s in kept]           # sorted
+        samples.sort()
+        for i, s in enumerate(samples):
+            if i and s[0] == samples[i - 1][0]:
+                continue
+            j = bisect.bisect_left(earlier, s[0])
+            if (j < len(earlier) and earlier[j] - s[0] < SERIES_OVERLAP_S) or \
+                    (j and s[0] - earlier[j - 1] < SERIES_OVERLAP_S):
+                continue
+            kept.append(s)
+        kept.sort()
+    return kept
+
+
 def _recompute_day(conn, day: str, parts: list[tuple[str, DayPart]], columns: list[str]) -> None:
     """parts: (source, part) ordered by (provider, source, key)."""
     conn.execute("DELETE FROM daily_stats WHERE date=?", (day,))
@@ -144,12 +189,13 @@ def _recompute_day(conn, day: str, parts: list[tuple[str, DayPart]], columns: li
                   json.dumps(raw, sort_keys=True, separators=(",", ":")) if raw else None))
 
     midnight = int(datetime.combine(Date.fromisoformat(day), datetime.min.time(), timezone.utc).timestamp())
+    by_precedence = sorted(parts, key=lambda sp: _series_rank(sp[0]))     # stable: (provider, key) within a source
     channels = sorted({ch for _, p in parts for ch, samples in p.series.items() if samples})
     for ch in channels:
-        offset = next(p.utc_offset_s for _, p in parts if p.series.get(ch))
-        samples = sorted((t, v, t + (p.utc_offset_s or 0) - midnight)
-                         for _, p in parts for t, v in p.series.get(ch, ()))
-        kept = [s for i, s in enumerate(samples) if i == 0 or s[0] != samples[i - 1][0]]
+        offset = next(p.utc_offset_s for _, p in by_precedence if p.series.get(ch))
+        kept = _merge_series([(source, [(t, v, t + (p.utc_offset_s or 0) - midnight)
+                                         for t, v in p.series.get(ch, ())])
+                               for source, p in by_precedence])
         conn.execute("INSERT INTO daily_series (date, channel, sample_count, encoding, utc_offset_s, time, data) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?)",
                      (day, ch, len(kept), codec.ENCODING_VERSION, offset,

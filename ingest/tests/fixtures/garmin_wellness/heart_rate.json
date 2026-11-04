@@ -1,0 +1,39 @@
+{
+ "calendarDate": "2026-10-30",
+ "startTimestampGMT": "2026-10-29T23:00:00.0",
+ "endTimestampGMT": "2026-10-30T23:00:00.0",
+ "startTimestampLocal": "2026-10-30T00:00:00.0",
+ "endTimestampLocal": "2026-10-31T00:00:00.0",
+ "maxHeartRate": 120,
+ "minHeartRate": 48,
+ "restingHeartRate": 52,
+ "lastSevenDaysAvgRestingHeartRate": 53,
+ "heartRateValueDescriptors": [
+  {
+   "key": "timestamp",
+   "index": 0
+  },
+  {
+   "key": "heartrate",
+   "index": 1
+  }
+ ],
+ "heartRateValues": [
+  [
+   1793314800000,
+   61
+  ],
+  [
+   1793314920000,
+   null
+  ],
+  [
+   1793315040000,
+   58
+  ],
+  [
+   1793401080000,
+   66
+  ]
+ ]
+}

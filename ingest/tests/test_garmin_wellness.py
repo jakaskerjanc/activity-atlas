@@ -2,12 +2,14 @@ import hashlib
 import json
 
 import pytest
+from datetime import datetime, timezone
 from pathlib import Path
 
-from ingest import garmin_wellness as gw
+from ingest import codec, garmin_wellness as gw, wellness
 from ingest.archive import LocalArchive
 from ingest.garmin_api import GarminApiError
-from ingest.tests.factories import fresh
+from ingest.records import WellnessRecord
+from ingest.tests.factories import fresh, garmin_heart_rate
 from ingest.wellness import apply_wellness
 
 NOW = "2026-10-27T10:00:00+00:00"
@@ -254,3 +256,99 @@ def test_wrongly_typed_fields_stay_none(arch):
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
     assert (row["resting_hr"], row["steps"], row["stress_avg"], row["hrv_avg"], row["hrv_status"]) == (None,) * 5
     assert json.loads(row["raw"])["daily_summary"]["data"][0]["heartRate"]["restingValue"] == {"value": 52}
+
+
+# --- intraday series from heart_rate and hrv -------------------------------
+
+def _parts(source, body, day="2026-10-30"):
+    rec = WellnessRecord("garmin", source, day, "", "sha", None, {})
+    return wellness._parser(rec)(body, rec)
+
+
+def _unix(iso):
+    return int(datetime.fromisoformat(iso).replace(tzinfo=timezone.utc).timestamp())
+
+
+def test_heart_rate_values_become_the_days_hr_series_without_nulls():
+    parts = _parts("heart_rate", _fixture("heart_rate"))
+    assert set(parts) == {"2026-10-30"}
+    p = parts["2026-10-30"]
+    assert p.series == {"hr": [(_unix("2026-10-29T23:00:00"), 61), (_unix("2026-10-29T23:04:00"), 58),
+                               (_unix("2026-10-30T22:58:00"), 66)]}      # the null at 23:02 is dropped
+    assert p.utc_offset_s == 3600
+    assert p.stats == {} and p.raw == json.loads(_fixture("heart_rate"))
+
+
+def test_hrv_readings_become_the_hrv_series_of_their_local_date():
+    parts = _parts("hrv", _fixture("hrv"))
+    assert set(parts) == {"2026-10-30"}
+    p = parts["2026-10-30"]
+    assert p.series == {"hrv": [(_unix("2026-10-29T23:56:22"), 48), (_unix("2026-10-30T00:01:22"), 13)]}
+    assert p.utc_offset_s == 3600 and p.stats["hrv_avg"] == 40
+
+
+def test_hrv_reading_before_local_midnight_belongs_to_the_previous_date():
+    payload = json.loads(_fixture("hrv"))
+    payload["hrvReadings"].insert(0, {"hrvValue": 55, "readingTimeGMT": "2026-10-29T22:50:00.0",
+                                      "readingTimeLocal": "2026-10-29T23:50:00.0"})
+    parts = _parts("hrv", json.dumps(payload).encode())
+    assert set(parts) == {"2026-10-29", "2026-10-30"}
+    prev = parts["2026-10-29"]
+    assert prev.series == {"hrv": [(_unix("2026-10-29T22:50:00"), 55)]} and prev.utc_offset_s == 3600
+    assert prev.stats == {} and prev.raw is None          # the night's figures stay on the response's date
+    assert len(parts["2026-10-30"].series["hrv"]) == 2
+
+
+def test_heart_rate_sample_past_the_days_end_goes_to_the_next_local_date():
+    body = garmin_heart_rate("2026-10-30", 3600, [(_unix("2026-10-30T22:58:00"), 66),
+                                                  (_unix("2026-10-30T23:00:00"), 70)])
+    parts = _parts("heart_rate", body)
+    assert set(parts) == {"2026-10-30", "2026-10-31"}
+    assert parts["2026-10-31"].series == {"hr": [(_unix("2026-10-30T23:00:00"), 70)]}
+    assert parts["2026-10-31"].raw is None and parts["2026-10-31"].utc_offset_s == 3600
+
+
+def test_heart_rate_on_a_dst_change_day_stays_on_its_date(arch):
+    # 2026-10-25 runs from 00:00 CEST (22:00Z the day before) to 24:00 CET (23:00Z): 25 hours
+    payload = json.loads(garmin_heart_rate("2026-10-25", 7200, [(_unix("2026-10-25T22:58:00"), 64)]))
+    payload["endTimestampGMT"] = "2026-10-25T23:00:00.0"
+    body = json.dumps(payload).encode()
+    assert set(_parts("heart_rate", body, "2026-10-25")) == {"2026-10-25"}
+    conn = fresh()
+    sha = arch.put_blob(body)
+    apply_wellness(conn, arch, [WellnessRecord("garmin", "heart_rate", "2026-10-25", NOW, sha, None, {})])
+    row = conn.execute("SELECT * FROM daily_series WHERE channel='hr'").fetchone()
+    # the time of day counts the seconds since local midnight, so the 25-hour day's last hour runs past 86400
+    assert (row["date"], row["utc_offset_s"], codec.decode("time", row["time"])) == ("2026-10-25", 7200, [89880])
+
+
+def test_malformed_intraday_entries_are_skipped():
+    hr = json.loads(_fixture("heart_rate"))
+    t = hr["heartRateValues"][0][0]
+    hr["heartRateValues"] = [None, [t], ["x", 60], [t, "60"], [t, True], [t, 0], [t + 120000, 59]]
+    assert _parts("heart_rate", json.dumps(hr).encode())["2026-10-30"].series == {"hr": [(t // 1000 + 120, 59)]}
+    hr["heartRateValues"] = None                         # a day the watch was not worn
+    p = _parts("heart_rate", json.dumps(hr).encode())["2026-10-30"]
+    assert p.series == {} and p.utc_offset_s is None and p.raw == hr
+    hrv = json.loads(_fixture("hrv"))
+    hrv["hrvReadings"] = [{"hrvValue": None, "readingTimeGMT": "2026-10-29T23:56:22.0",
+                           "readingTimeLocal": "2026-10-30T00:56:22.0"},
+                          {"hrvValue": 50, "readingTimeGMT": "bad", "readingTimeLocal": "2026-10-30T00:56:22.0"},
+                          {"hrvValue": 51}, "x"]
+    assert _parts("hrv", json.dumps(hrv).encode())["2026-10-30"].series == {}
+
+
+def test_api_heart_rate_and_hrv_fill_daily_series(arch):
+    conn = fresh()
+    day = "2026-10-30"
+    apply_wellness(conn, arch, _fetch(FakeClient(_one_day(day, {"heart_rate": _fixture("heart_rate"),
+                                                                "hrv": _fixture("hrv")})),
+                                      arch, conn, now="2026-10-30T10:00:00+00:00"))
+    rows = {r["channel"]: r for r in conn.execute("SELECT * FROM daily_series WHERE date=?", (day,))}
+    assert set(rows) == {"hr", "hrv"}
+    hr, hrv = rows["hr"], rows["hrv"]
+    assert hr["sample_count"] == 3 and hr["utc_offset_s"] == 3600
+    assert codec.decode("time", hr["time"]) == [0, 240, 86280]
+    assert codec.decode("hr", hr["data"]) == [61, 58, 66]
+    assert codec.decode("time", hrv["time"]) == [3382, 3682]          # 00:56:22 and 01:01:22 local
+    assert codec.decode("hrv", hrv["data"]) == [48, 13]
