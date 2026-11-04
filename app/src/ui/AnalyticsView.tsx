@@ -7,7 +7,7 @@ import { useMemo, type CSSProperties } from "react";
 import { SectionHeading, StatsSection } from "./StatsSection";
 import { ActivityCalendar, CALENDAR_WIDTH } from "./ActivityCalendar";
 import { Ridgeline } from "./Ridgeline";
-import { ElevationHeatmap } from "./ElevationHeatmap";
+import { ElevationProfiles } from "./ElevationProfiles";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { eyebrow, glass, MONO } from "./theme";
 import { useMediaQuery } from "./useMediaQuery";
@@ -19,13 +19,18 @@ import {
   SIDE_PANEL_LEFT,
   SIDE_PANEL_TOP,
 } from "./layout";
-import { rangeTs, type ActivityFilter, type MonthIsolation } from "../activityFilter";
+import {
+  rangeTs,
+  typesByCount,
+  type ActivityFilter,
+  type MonthIsolation,
+} from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
 import { climbingRidgeline } from "../ridgeline";
-import { heatmapGrid } from "../elevationHeatmap";
+import { profileChart } from "../elevationProfiles";
 import { totalCards } from "../stats";
 import { formatMonth } from "../format";
-import type { ActivityRecord, Theme } from "../types";
+import type { ActivityRecord } from "../types";
 
 interface Props {
   /** null until the data loads. */
@@ -33,7 +38,6 @@ interface Props {
   /** The visible activities, as App hands them to the map's totals too. */
   visible: ActivityRecord[];
   sidePanelExpanded: boolean;
-  theme: Theme;
   /** A month isolated from the ridgeline, while the range is still just that month. */
   isolation: MonthIsolation | null;
   /** A ridgeline row was clicked: isolate that month, or restore the range before. */
@@ -57,7 +61,6 @@ export function AnalyticsView({
   filter,
   visible,
   sidePanelExpanded,
-  theme,
   isolation,
   onPickMonth,
   profiles: given,
@@ -88,13 +91,19 @@ export function AnalyticsView({
     [filter, visible],
   );
 
-  const grid = useMemo(() => {
+  // Colors by how common a type is overall, so the few types with profiles get distinct
+  // colors (the map's alphabetical palette wraps past 8 types) and keep them while the
+  // filter changes.
+  const typeOrder = useMemo(() => (filter ? typesByCount(filter) : []), [filter]);
+
+  const chart = useMemo(() => {
     if (profiles.status !== "ready") return null;
     const { profiles: byId, step } = profiles.file;
-    return heatmapGrid(
-      visible.map((a) => byId[a.id]).filter((p) => p != null),
-      step,
-    );
+    const lines = visible.flatMap((a) => {
+      const profile = byId[a.id];
+      return profile ? [{ id: a.id, name: a.name, type: a.type, ts: a.ts, profile }] : [];
+    });
+    return profileChart(lines, step);
   }, [visible, profiles]);
 
   return (
@@ -162,7 +171,7 @@ export function AnalyticsView({
                 <section style={card}>
                   <SectionHeading
                     title="Elevation profiles"
-                    subtitle="Every route's climb against distance, overlaid"
+                    subtitle="Every activity's climb against distance, overlaid"
                   />
                   {profiles.status !== "ready" ? (
                     <p style={statusText}>
@@ -170,8 +179,8 @@ export function AnalyticsView({
                         ? "Loading elevation profiles…"
                         : "Couldn't load elevation profiles."}
                     </p>
-                  ) : grid ? (
-                    <ElevationHeatmap grid={grid} theme={theme} />
+                  ) : chart && filter ? (
+                    <ElevationProfiles chart={chart} types={typeOrder} />
                   ) : (
                     <p style={statusText}>No visible activity has an elevation profile.</p>
                   )}

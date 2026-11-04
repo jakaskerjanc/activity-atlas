@@ -5,7 +5,7 @@
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
 //   activities.json     v1  every visible activity's numbers; unknown values left out
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
-//   profiles.json       v1  every activity's elevation every 100 m, for the analytics heatmap
+//   profiles.json       v1  every activity's elevation every 100 m, for the analytics profiles chart
 //
 // Hidden and deleted activities never reach these files, and the folder is
 // emptied before each write so a stale file cannot survive.

@@ -45,8 +45,8 @@ leaves a stale file behind):
   elevation every 100 m of distance in whole metres relative to its start,
   taken from the detail samples and lightly smoothed (436 activities, about
   62 KB gzipped). Only the Analytics page fetches it, for the elevation
-  heatmap: every visible route overlaid against distance, so climbs you
-  repeat show up as the strongest bands. Activities without distance and
+  profiles chart: every visible activity's profile drawn as a see-through
+  line against distance, so climbs you repeat darken where they stack up. Activities without distance and
   altitude samples are left out.
 
 The database stores streams as compressed delta-encoded blobs

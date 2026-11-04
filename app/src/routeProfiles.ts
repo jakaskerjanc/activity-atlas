@@ -1,5 +1,5 @@
 // The route profiles file (data/profiles.json): every activity's elevation every 100 m
-// of distance, relative to its start, for the analytics elevation heatmap. Fetched the
+// of distance, relative to its start, for the analytics elevation profiles. Fetched the
 // first time the analytics page needs it, validated, and kept for the session. Format:
 // scripts/routeProfile.ts.
 
