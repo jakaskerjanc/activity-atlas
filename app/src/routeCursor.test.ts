@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { cursorLngLat, nearestSample } from "./routeCursor";
+import { cursorLngLat, markerPoint, nearestSample } from "./routeCursor";
 import type { DetailFile } from "./types";
 
 const detail: DetailFile = {
@@ -38,5 +38,19 @@ describe("nearestSample", () => {
 
   test("is null without GPS", () => {
     expect(nearestSample({ v: 1, step: 5, t: [0], hr: [1] }, 14, 46)).toBeNull();
+  });
+});
+
+describe("markerPoint", () => {
+  test("is the cursor position while the route is on the map", () => {
+    expect(markerPoint(detail, 1, true)).toEqual([14.001, 46.001]);
+  });
+
+  test("is null when the selected route is filtered out (#17)", () => {
+    expect(markerPoint(detail, 1, false)).toBeNull();
+  });
+
+  test("is null before the detail loads", () => {
+    expect(markerPoint(null, 1, true)).toBeNull();
   });
 });
