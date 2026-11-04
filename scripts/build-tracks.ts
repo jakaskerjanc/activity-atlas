@@ -17,6 +17,8 @@ import Database from "better-sqlite3";
 import polyline from "@mapbox/polyline";
 import { simplifyLngLat } from "./simplify.ts";
 import { toRecord, type ActivityRow } from "./numbers.ts";
+import { decodeChannel, type StreamChannel } from "./codec.ts";
+import { buildDetail, type Streams } from "./detail.ts";
 import type {
   ActivitiesFile,
   ActivitySource,
@@ -81,6 +83,22 @@ function liveSources(db: Database.Database): Map<string, ActivitySource[]> {
   return byId;
 }
 
+/** Stream channels a detail file is built from. */
+const DETAIL_CHANNELS = ["time", "distance", "lat", "lon", "altitude", "hr", "speed", "cadence"] as const;
+
+/** The detail file for one streams row, or null (no row, or nothing worth charting). */
+function readDetail(stmt: Database.Statement, sha: string | null): DetailFile | null {
+  if (!sha) return null;
+  const row = stmt.get(sha) as Record<StreamChannel, Buffer | null> | undefined;
+  if (!row?.time) return null;
+  const streams: Partial<Record<StreamChannel, (number | null)[]>> = {};
+  for (const c of DETAIL_CHANNELS) {
+    const blob = row[c];
+    if (blob) streams[c] = decodeChannel(c, blob);
+  }
+  return buildDetail(streams as Streams);
+}
+
 function emptyFiles(stats: Stats): DisplayFiles {
   return {
     routes: { v: ROUTES_VERSION, routes: {} },
@@ -114,11 +132,14 @@ export function readDisplayFiles(
       )
       .all() as ActivityRow[];
     const sources = liveSources(db);
+    const streams = db.prepare(`SELECT ${DETAIL_CHANNELS.join(",")} FROM streams WHERE file_sha256 = ?`);
     const files = emptyFiles(stats);
     for (const row of rows) {
       const route = wireRoute(row.polyline, stats);
       if (route) files.routes.routes[row.id] = route;
-      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], false));
+      const detail = readDetail(streams, row.streams_sha256);
+      if (detail) files.details.set(row.id, detail);
+      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null));
     }
     return files;
   } finally {

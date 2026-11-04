@@ -31,3 +31,10 @@ test("rejects an unknown channel", () => {
   const blob = Buffer.from(fixture.cases[0].blob, "base64");
   assert.throws(() => decodeChannel("foo" as StreamChannel, blob));
 });
+
+test("the test encoder round-trips every fixture case", async () => {
+  const { encodeChannel } = await import("./testDb.ts");
+  for (const c of fixture.cases) {
+    assert.deepEqual(decodeChannel(c.channel, encodeChannel(c.channel, c.values)), c.values, c.name);
+  }
+});

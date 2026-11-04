@@ -231,7 +231,7 @@ A flat run with an altimeter keeps its real `elevation_gain: 0`.
   channel with no present value in a bucket is `null` there. Empty buckets (a
   paused watch) produce no point.
 - **`step`** is 5 s, raised for long activities so a file never exceeds 1000
-  points: `step = max(5, ceil(duration_s / 1000))`. A 9 h hike gets 33 s.
+  points: `step = max(5, ceil((duration_s + 1) / 1000))`. A 9 h hike gets 33 s.
 - **Channels and units:**
 
   | Key | Unit | Rounding | Source channel |
