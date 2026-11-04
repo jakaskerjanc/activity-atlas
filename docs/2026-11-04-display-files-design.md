@@ -339,8 +339,9 @@ Top to bottom:
 - **Cards:** an unknown value shows "—". Pace and speed need both distance
   and moving time.
 - **Totals:** distance, elevation and moving time sum the activities that have
-  the value. When some don't, the card says so, e.g. `Elevation m` with a note
-  `437 of 447`. When none do, the value is "—".
+  the value. When none do, the value is "—". (Changed after the PR at the
+  owner's request: the coverage note, e.g. `437 of 447`, is removed; totals
+  skip unknown values without saying so.)
 - **Color ramps:** the elevation and speed modes compute their domain from the
   activities that have the value. An activity without it draws in a neutral
   grey instead of the ramp's low end.
@@ -390,7 +391,9 @@ Top to bottom:
     providers reported, and ingest stays untouched (no rebuild against R2).
     The rules are listed per field above.
 14. **Totals say their coverage** ("437 of 447"): the spec names "total
-    elevation quietly skipping activities" as an anti-goal.
+    elevation quietly skipping activities" as an anti-goal. *Reversed by the
+    owner after the PR: the note read as unclear, so it is removed and totals
+    sum the known values without a caveat.*
 15. **Neutral grey for routes without the colored value:** painting them at
     the ramp's low end would claim a value.
 16. **Each file has its own version** (routes v4, activities v1, detail v1):
@@ -413,7 +416,7 @@ Top to bottom:
 - **Detail:** bucket means, nulls, the 1000-point cap, channel omission, the
   speed fallback, rounding, `detail` flag agreement with the files written,
   and a stale file in the output folder removed by a rebuild.
-- **App:** the join, version checks, "—" and coverage notes, neutral color
+- **App:** the join, version checks, "—" and totals over known values, neutral color
   expressions, chart geometry (ticks, paths with gaps, pace inversion,
   nearest-sample lookup), panel states, and the marker/nearest-sample logic.
 - **Real data:** `pnpm run build:tracks` against the synced database, then

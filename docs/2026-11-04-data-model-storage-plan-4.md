@@ -281,6 +281,8 @@ switches the app, so the site works at every commit.
     - `StatCard.note?: string`
     - `totalCards`: the value is `"—"` when `n = 0`; the note is
       `` `${n} of ${count}` `` when `0 < n < count`.
+    - *(Removed after the PR at the owner's request: no `note`; totals sum the
+      known values without a caveat.)*
   - `colors.ts`: `NEUTRAL = "#7a7f8c"`. `computeDomain` skips missing values.
     The elevation mode is
     `["case", ["has","elevation_gain"], ramp, NEUTRAL]`. The speed mode is

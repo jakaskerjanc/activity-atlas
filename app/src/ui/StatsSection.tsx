@@ -87,7 +87,6 @@ export function StatsSection({ title, subtitle, cards, links, compact = false }:
             >
               {c.label}
             </div>
-            {c.note && <div style={noteStyle}>{c.note}</div>}
           </div>
         ))}
       </div>
@@ -100,14 +99,6 @@ const bigVal: CSSProperties = {
   fontSize: 21,
   fontWeight: 600,
   color: "var(--text-strong)",
-};
-// Coverage caveat under a total, e.g. "437 of 447".
-const noteStyle: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 9,
-  letterSpacing: ".08em",
-  color: "var(--text-muted)",
-  marginTop: 2,
 };
 const accentVal: CSSProperties = { ...bigVal, color: "var(--accent-text)" };
 
