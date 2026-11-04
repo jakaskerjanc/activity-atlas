@@ -7,9 +7,11 @@ import {
   setToMonth,
   toggleType,
   typeCounts,
+  typesByCount,
   visibleActivities,
+  visibleFeatures,
 } from "./activityFilter";
-import { activity } from "./testFixtures";
+import { activity, record } from "./testFixtures";
 
 // Epoch seconds for a UTC instant, so fixtures read as dates.
 const at = (iso: string) => Date.parse(iso) / 1000;
@@ -17,10 +19,10 @@ const at = (iso: string) => Date.parse(iso) / 1000;
 // Month index (see format.ts: monthIndex) for a calendar month, 1-based like the ISO dates.
 const month = (year: number, m: number) => year * 12 + (m - 1);
 
-const run = activity({ id: "s:1", type: "Run", ts: at("2024-01-15T08:00:00Z") });
-const ride = activity({ id: "s:2", type: "Ride", ts: at("2024-03-01T00:00:00Z") });
-const hike = activity({ id: "g:3", type: "Hike", ts: at("2024-05-31T23:59:59Z") });
-const run2 = activity({ id: "s:4", type: "Run", ts: at("2024-05-02T07:00:00Z") });
+const run = record({ id: "s:1", type: "Run", ts: at("2024-01-15T08:00:00Z") });
+const ride = record({ id: "s:2", type: "Ride", ts: at("2024-03-01T00:00:00Z") });
+const hike = record({ id: "g:3", type: "Hike", ts: at("2024-05-31T23:59:59Z") });
+const run2 = record({ id: "s:4", type: "Run", ts: at("2024-05-02T07:00:00Z") });
 const all = [run, ride, hike, run2];
 
 describe("a new activity filter", () => {
@@ -102,6 +104,21 @@ describe("type counts", () => {
   });
 });
 
+describe("types by count", () => {
+  test("list the most frequent type first, ties by name", () => {
+    expect(typesByCount(createActivityFilter(all))).toEqual(["Run", "Hike", "Ride"]);
+  });
+
+  test("keep their order when the date range or selection changes", () => {
+    const f = toggleType(setFromMonth(createActivityFilter(all), month(2024, 4)), "Run");
+    expect(typesByCount(f)).toEqual(["Run", "Hike", "Ride"]);
+  });
+
+  test("leave availableTypes alphabetical, since type colors are keyed to it", () => {
+    expect(createActivityFilter(all).availableTypes).toEqual(["Hike", "Ride", "Run"]);
+  });
+});
+
 describe("map filter expression", () => {
   // The map draws with the expression; the panels count with visibleActivities. Run
   // the expression through Mapbox's own evaluator and require the same answer for
@@ -120,9 +137,27 @@ describe("map filter expression", () => {
     const drawn = featureFilter(filterExpression(f));
     const visible = new Set(visibleActivities(f));
     for (const a of all) {
-      const onMap = drawn.filter({ zoom: 0 }, { type: 2, properties: a.properties, geometry: [] });
-      expect(onMap, a.properties.id).toBe(visible.has(a));
+      const onMap = drawn.filter({ zoom: 0 }, { type: 2, properties: a, geometry: [] });
+      expect(onMap, a.id).toBe(visible.has(a));
     }
+  });
+});
+
+describe("the map's features", () => {
+  // The filter is over every record; only some have a route and become map features.
+  const features = [run, hike].map((r) => activity(r));
+
+  test("are the visible activities that have a route", () => {
+    const f = toggleType(createActivityFilter(all), "Hike");
+    expect(visibleFeatures(f, features).map((x) => x.properties.id)).toEqual(["s:1"]);
+    expect(visibleActivities(f).map((a) => a.id)).toEqual(["s:1", "s:2", "s:4"]);
+  });
+
+  test("types without a route still count and filter", () => {
+    const f = createActivityFilter(all);
+    expect(f.availableTypes).toContain("Ride");
+    expect(typeCounts(f).Ride).toBe(1);
+    expect(visibleFeatures(f, features)).toHaveLength(2);
   });
 });
 

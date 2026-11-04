@@ -1,6 +1,6 @@
 // Pure stat view-models for the right panel. No React / Mapbox deps.
 
-import type { ActivityFeature } from "./types";
+import type { ActivityFeature, ActivityRecord } from "./types";
 import {
   formatKm,
   formatDuration,
@@ -36,16 +36,18 @@ function add(c: Coverage, v: number | undefined) {
   c.n += 1;
 }
 
-/** Sum distance / elevation / moving time over a set of activities, skipping unknowns. */
-export function aggregate(features: ActivityFeature[]): Totals {
+/**
+ * Sum distance / elevation / moving time over a set of activities, skipping unknowns.
+ * The map's totals and the analytics page's totals both come from here.
+ */
+export function aggregate(activities: readonly ActivityRecord[]): Totals {
   const t: Totals = {
     count: 0,
     distance: { sum: 0, n: 0 },
     elevation: { sum: 0, n: 0 },
     moving: { sum: 0, n: 0 },
   };
-  for (const f of features) {
-    const p = f.properties;
+  for (const p of activities) {
     t.count += 1;
     add(t.distance, p.distance);
     add(t.elevation, p.elevation_gain);
@@ -59,9 +61,9 @@ function totalCard(c: Coverage, format: (v: number) => string, card: Omit<StatCa
   return { value: c.n === 0 ? "—" : format(c.sum), ...card };
 }
 
-/** Four aggregate cards for the current filter. */
-export function totalCards(features: ActivityFeature[]): StatCard[] {
-  const t = aggregate(features);
+/** Four aggregate cards for the visible activities. */
+export function totalCards(activities: readonly ActivityRecord[]): StatCard[] {
+  const t = aggregate(activities);
   return [
     { value: String(t.count), label: "Activities" },
     totalCard(t.distance, (m) => formatKm(m, 0), { label: "Total km", accent: true }),

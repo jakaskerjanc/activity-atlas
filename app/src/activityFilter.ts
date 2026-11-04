@@ -1,16 +1,19 @@
 // The Activity filter: which activities are shown (see CONTEXT.md). A type selection
-// plus a month-stepped date range, over the activities it was created from. Pure
-// module (like colors.ts / replay.ts): every change returns a new value, and the same
-// rule answers both "which activities are visible" (JS) and "what does the map draw"
-// (a Mapbox filter expression), so the two can't drift apart.
+// plus a month-stepped date range, over the activities it was created from: every
+// record in activities.json, with or without a route, so the map and the analytics
+// page share one filter and one set of visible activities. Pure module (like
+// colors.ts / replay.ts): every change returns a new value, and the same rule answers
+// "which activities are visible" (JS), "which routes does the map draw" (JS, for the
+// map's features) and "what does Mapbox draw" (a filter expression), so they can't
+// drift apart.
 
 import type { FilterSpecification } from "mapbox-gl";
-import type { ActivityFeature } from "./types";
+import type { ActivityFeature, ActivityRecord } from "./types";
 import { monthEnd, monthIndex, monthStart } from "./format";
 
 export interface ActivityFilter {
   /** The activities this filter was created from. */
-  readonly activities: readonly ActivityFeature[];
+  readonly activities: readonly ActivityRecord[];
   /** Every activity type present, sorted. */
   readonly availableTypes: readonly string[];
   /** Type selection: the activity types switched on. Empty shows nothing. */
@@ -24,9 +27,9 @@ export interface ActivityFilter {
 }
 
 /** A filter over `activities` with every type on and the full date range. */
-export function createActivityFilter(activities: readonly ActivityFeature[]): ActivityFilter {
-  const availableTypes = [...new Set(activities.map((a) => a.properties.type))].sort();
-  const months = activities.map((a) => monthIndex(a.properties.ts));
+export function createActivityFilter(activities: readonly ActivityRecord[]): ActivityFilter {
+  const availableTypes = [...new Set(activities.map((a) => a.type))].sort();
+  const months = activities.map((a) => monthIndex(a.ts));
   // No activities: any finite month will do, since nothing can be shown anyway.
   const minMonth = months.length ? Math.min(...months) : 0;
   const maxMonth = months.length ? Math.max(...months) : 0;
@@ -63,19 +66,32 @@ export function setToMonth(filter: ActivityFilter, month: number): ActivityFilte
 }
 
 /** Inclusive epoch-second bounds of the date range. */
-function rangeTs(filter: ActivityFilter): [number, number] {
+export function rangeTs(filter: ActivityFilter): [number, number] {
   return [monthStart(filter.fromMonth), monthEnd(filter.toMonth)];
 }
 
-function inRange(filter: ActivityFilter): (a: ActivityFeature) => boolean {
+function inRange(filter: ActivityFilter): (a: ActivityRecord) => boolean {
   const [from, to] = rangeTs(filter);
-  return (a) => a.properties.ts >= from && a.properties.ts <= to;
+  return (a) => a.ts >= from && a.ts <= to;
 }
 
-/** The activities that pass the filter. */
-export function visibleActivities(filter: ActivityFilter): ActivityFeature[] {
+function passes(filter: ActivityFilter): (a: ActivityRecord) => boolean {
   const dated = inRange(filter);
-  return filter.activities.filter((a) => filter.types.has(a.properties.type) && dated(a));
+  return (a) => filter.types.has(a.type) && dated(a);
+}
+
+/** The activities that pass the filter. Both pages count and total these. */
+export function visibleActivities(filter: ActivityFilter): ActivityRecord[] {
+  return filter.activities.filter(passes(filter));
+}
+
+/** The map features (activities with a route) that pass the filter: what the map draws. */
+export function visibleFeatures(
+  filter: ActivityFilter,
+  features: readonly ActivityFeature[],
+): ActivityFeature[] {
+  const pass = passes(filter);
+  return features.filter((f) => pass(f.properties));
 }
 
 /**
@@ -86,9 +102,21 @@ export function typeCounts(filter: ActivityFilter): Record<string, number> {
   const dated = inRange(filter);
   const counts: Record<string, number> = {};
   for (const a of filter.activities) {
-    if (dated(a)) counts[a.properties.type] = (counts[a.properties.type] ?? 0) + 1;
+    if (dated(a)) counts[a.type] = (counts[a.type] ?? 0) + 1;
   }
   return counts;
+}
+
+/**
+ * The available types, most activities first (ties by name), for listing in the
+ * filter. Counted over every activity, not the date range, so the rows keep their
+ * order while the range slider moves. availableTypes stays alphabetical: type colors
+ * are keyed to it.
+ */
+export function typesByCount(filter: ActivityFilter): string[] {
+  const counts: Record<string, number> = {};
+  for (const a of filter.activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
+  return [...filter.availableTypes].sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1));
 }
 
 /**

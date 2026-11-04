@@ -1,5 +1,5 @@
 // Left panel: filter controls + color-mode selector. Activity/aggregate stats
-// live in InfoPanel.
+// live in InfoPanel. On the analytics page it keeps only the filter.
 
 import type { CSSProperties } from "react";
 import { GlassPanel } from "./GlassPanel";
@@ -24,6 +24,8 @@ interface Props {
   onStartReplay: () => void;
   /** False when the filter leaves nothing to replay. */
   canReplay: boolean;
+  /** Show the map-only sections (coloring, replay). False on the analytics page. */
+  showMapControls: boolean;
   /** Slid off the left edge; only the toggle tab stays visible. */
   collapsed: boolean;
   onToggle: () => void;
@@ -49,20 +51,24 @@ export function SidePanel(p: Props) {
       collapseLabel="filters"
     >
       <FilterSection filter={p.filter} onChange={p.onFilterChange} />
-      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
-      <ColorSection
-        mode={p.colorMode}
-        domain={p.colorDomain}
-        onChange={p.onColorModeChange}
-      />
-      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
-      <button
-        onClick={p.onStartReplay}
-        disabled={!p.canReplay}
-        style={replayBtn(p.canReplay)}
-      >
-        ▶  Replay history
-      </button>
+      {p.showMapControls && (
+        <>
+          <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
+          <ColorSection
+            mode={p.colorMode}
+            domain={p.colorDomain}
+            onChange={p.onColorModeChange}
+          />
+          <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
+          <button
+            onClick={p.onStartReplay}
+            disabled={!p.canReplay}
+            style={replayBtn(p.canReplay)}
+          >
+            ▶  Replay history
+          </button>
+        </>
+      )}
     </GlassPanel>
   );
 }

@@ -1,6 +1,7 @@
 // Top-level wiring: load the GeoJSON once, own all UI state, and feed the map + the
 // Trace Atlas panels. Which activities are shown is the Activity filter's call
-// (activityFilter.ts); this file holds it and hands its results to the map and panels.
+// (activityFilter.ts); this file holds it and hands its results to the map, the
+// analytics page, and the panels.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MapView } from "./MapView";
@@ -8,10 +9,13 @@ import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
+import { AnalyticsView } from "./ui/AnalyticsView";
+import { useView } from "./ui/useView";
 import {
   createActivityFilter,
   filterExpression,
   visibleActivities,
+  visibleFeatures,
   type ActivityFilter,
 } from "./activityFilter";
 import type { ActivitiesFile, ActivityFeatureCollection, RoutesFile, Theme } from "./types";
@@ -57,6 +61,10 @@ export default function App() {
   }, [theme]);
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
+  // Map or analytics page. The map stays mounted underneath analytics, so switching back
+  // keeps its camera and selection.
+  const [view, setView] = useView();
+
   // Panel collapse state. A resize across the narrow breakpoint overrides manual toggles.
   const panels = useCollapsiblePanels();
 
@@ -84,26 +92,34 @@ export default function App() {
       .then(([routes, activities]) => {
         const decoded = joinActivities(routes, activities);
         setData(decoded);
-        setFilter(createActivityFilter(decoded.features));
+        // Over every record, routed or not: the analytics page reads them all, and the
+        // map draws the ones with a route (visibleFeatures).
+        setFilter(createActivityFilter(activities.activities));
       })
       .catch((e) => setError(String(e)));
   }, []);
 
+  // Visible activities: what both pages count and total. The map draws the subset with
+  // a route.
   const visible = useMemo(() => (filter ? visibleActivities(filter) : []), [filter]);
+  const visibleOnMap = useMemo(
+    () => (filter && data ? visibleFeatures(filter, data.features) : []),
+    [filter, data],
+  );
   const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
   // Color scale domain from the visible set, so recency/elevation/speed ramps
   // span what's actually shown. Type→color stays keyed to the full type list
   // (availableTypes) so a type doesn't change color as others are toggled off.
   const colorDomain = useMemo(
-    () => ({ ...computeDomain(visible), types: [...(filter?.availableTypes ?? [])] }),
-    [visible, filter?.availableTypes],
+    () => ({ ...computeDomain(visibleOnMap), types: [...(filter?.availableTypes ?? [])] }),
+    [visibleOnMap, filter?.availableTypes],
   );
 
   // Chronological step list for the visible activities, and the frame the
   // current progress resolves to. Memoized so MapView's frame effect only fires
   // when the resolved frame actually changes.
-  const timeline = useMemo(() => buildTimeline(visible), [visible]);
+  const timeline = useMemo(() => buildTimeline(visibleOnMap), [visibleOnMap]);
   const replayFrame = useMemo(
     () => (replaying ? frameAt(timeline, progress) : null),
     [replaying, timeline, progress],
@@ -175,6 +191,16 @@ export default function App() {
     setProgress(Math.min(1, Math.max(0, g)));
   };
 
+  // Analytics hides the replay transport and covers the map, so leave replay and drop the
+  // hover and the chart cursor (the map won't see the pointer leave). An effect, so
+  // back/forward counts too.
+  useEffect(() => {
+    if (view === "map") return;
+    exitReplay();
+    setHoverId(null);
+    setCursor(null);
+  }, [view]);
+
   // If the filter empties the set mid-replay, back out gracefully.
   useEffect(() => {
     if (replaying && timeline.length === 0) exitReplay();
@@ -200,8 +226,8 @@ export default function App() {
   );
 
   const selectedShown = useMemo(
-    () => selectedId != null && visible.some((f) => f.properties.id === selectedId),
-    [visible, selectedId],
+    () => selectedId != null && visibleOnMap.some((f) => f.properties.id === selectedId),
+    [visibleOnMap, selectedId],
   );
   const cursorPoint = useMemo(
     () => markerPoint(selectedDetail, cursor, selectedShown),
@@ -250,27 +276,30 @@ export default function App() {
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }}>
-      <MapView
-        theme={theme}
-        data={data}
-        mapFilter={mapFilter}
-        visible={visible}
-        colorMode={colorMode}
-        colorDomain={colorDomain}
-        hoverId={hoverId}
-        selectedId={selectedId}
-        onHover={setHoverId}
-        onSelect={setSelectedId}
-        onDeselect={() => setSelectedId(null)}
-        replaying={replaying}
-        replayFrame={replayFrame}
-        replayEpoch={replayEpoch}
-        onReplayReady={onReplayReady}
-        sidePanelExpanded={!panels.sideCollapsed}
-        cursorPoint={cursorPoint}
-        selectedDetail={selectedDetail}
-        onCursor={setCursor}
-      />
+      {/* inert while covered, so keyboard focus can't land on the hidden map. */}
+      <div inert={view !== "map"} style={{ position: "absolute", inset: 0 }}>
+        <MapView
+          theme={theme}
+          data={data}
+          mapFilter={mapFilter}
+          visible={visibleOnMap}
+          colorMode={colorMode}
+          colorDomain={colorDomain}
+          hoverId={hoverId}
+          selectedId={selectedId}
+          onHover={setHoverId}
+          onSelect={setSelectedId}
+          onDeselect={() => setSelectedId(null)}
+          replaying={replaying}
+          replayFrame={replayFrame}
+          replayEpoch={replayEpoch}
+          onReplayReady={onReplayReady}
+          sidePanelExpanded={!panels.sideCollapsed}
+          cursorPoint={cursorPoint}
+          selectedDetail={selectedDetail}
+          onCursor={setCursor}
+        />
+      </div>
 
       {/* Vignette for depth (decorative, click-through). */}
       <div
@@ -285,7 +314,15 @@ export default function App() {
         }}
       />
 
-      <Header theme={theme} onToggleTheme={toggleTheme} />
+      {view === "analytics" && (
+        <AnalyticsView
+          filter={filter}
+          visible={visible}
+          sidePanelExpanded={!panels.sideCollapsed}
+        />
+      )}
+
+      <Header theme={theme} onToggleTheme={toggleTheme} view={view} onViewChange={setView} />
 
       {filter && (
         <>
@@ -297,35 +334,37 @@ export default function App() {
             onColorModeChange={setColorMode}
             onStartReplay={startReplay}
             canReplay={timeline.length > 0}
+            showMapControls={view === "map"}
             collapsed={panels.sideCollapsed}
             onToggle={panels.toggleSide}
           />
-          {replaying ? (
-            <ReplayBar
-              playing={playing}
-              progress={progress}
-              dateTs={replayFrame?.ts ?? null}
-              speed={speed}
-              atEnd={atEnd}
-              onPlayPause={togglePlay}
-              onSeek={seek}
-              onSpeed={setSpeed}
-              onExit={exitReplay}
-              collapsed={panels.bottomCollapsed}
-              onToggle={panels.toggleBottom}
-            />
-          ) : (
-            <InfoPanel
-              title={title}
-              subtitle={subtitle}
-              cards={cards}
-              links={links}
-              body={panelBody}
-              compactCards={profile != null}
-              collapsed={panels.bottomCollapsed}
-              onToggle={panels.toggleBottom}
-            />
-          )}
+          {view === "map" &&
+            (replaying ? (
+              <ReplayBar
+                playing={playing}
+                progress={progress}
+                dateTs={replayFrame?.ts ?? null}
+                speed={speed}
+                atEnd={atEnd}
+                onPlayPause={togglePlay}
+                onSeek={seek}
+                onSpeed={setSpeed}
+                onExit={exitReplay}
+                collapsed={panels.bottomCollapsed}
+                onToggle={panels.toggleBottom}
+              />
+            ) : (
+              <InfoPanel
+                title={title}
+                subtitle={subtitle}
+                cards={cards}
+                links={links}
+                body={panelBody}
+                compactCards={profile != null}
+                collapsed={panels.bottomCollapsed}
+                onToggle={panels.toggleBottom}
+              />
+            ))}
         </>
       )}
 
