@@ -63,7 +63,7 @@ export function setToMonth(filter: ActivityFilter, month: number): ActivityFilte
 }
 
 /** Inclusive epoch-second bounds of the date range. */
-function rangeTs(filter: ActivityFilter): [number, number] {
+export function rangeTs(filter: ActivityFilter): [number, number] {
   return [monthStart(filter.fromMonth), monthEnd(filter.toMonth)];
 }
 

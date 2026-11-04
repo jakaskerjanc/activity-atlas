@@ -49,3 +49,14 @@ _Avoid_: streams (the full-resolution database data), track
 The one point along the selected activity that the charts and the map marker share; set by hovering either.
 _Avoid_: hover (that is route-level, see hoverId), playhead
 
+### Pages
+
+**Map** / **Analytics**:
+The two pages. Both show the visible activities, under one shared activity filter.
+_Avoid_: tab, screen, dashboard
+
+**Active day**:
+A calendar day (UTC, like the date range) with at least one visible activity.
+
+**Streak**:
+A run of consecutive active days.

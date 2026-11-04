@@ -1,9 +1,10 @@
-// Top bar: TRACE / Activity Atlas wordmark, plus the light/dark theme toggle.
-// Overlays the map.
+// Top bar: TRACE / Activity Atlas wordmark, the Map / Analytics page switch, and the
+// light/dark theme toggle. Overlays both pages.
 
-import type { CSSProperties } from "react";
-import { MONO } from "./theme";
+import type { ComponentType, CSSProperties } from "react";
+import { MONO, glass } from "./theme";
 import type { Theme } from "../types";
+import type { View } from "./useView";
 
 const BTN = 38;
 const HEADER_HEIGHT = 62;
@@ -11,9 +12,11 @@ const HEADER_HEIGHT = 62;
 interface Props {
   theme: Theme;
   onToggleTheme: () => void;
+  view: View;
+  onViewChange: (view: View) => void;
 }
 
-export function Header({ theme, onToggleTheme }: Props) {
+export function Header({ theme, onToggleTheme, view, onViewChange }: Props) {
   const next = theme === "dark" ? "light" : "dark";
   return (
     <header
@@ -64,9 +67,12 @@ export function Header({ theme, onToggleTheme }: Props) {
           position: "absolute",
           top: (HEADER_HEIGHT - BTN) / 2,
           right: 22,
+          display: "flex",
+          gap: 8,
           pointerEvents: "auto",
         }}
       >
+        <ViewSwitch view={view} onChange={onViewChange} />
         <button
           onClick={onToggleTheme}
           aria-label={`Switch to ${next} theme`}
@@ -96,6 +102,103 @@ const toggleBtn: CSSProperties = {
   color: "var(--text)",
   transition: "color .35s ease",
 };
+
+const VIEWS: { view: View; label: string; Icon: ComponentType }[] = [
+  { view: "map", label: "Map", Icon: MapIcon },
+  { view: "analytics", label: "Analytics", Icon: ChartIcon },
+];
+
+// Segmented control for the two pages. On a phone the labels drop (see
+// .view-switch-label in index.css) and the aria-labels carry the names.
+function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+  return (
+    <nav aria-label="Pages" style={switchBox}>
+      {VIEWS.map(({ view: v, label, Icon }) => {
+        const on = v === view;
+        return (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={on}
+            aria-label={label}
+            title={label}
+            onClick={() => onChange(v)}
+            style={switchBtn(on)}
+          >
+            <Icon />
+            <span className="view-switch-label">{label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+const switchBox: CSSProperties = {
+  ...glass,
+  display: "flex",
+  gap: 2,
+  height: BTN,
+  boxSizing: "border-box",
+  padding: 3,
+  borderRadius: 12,
+};
+
+function switchBtn(on: boolean): CSSProperties {
+  return {
+    appearance: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "0 11px",
+    border: 0,
+    borderRadius: 9,
+    background: on ? "var(--accent-tint)" : "transparent",
+    boxShadow: on ? "inset 0 0 0 1px var(--accent)" : "none",
+    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
+    fontFamily: "inherit",
+    fontSize: 12.5,
+    fontWeight: 600,
+    letterSpacing: ".02em",
+    transition: "color .2s ease, background .2s ease",
+  };
+}
+
+function MapIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4zM9 4v13.5M15 6.5V20" />
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 20h16M7 16v-5M12 16V6M17 16v-8" />
+    </svg>
+  );
+}
 
 function SunIcon() {
   return (

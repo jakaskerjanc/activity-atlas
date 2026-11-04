@@ -3,7 +3,7 @@
 // scale. Rendered as a section inside the SidePanel.
 
 import type { CSSProperties } from "react";
-import { MONO, eyebrow } from "./theme";
+import { MONO, eyebrow, pillStyle } from "./theme";
 import {
   COLOR_MODES,
   legendFor,
@@ -66,22 +66,6 @@ function LegendView({ legend }: { legend: Legend }) {
       </div>
     </div>
   );
-}
-
-function pillStyle(on: boolean): CSSProperties {
-  return {
-    appearance: "none",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--control-border)",
-    cursor: "pointer",
-    textAlign: "center",
-    padding: "5px 10px",
-    borderRadius: 8,
-    background: on ? "var(--accent-tint)" : "transparent",
-    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
-    fontSize: 12,
-    fontWeight: 500,
-    transition: "background .15s, border-color .15s",
-  };
 }
 
 const swatchRow: CSSProperties = {

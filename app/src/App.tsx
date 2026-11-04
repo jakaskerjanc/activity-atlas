@@ -1,6 +1,7 @@
 // Top-level wiring: load the GeoJSON once, own all UI state, and feed the map + the
 // Trace Atlas panels. Which activities are shown is the Activity filter's call
-// (activityFilter.ts); this file holds it and hands its results to the map and panels.
+// (activityFilter.ts); this file holds it and hands its results to the map, the
+// analytics page, and the panels.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MapView } from "./MapView";
@@ -8,6 +9,8 @@ import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
+import { AnalyticsView } from "./ui/AnalyticsView";
+import { useView } from "./ui/useView";
 import {
   createActivityFilter,
   filterExpression,
@@ -56,6 +59,10 @@ export default function App() {
       ?.setAttribute("content", theme === "light" ? "#eef0f4" : "#0e0f13");
   }, [theme]);
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+  // Map or analytics page. The map stays mounted underneath analytics, so switching back
+  // keeps its camera and selection.
+  const [view, setView] = useView();
 
   // Panel collapse state. A resize across the narrow breakpoint overrides manual toggles.
   const panels = useCollapsiblePanels();
@@ -175,6 +182,14 @@ export default function App() {
     setProgress(Math.min(1, Math.max(0, g)));
   };
 
+  // Analytics hides the replay transport and covers the map, so leave replay and drop the
+  // hover (the map won't see the pointer leave). An effect, so back/forward counts too.
+  useEffect(() => {
+    if (view === "map") return;
+    exitReplay();
+    setHoverId(null);
+  }, [view]);
+
   // If the filter empties the set mid-replay, back out gracefully.
   useEffect(() => {
     if (replaying && timeline.length === 0) exitReplay();
@@ -250,27 +265,30 @@ export default function App() {
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }}>
-      <MapView
-        theme={theme}
-        data={data}
-        mapFilter={mapFilter}
-        visible={visible}
-        colorMode={colorMode}
-        colorDomain={colorDomain}
-        hoverId={hoverId}
-        selectedId={selectedId}
-        onHover={setHoverId}
-        onSelect={setSelectedId}
-        onDeselect={() => setSelectedId(null)}
-        replaying={replaying}
-        replayFrame={replayFrame}
-        replayEpoch={replayEpoch}
-        onReplayReady={onReplayReady}
-        sidePanelExpanded={!panels.sideCollapsed}
-        cursorPoint={cursorPoint}
-        selectedDetail={selectedDetail}
-        onCursor={setCursor}
-      />
+      {/* inert while covered, so keyboard focus can't land on the hidden map. */}
+      <div inert={view !== "map"} style={{ position: "absolute", inset: 0 }}>
+        <MapView
+          theme={theme}
+          data={data}
+          mapFilter={mapFilter}
+          visible={visible}
+          colorMode={colorMode}
+          colorDomain={colorDomain}
+          hoverId={hoverId}
+          selectedId={selectedId}
+          onHover={setHoverId}
+          onSelect={setSelectedId}
+          onDeselect={() => setSelectedId(null)}
+          replaying={replaying}
+          replayFrame={replayFrame}
+          replayEpoch={replayEpoch}
+          onReplayReady={onReplayReady}
+          sidePanelExpanded={!panels.sideCollapsed}
+          cursorPoint={cursorPoint}
+          selectedDetail={selectedDetail}
+          onCursor={setCursor}
+        />
+      </div>
 
       {/* Vignette for depth (decorative, click-through). */}
       <div
@@ -285,7 +303,15 @@ export default function App() {
         }}
       />
 
-      <Header theme={theme} onToggleTheme={toggleTheme} />
+      {view === "analytics" && (
+        <AnalyticsView
+          filter={filter}
+          visible={visible}
+          sidePanelExpanded={!panels.sideCollapsed}
+        />
+      )}
+
+      <Header theme={theme} onToggleTheme={toggleTheme} view={view} onViewChange={setView} />
 
       {filter && (
         <>
@@ -297,35 +323,37 @@ export default function App() {
             onColorModeChange={setColorMode}
             onStartReplay={startReplay}
             canReplay={timeline.length > 0}
+            showMapControls={view === "map"}
             collapsed={panels.sideCollapsed}
             onToggle={panels.toggleSide}
           />
-          {replaying ? (
-            <ReplayBar
-              playing={playing}
-              progress={progress}
-              dateTs={replayFrame?.ts ?? null}
-              speed={speed}
-              atEnd={atEnd}
-              onPlayPause={togglePlay}
-              onSeek={seek}
-              onSpeed={setSpeed}
-              onExit={exitReplay}
-              collapsed={panels.bottomCollapsed}
-              onToggle={panels.toggleBottom}
-            />
-          ) : (
-            <InfoPanel
-              title={title}
-              subtitle={subtitle}
-              cards={cards}
-              links={links}
-              body={panelBody}
-              compactCards={profile != null}
-              collapsed={panels.bottomCollapsed}
-              onToggle={panels.toggleBottom}
-            />
-          )}
+          {view === "map" &&
+            (replaying ? (
+              <ReplayBar
+                playing={playing}
+                progress={progress}
+                dateTs={replayFrame?.ts ?? null}
+                speed={speed}
+                atEnd={atEnd}
+                onPlayPause={togglePlay}
+                onSeek={seek}
+                onSpeed={setSpeed}
+                onExit={exitReplay}
+                collapsed={panels.bottomCollapsed}
+                onToggle={panels.toggleBottom}
+              />
+            ) : (
+              <InfoPanel
+                title={title}
+                subtitle={subtitle}
+                cards={cards}
+                links={links}
+                body={panelBody}
+                compactCards={profile != null}
+                collapsed={panels.bottomCollapsed}
+                onToggle={panels.toggleBottom}
+              />
+            ))}
         </>
       )}
 
