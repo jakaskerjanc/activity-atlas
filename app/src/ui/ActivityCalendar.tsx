@@ -1,12 +1,12 @@
 // Activity calendar: a GitHub-style grid of one year's days, each cell shaded by that
 // day's moving time, with a button per year in the filter's range. The shades are the
 // --heat-* tokens in index.css (one hue, stronger = more time); hovering a day shows
-// its numbers.
+// its numbers and lists its activities by name and moving time.
 
 import { useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { MONO, pillStyle } from "./theme";
 import { formatDate, formatDuration } from "../format";
-import type { CalendarYear } from "../analytics";
+import type { CalendarDay, CalendarYear } from "../analytics";
 
 const CELL = 11;
 // A surface gap between cells, so neighbouring days never merge into one block.
@@ -27,8 +27,10 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 /** Legend text per shade step (see calendarLevel). */
 const LEVELS = ["None", "<1h", "1–2h", "2–4h", "4h+"];
 
-// Half the tooltip's typical width: how far its anchor stays from the box edges.
-const TIP_HALF = 80;
+// The tooltip's widest; long activity names are cut with an ellipsis to fit.
+const TIP_WIDTH = 240;
+// Half of it: how far the tooltip's anchor stays from the box edges.
+const TIP_HALF = TIP_WIDTH / 2;
 
 interface Hover {
   day: number;
@@ -158,17 +160,39 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
 
       {hover && hovered && (
         <div style={{ ...tooltip, left: hover.x, top: hover.y }}>
-          <div style={tipValue}>
-            {hovered.count > 0 ? formatDuration(hovered.movingSec) : "No activity"}
-          </div>
-          <div style={muted}>
-            {hovered.count > 0 &&
-              `${hovered.count} ${hovered.count === 1 ? "activity" : "activities"} · `}
-            {WEEKDAYS[hovered.weekday]}, {formatDate(hovered.ts)}
-          </div>
+          <DayTip day={hovered} />
         </div>
       )}
     </div>
+  );
+}
+
+/** Longest list the tooltip shows; the rest are counted in a "+N more" line. */
+export const TIP_MAX_ACTIVITIES = 6;
+
+/** A hovered day's tooltip: its total, date, and each activity's name and moving time. */
+export function DayTip({ day }: { day: CalendarDay }) {
+  const listed = day.activities.slice(0, TIP_MAX_ACTIVITIES);
+  const more = day.activities.length - listed.length;
+  return (
+    <>
+      <div style={tipValue}>{day.count > 0 ? formatDuration(day.movingSec) : "No activity"}</div>
+      <div style={muted}>
+        {day.count > 0 && `${day.count} ${day.count === 1 ? "activity" : "activities"} · `}
+        {WEEKDAYS[day.weekday]}, {formatDate(day.ts)}
+      </div>
+      {listed.length > 0 && (
+        <ul style={tipList}>
+          {listed.map((a) => (
+            <li key={a.id} style={tipItem}>
+              <span style={tipName}>{a.name}</span>
+              <span style={tipTime}>{formatDuration(a.movingSec)}</span>
+            </li>
+          ))}
+          {more > 0 && <li style={muted}>+{more} more</li>}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -237,6 +261,7 @@ const tooltip: CSSProperties = {
   transform: "translate(-50%, calc(-100% - 6px))",
   pointerEvents: "none",
   whiteSpace: "nowrap",
+  maxWidth: TIP_WIDTH,
   padding: "6px 9px",
   borderRadius: 8,
   background: "var(--bg)",
@@ -250,4 +275,35 @@ const tipValue: CSSProperties = {
   fontWeight: 600,
   color: "var(--text-strong)",
   marginBottom: 2,
+};
+
+const tipList: CSSProperties = {
+  listStyle: "none",
+  margin: "6px 0 0",
+  padding: "6px 0 0",
+  borderTop: "1px solid var(--divider)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 3,
+};
+
+const tipItem: CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: 12,
+  fontSize: 12,
+  color: "var(--text)",
+};
+
+const tipName: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const tipTime: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: 11,
+  color: "var(--text-muted)",
 };
