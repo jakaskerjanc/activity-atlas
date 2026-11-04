@@ -39,6 +39,19 @@ describe("ActivityCalendar", () => {
     for (const label of ["None", "&lt;1h", "1–2h", "2–4h", "4h+"]) expect(html).toContain(label);
   });
 
+  test("leaves room for the hover outline around the last row and column", () => {
+    const html = render();
+    const [, , vbW, vbH] = html.match(/viewBox="([^"]+)"/)![1].split(" ").map(Number);
+    // The outline is 1px outside the cell with a 1.5px stroke: 1.75px past each edge.
+    const overhang = 1.75;
+    const cells = [...html.matchAll(/<rect data-i="\d+" x="([\d.]+)" y="([\d.]+)" width="(\d+)" height="(\d+)"/g)];
+    expect(cells).toHaveLength(366);
+    const right = Math.max(...cells.map((m) => +m[1] + +m[3]));
+    const bottom = Math.max(...cells.map((m) => +m[2] + +m[4]));
+    expect(right + overhang).toBeLessThanOrEqual(vbW);
+    expect(bottom + overhang).toBeLessThanOrEqual(vbH);
+  });
+
   test("renders nothing without years", () => {
     expect(renderToStaticMarkup(createElement(ActivityCalendar, { years: [] }))).toBe("");
   });
