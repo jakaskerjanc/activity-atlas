@@ -3,6 +3,7 @@
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { deflateSync } from "node:zlib";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import polyline from "@mapbox/polyline";
@@ -89,4 +90,38 @@ export function addSource(
   ).run(provider, pid, activityId, deletedAt);
 }
 
-export type { StreamChannel };
+
+
+/**
+ * Port of ingest/codec.py encode, for building streams rows in tests only.
+ * codec.test.ts checks it round-trips through decodeChannel on every fixture case.
+ */
+export function encodeChannel(channel: StreamChannel, values: (number | null)[]): Buffer {
+  const scale = CHANNEL_SCALES[channel];
+  const buf = Buffer.alloc(values.length * 8);
+  let prev = 0n;
+  values.forEach((v, i) => {
+    if (v == null) {
+      buf.writeBigInt64LE(-(2n ** 63n), i * 8);
+      return;
+    }
+    const q = BigInt(Math.round(v * scale));
+    buf.writeBigInt64LE(q - prev, i * 8);
+    prev = q;
+  });
+  return deflateSync(buf, { level: 9 });
+}
+
+/** Insert a streams row; channels not given stay NULL. */
+export function addStreams(
+  db: Database.Database,
+  sha: string,
+  channels: Partial<Record<StreamChannel, (number | null)[]>>,
+) {
+  const cols = Object.keys(channels) as StreamChannel[];
+  const n = channels.time?.length ?? 0;
+  db.prepare(
+    `INSERT INTO streams (file_sha256, sample_count, encoding${cols.map((c) => "," + c).join("")}) ` +
+      `VALUES (?, ?, 1${cols.map(() => ",?").join("")})`,
+  ).run(sha, n, ...cols.map((c) => encodeChannel(c, channels[c]!)));
+}

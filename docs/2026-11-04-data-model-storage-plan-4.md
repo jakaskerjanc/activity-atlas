@@ -48,7 +48,8 @@ This is plan 4 of 4.
   to `0` without an altitude channel; `avg_hr`, `max_hr ≤ 0`; `hr_zones`
   without an HR channel or when every zone is `0`.
 - **Detail files:** `DETAIL_STEP_S = 5`, `DETAIL_MAX_POINTS = 1000`,
-  `step = max(5, ceil(duration_s / 1000))`. Keys `t d lat lon alt hr speed cad`.
+  `step = max(5, ceil((duration_s + 1) / 1000))` (changed in Task 4: without the
+  `+ 1`, a 5000 s activity gets 1001 points). Keys `t d lat lon alt hr speed cad`.
   Rounding: `t`, `d`, `hr`, `cad` integers; `lat`/`lon` 5 decimals; `alt`
   1 decimal; `speed` 2 decimals. No power, no temperature, no wellness.
 - **Charts:** elevation (`alt`), heart rate (`hr`), then pace for foot types
@@ -331,8 +332,9 @@ switches the app, so the site works at every commit.
     `hr` or `speed` (after the fallback) survives.
 
 - [ ] **Step 1: Write the failing tests** (`detail.test.ts`):
-  - `step is 5 s up to 5000 s, then grows`: `detailStep(4995) = 5` and
-    `detailStep(9000) = 9`.
+  - `step is 5 s up to ~5000 s, then grows`: `detailStep(4995) = 5`,
+    `detailStep(5000) = 6` and `detailStep(9000) = 10` (see the `+ 1` note in
+    Global Constraints).
   - `bucket means per channel`:
     - time `0..9` at 1 s, hr `100..109` → `t [2, 7]`, `hr [102, 107]`;
     - `step` is `5`.

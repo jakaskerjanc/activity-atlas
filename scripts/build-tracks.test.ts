@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readDisplayFiles, writeDisplayFiles } from "./build-tracks.ts";
-import { addActivity, addSource, withDb } from "./testDb.ts";
+import { addActivity, addSource, addStreams, withDb } from "./testDb.ts";
 
 test("routes keyed by id for visible routed activities", () => {
   withDb(
@@ -108,4 +108,45 @@ test("writeDisplayFiles empties the output folder first", async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("writes a detail file and sets detail for an activity with streams", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "run", { streams_sha256: "sha1" });
+      addStreams(db, "sha1", {
+        time: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        hr: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
+        altitude: [300, 300, 300, 300, 300, 301, 301, 301, 301, 301],
+      });
+    },
+    (path) => {
+      const { activities, details } = readDisplayFiles(path);
+      assert.equal(activities.activities[0].detail, true);
+      const d = details.get("run")!;
+      assert.deepEqual(d.hr, [102, 107]);
+      assert.deepEqual(d.alt, [300, 301]);
+    },
+  );
+});
+
+test("no detail for a hidden activity", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "hidden", { streams_sha256: "sha1", visible: 0 });
+      addStreams(db, "sha1", { time: [0, 1], hr: [100, 101] });
+    },
+    (path) => assert.equal(readDisplayFiles(path).details.size, 0),
+  );
+});
+
+test("no detail flag without a streams row", () => {
+  withDb(
+    (db) => addActivity(db, "orphan", { streams_sha256: "missing" }),
+    (path) => {
+      const files = readDisplayFiles(path);
+      assert.equal(files.details.size, 0);
+      assert.ok(!("detail" in files.activities.activities[0]));
+    },
+  );
 });
