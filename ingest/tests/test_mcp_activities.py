@@ -1,6 +1,6 @@
 import pytest
 
-from ingest.mcp_server.activities import get_activity, list_activities
+from ingest.mcp_server.activities import get_activity, list_activities, summarize
 from ingest.mcp_server.database import Database
 from ingest.mcp_server.filters import ActivityFilter
 from ingest.tests.mcp_fixture import build_fixture_db
@@ -98,3 +98,56 @@ def test_get_activity_hides_private_payloads(db):
 def test_get_activity_unknown(db):
     with pytest.raises(ValueError):
         get_activity(db, "nope")
+
+
+def test_pace_is_total_time_over_total_distance(db):
+    r = summarize(db, ActivityFilter(types=["Run"], date_from="2025-03-01", date_to="2025-03-31"), period="month")
+    row = r["data"]["rows"][0]
+    # run1 3000 s / 10 km + run2 1500 s / 5 km = 4500 s / 15 km = 5:00; run_nomove is left out
+    assert row["period"] == "2025-03" and row["type"] == "Run"
+    assert row["pace_min_km"] == "5:00" and row["pace_basis_count"] == 2 and row["count"] == 3
+    assert row["speed_kmh"] == 12.0
+    assert r["counted"]["excluded"]["no distance or moving time (pace)"] == 1
+
+
+def test_hr_weighted_by_moving_time(db):
+    row = summarize(db, ActivityFilter(types=["Run"], date_to="2025-03-31"), period="all")["data"]["rows"][0]
+    assert row["avg_hr"] == 150 and row["hr_known"] == 1
+
+
+def test_hr_weighting_across_runs(db):  # run1 150 bpm x 3000 s, run3 140 bpm x 2400 s
+    row = summarize(db, ActivityFilter(types=["Run"]), period="all")["data"]["rows"][0]
+    assert row["avg_hr"] == round((150 * 3000 + 140 * 2400) / 5400, 1)
+
+
+def test_year_uses_local_date(db):
+    years = {r["period"] for r in summarize(db, ActivityFilter(types=["Run"]), period="year")["data"]["rows"]}
+    assert years == {"2025", "2026"}
+
+
+def test_week_starts_monday(db):  # 2025-03-12 is a Wednesday
+    rows = summarize(db, ActivityFilter(types=["Run"], date_from="2025-03-12", date_to="2025-03-12"),
+                     period="week")["data"]["rows"]
+    assert rows[0]["period"] == "2025-03-10"
+
+
+def test_unknown_distance_not_zero(db):
+    row = summarize(db, ActivityFilter(types=["Walk"]), period="all")["data"]["rows"][0]
+    assert row["count"] == 1 and row["distance_known"] == 0 and row["distance_km"] is None
+
+
+def test_by_type_false_merges_types(db):
+    rows = summarize(db, ActivityFilter(date_from="2025-03-01", date_to="2025-03-31"), period="month",
+                     by_type=False)["data"]["rows"]
+    assert len(rows) == 1 and rows[0]["count"] == 4 and "type" not in rows[0]
+
+
+def test_summarize_rules_state_definitions(db):
+    rules = summarize(db, ActivityFilter(types=["Run"]))["counted"]["rules"]
+    assert any("total moving time / total distance" in r for r in rules)
+    assert any("Monday" in r or "local start date" in r for r in rules)
+
+
+def test_bad_period(db):
+    with pytest.raises(ValueError):
+        summarize(db, ActivityFilter(), period="decade")

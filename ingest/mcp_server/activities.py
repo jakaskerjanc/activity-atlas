@@ -94,3 +94,68 @@ def get_activity(db: Database, activity_id: str) -> dict:
         "SELECT provider, provider_activity_id, url, deleted_at FROM activity_sources "
         "WHERE activity_id = ? ORDER BY provider", (activity_id,))]
     return {"data": data, "counted": counted([] if a["visible"] else ["hidden activity"], 1)}
+
+
+PERIOD_KEYS = {
+    "week": f"date({LOCAL_DATE}, '-6 days', 'weekday 1')",
+    "month": "substr(a.start_local, 1, 7)",
+    "year": "substr(a.start_local, 1, 4)",
+    "all": "'all'",
+}
+
+SUMMARY_RULES = [
+    "periods by local start date; weeks start on Monday",
+    "pace and speed = total moving time / total distance, over activities with both",
+    "avg HR = each activity's avg HR weighted by its moving time, over activities with both",
+    "unknown values are left out of sums, never counted as 0",
+]
+
+_PACE_OK = "a.distance > 0 AND a.moving_time > 0"
+_HR_OK = "a.avg_hr IS NOT NULL AND a.moving_time > 0"
+
+
+def summarize(db: Database, f: ActivityFilter, period: str = "year", by_type: bool = True) -> dict:
+    if period not in PERIOD_KEYS:
+        raise ValueError(f"period must be one of {', '.join(PERIOD_KEYS)}")
+    where, params, rules = where_sql(f)
+    group = "period, a.type" if by_type else "period"
+    rows = db.conn.execute(
+        f"SELECT {PERIOD_KEYS[period]} AS period, {'a.type' if by_type else 'NULL'} AS type, "
+        "count(*) AS n, sum(a.distance) AS dist, count(a.distance) AS dist_known, "
+        "sum(a.moving_time) AS moving, sum(a.elapsed_time) AS elapsed, "
+        "sum(a.elevation_gain) AS gain, count(a.elevation_gain) AS gain_known, "
+        f"sum(CASE WHEN {_PACE_OK} THEN a.moving_time END) AS pace_s, "
+        f"sum(CASE WHEN {_PACE_OK} THEN a.distance END) AS pace_m, "
+        f"count(CASE WHEN {_PACE_OK} THEN 1 END) AS pace_n, "
+        f"sum(CASE WHEN {_HR_OK} THEN a.avg_hr * a.moving_time END) AS hr_w, "
+        f"sum(CASE WHEN {_HR_OK} THEN a.moving_time END) AS hr_s, "
+        f"count(CASE WHEN {_HR_OK} THEN 1 END) AS hr_n "
+        f"FROM activities a WHERE {where} GROUP BY {group} ORDER BY {group}",
+        params,
+    ).fetchall()
+    out = []
+    for r in rows:
+        row = {"period": r["period"]}
+        if by_type:
+            row["type"] = r["type"]
+        row.update({
+            "count": r["n"],
+            "distance_km": None if not r["dist_known"] else round(r["dist"] / 1000, 2),
+            "distance_known": r["dist_known"],
+            "moving_h": None if r["moving"] is None else round(r["moving"] / 3600, 2),
+            "elapsed_h": None if r["elapsed"] is None else round(r["elapsed"] / 3600, 2),
+            "gain_m": _round(r["gain"], 0),
+            "gain_known": r["gain_known"],
+            "pace_min_km": pace_str(r["pace_s"], r["pace_m"]),
+            "speed_kmh": speed_kmh(r["pace_s"], r["pace_m"]),
+            "pace_basis_count": r["pace_n"],
+            "avg_hr": None if not r["hr_s"] else round(r["hr_w"] / r["hr_s"], 1),
+            "hr_known": r["hr_n"],
+        })
+        out.append(row)
+    total = sum(r["n"] for r in rows)
+    excluded = {
+        "no distance or moving time (pace)": sum(r["n"] - r["pace_n"] for r in rows),
+        "no avg HR or moving time (HR)": sum(r["n"] - r["hr_n"] for r in rows),
+    }
+    return {"data": {"period": period, "rows": out}, "counted": counted(rules + SUMMARY_RULES, total, excluded)}
