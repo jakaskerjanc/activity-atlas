@@ -3,11 +3,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityCalendar, shownYear } from "./ActivityCalendar";
 import { activityCalendar } from "../analytics";
-import { activity } from "../testFixtures";
+import { record } from "../testFixtures";
 
 // December 2023 through 2024, with one long day in August 2024.
 const years = activityCalendar(
-  [activity({ ts: Date.UTC(2024, 7, 18, 9) / 1000, moving_time: 5 * 3600 })],
+  [record({ ts: Date.UTC(2024, 7, 18, 9) / 1000, moving_time: 5 * 3600 })],
   Date.UTC(2023, 11, 1) / 1000,
   Date.UTC(2025, 0, 1) / 1000 - 1,
 );

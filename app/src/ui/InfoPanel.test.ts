@@ -45,7 +45,7 @@ describe("InfoPanel body", () => {
     const html = renderToStaticMarkup(createElement(InfoPanel, { ...props, compactCards: true }));
     expect(html).toContain("repeat(4, 1fr)");
     const wide = renderToStaticMarkup(createElement(InfoPanel, props));
-    expect(wide).toContain("1fr 1fr");
+    expect(wide).toContain("repeat(2, 1fr)");
   });
 
   test("scrolls instead of outgrowing the viewport", () => {

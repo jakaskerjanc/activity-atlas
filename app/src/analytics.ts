@@ -1,9 +1,11 @@
 // Pure stat view-models for the Analytics page. No React / Mapbox deps. Everything is
-// derived in the browser from the visible activities, so it follows the Activity filter
-// and reconciles with the map's totals.
+// derived in the browser from the visible activities (activities.json records, with or
+// without a route), so it follows the Activity filter and reconciles with the map's
+// totals. Unknown values are absent from a record, never 0: sums skip them, as
+// stats.ts:aggregate does, and a sum with no known value at all is undefined ("—").
 
-import type { ActivityFeature } from "./types";
-import type { StatCard } from "./stats";
+import type { ActivityRecord } from "./types";
+import { aggregate, type StatCard } from "./stats";
 import { formatKm } from "./format";
 
 const DAY_SEC = 86400;
@@ -15,7 +17,8 @@ export interface Consistency {
   /** Most consecutive active days. */
   longestStreak: number;
   activitiesPerWeek: number;
-  distancePerWeekM: number;
+  /** Known distances per week; undefined when no activity has a distance. */
+  distancePerWeekM: number | undefined;
 }
 
 /**
@@ -24,11 +27,11 @@ export interface Consistency {
  * inflate them.
  */
 export function consistency(
-  features: readonly ActivityFeature[],
+  activities: readonly ActivityRecord[],
   fromTs: number,
   toTs: number,
 ): Consistency {
-  const days = [...new Set(features.map((f) => Math.floor(f.properties.ts / DAY_SEC)))].sort(
+  const days = [...new Set(activities.map((a) => Math.floor(a.ts / DAY_SEC)))].sort(
     (a, b) => a - b,
   );
   let longestStreak = 0;
@@ -39,12 +42,12 @@ export function consistency(
   }
 
   const weeks = Math.max(1, (toTs - fromTs + 1) / WEEK_SEC);
-  const distance = features.reduce((sum, f) => sum + f.properties.distance, 0);
+  const { distance } = aggregate(activities);
   return {
     activeDays: days.length,
     longestStreak,
-    activitiesPerWeek: features.length / weeks,
-    distancePerWeekM: distance / weeks,
+    activitiesPerWeek: activities.length / weeks,
+    distancePerWeekM: distance.n === 0 ? undefined : distance.sum / weeks,
   };
 }
 
@@ -70,9 +73,13 @@ const HOUR_SEC = 3600;
 /** Shade step of a calendar day: 0 = no activity, then <1h, 1-2h, 2-4h, 4h+. */
 export type CalendarLevel = 0 | 1 | 2 | 3 | 4;
 
-export function calendarLevel(movingSec: number, count: number): CalendarLevel {
+/**
+ * A day with activities but no known moving time is still an active day: it gets the
+ * lowest active shade rather than none, and its tooltip reads "—".
+ */
+export function calendarLevel(movingSec: number | undefined, count: number): CalendarLevel {
   if (count === 0) return 0;
-  if (movingSec < HOUR_SEC) return 1;
+  if (movingSec == null || movingSec < HOUR_SEC) return 1;
   if (movingSec < 2 * HOUR_SEC) return 2;
   if (movingSec < 4 * HOUR_SEC) return 3;
   return 4;
@@ -85,8 +92,11 @@ export interface CalendarDay {
   week: number;
   /** Row: 0 = Monday ... 6 = Sunday. */
   weekday: number;
-  /** Moving time of the activities that started this day. */
-  movingSec: number;
+  /**
+   * Known moving time of the activities that started this day: 0 without activities,
+   * undefined when none of the day's activities has a moving time.
+   */
+  movingSec: number | undefined;
   count: number;
   level: CalendarLevel;
 }
@@ -99,7 +109,8 @@ export interface CalendarYear {
   weeks: number;
   /** Each month with days in the span, at the column of its first such day. */
   months: { month: number; week: number }[];
-  movingSec: number;
+  /** Known moving time over the year's days; undefined when active days have none. */
+  movingSec: number | undefined;
   activeDays: number;
 }
 
@@ -109,18 +120,17 @@ export interface CalendarYear {
  * first year from October.
  */
 export function activityCalendar(
-  features: readonly ActivityFeature[],
+  activities: readonly ActivityRecord[],
   fromTs: number,
   toTs: number,
 ): CalendarYear[] {
   if (toTs < fromTs) return [];
-  const byDay = new Map<number, { movingSec: number; count: number }>();
-  for (const f of features) {
-    const day = Math.floor(f.properties.ts / DAY_SEC);
-    const entry = byDay.get(day) ?? { movingSec: 0, count: 0 };
-    entry.movingSec += f.properties.moving_time;
-    entry.count += 1;
-    byDay.set(day, entry);
+  const byDay = new Map<number, ActivityRecord[]>();
+  for (const a of activities) {
+    const day = Math.floor(a.ts / DAY_SEC);
+    const list = byDay.get(day);
+    if (list) list.push(a);
+    else byDay.set(day, [a]);
   }
 
   const firstDay = Math.floor(fromTs / DAY_SEC);
@@ -140,9 +150,16 @@ export function activityCalendar(
       movingSec: 0,
       activeDays: 0,
     };
+    // The year's moving time, as a total: known values only, "—" when none is known.
+    const yearMoving = { sum: 0, n: 0 };
     for (let day = Math.max(jan1, firstDay); day <= Math.min(dec31, lastDay); day++) {
       const pos = day - jan1 + offset;
-      const { movingSec, count } = byDay.get(day) ?? { movingSec: 0, count: 0 };
+      const dayActivities = byDay.get(day) ?? [];
+      const count = dayActivities.length;
+      const moving = aggregate(dayActivities).moving;
+      const movingSec = count === 0 ? 0 : moving.n === 0 ? undefined : moving.sum;
+      yearMoving.sum += moving.sum;
+      yearMoving.n += moving.n;
       const d: CalendarDay = {
         ts: day * DAY_SEC,
         week: Math.floor(pos / 7),
@@ -152,11 +169,11 @@ export function activityCalendar(
         level: calendarLevel(movingSec, count),
       };
       cal.days.push(d);
-      cal.movingSec += movingSec;
       if (count > 0) cal.activeDays += 1;
       const month = new Date(d.ts * 1000).getUTCMonth();
       if (cal.months.at(-1)?.month !== month) cal.months.push({ month, week: d.week });
     }
+    cal.movingSec = cal.activeDays > 0 && yearMoving.n === 0 ? undefined : yearMoving.sum;
     years.push(cal);
   }
   return years;

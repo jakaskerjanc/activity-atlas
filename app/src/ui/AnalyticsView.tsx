@@ -1,6 +1,7 @@
 // Analytics page: numbers about the visible activities, on a surface that covers the map.
-// The side panel stays beside it with the same Activity filter, so every figure here
-// describes exactly the activities the map draws.
+// The side panel stays beside it with the same Activity filter. Every figure here covers
+// the visible activities with or without a route; the map draws the routed ones, and its
+// totals cover the same visible set, so the two pages' totals are the same numbers.
 
 import { useMemo, type CSSProperties } from "react";
 import { SectionHeading, StatsSection } from "./StatsSection";
@@ -17,13 +18,15 @@ import {
 } from "./layout";
 import { rangeTs, type ActivityFilter } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
+import { totalCards } from "../stats";
 import { formatMonth } from "../format";
-import type { ActivityFeature } from "../types";
+import type { ActivityRecord } from "../types";
 
 interface Props {
   /** null until the data loads. */
   filter: ActivityFilter | null;
-  visible: ActivityFeature[];
+  /** The visible activities, as App hands them to the map's totals too. */
+  visible: ActivityRecord[];
   sidePanelExpanded: boolean;
 }
 
@@ -45,12 +48,14 @@ export function AnalyticsView({ filter, visible, sidePanelExpanded }: Props) {
   const left = sidePanelExpanded && !narrow ? EXPANDED_LEFT : COLLAPSED_LEFT;
   const statColumns = useMediaQuery(STATS_ROW_QUERY) ? 2 : 4;
 
-  const { cards, calendar } = useMemo(() => {
-    if (!filter) return { cards: [], calendar: [] };
+  const { totals, cards, calendar } = useMemo(() => {
+    if (!filter) return { totals: [], cards: [], calendar: [] };
     // Stop the range at now, so a range ending this month doesn't count days still to come.
     const [from, to] = rangeTs(filter);
     const end = Math.min(to, Date.now() / 1000);
     return {
+      // The map panel's aggregate cards, from the same function and the same activities.
+      totals: totalCards(visible),
       cards: consistencyCards(consistency(visible, from, end)),
       calendar: activityCalendar(visible, from, end),
     };
@@ -81,6 +86,14 @@ export function AnalyticsView({ filter, visible, sidePanelExpanded }: Props) {
               </p>
             ) : (
               <>
+                <section style={card}>
+                  <StatsSection
+                    title="Totals"
+                    subtitle="Distance, climbing and time"
+                    cards={totals}
+                    columns={statColumns}
+                  />
+                </section>
                 <section style={card}>
                   <StatsSection
                     title="Consistency"
