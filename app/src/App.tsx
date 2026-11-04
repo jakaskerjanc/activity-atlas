@@ -24,6 +24,7 @@ import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
 import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
 import { buildProfile } from "./profile";
+import { cursorLngLat } from "./routeCursor";
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -198,6 +199,11 @@ export default function App() {
     [selectedDetail, selectedFeature],
   );
 
+  const cursorPoint = useMemo(
+    () => (selectedDetail ? cursorLngLat(selectedDetail, cursor) : null),
+    [selectedDetail, cursor],
+  );
+
   const panelBody = useMemo(() => {
     if (!selectedFeature) return undefined;
     if (selectedDetail && profile) {
@@ -257,6 +263,9 @@ export default function App() {
         replayEpoch={replayEpoch}
         onReplayReady={onReplayReady}
         sidePanelExpanded={!panels.sideCollapsed}
+        cursorPoint={cursorPoint}
+        selectedDetail={selectedDetail}
+        onCursor={setCursor}
       />
 
       {/* Vignette for depth (decorative, click-through). */}

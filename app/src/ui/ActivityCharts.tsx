@@ -12,6 +12,7 @@ import {
   linePath,
   nearestIndex,
   niceTicks,
+  paceTicks,
   readout,
   type ChartKind,
   type ChartSeries,
@@ -148,7 +149,7 @@ function Chart({ series, x, width, sx, cursor, onMove, onLeave }: ChartProps) {
     return invert ? top + f * (bottom - top) : bottom - f * (bottom - top);
   };
   const color = COLOR[kind];
-  const ticks = niceTicks(lo, hi, kind === "elevation" ? 3 : 2);
+  const ticks = kind === "pace" ? paceTicks(lo, hi) : niceTicks(lo, hi, kind === "elevation" ? 3 : 2);
   const cx = cursor == null ? null : sx(x[cursor]);
   const cv = cursor == null ? null : values[cursor];
 

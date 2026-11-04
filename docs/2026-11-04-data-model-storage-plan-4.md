@@ -56,7 +56,10 @@ This is plan 4 of 4.
   (`isFootBased`) or speed for the rest (`speed`). Distance x axis when `d`
   exists, else time. No toggle. Cadence only in the readout.
 - **Pace:** centred 5-point moving mean of `speed`; speed `< 0.3` m/s is a
-  gap; y domain is the 5th–95th percentile of pace; faster at the top.
+  gap; y domain is the 5th–95th percentile of pace, capped at twice the
+  median (added in Task 7 after the real-data check: a hike's slow climbing
+  squashed its walking pace into the top tenth); faster at the top; ticks on
+  whole minutes.
 - **Chart heights:** elevation 84 px, HR and pace/speed 52 px. Panel
   `maxHeight: "calc(100vh - 140px)"`.
 - **Neutral route color** for a missing ramp value: `NEUTRAL = "#7a7f8c"`.

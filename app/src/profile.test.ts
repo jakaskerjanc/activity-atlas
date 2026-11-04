@@ -5,6 +5,7 @@ import {
   linePath,
   nearestIndex,
   niceTicks,
+  paceTicks,
   readout,
   smoothSpeed,
 } from "./profile";
@@ -59,6 +60,22 @@ describe("buildProfile", () => {
     const pace = buildProfile(detail({ t, speed }), "Run")!.charts[0];
     expect(pace.domain[1]).toBeLessThan(400); // the outlier (~3,200 s/km) is clipped
     expect(pace.domain[0]).toBeGreaterThan(300);
+  });
+
+  test("pace axis stops at twice the median, so a slow climb doesn't squash the walking", () => {
+    // Median ~14:36/km with a long tail of slow climbing (~46 min/km).
+    const speed = Array.from({ length: 200 }, (_, i) => (i < 140 ? 1.14 : 0.36));
+    const t = speed.map((_, i) => i * 5);
+    const pace = buildProfile(detail({ t, speed }), "Hike")!.charts[0];
+    expect(pace.domain[1]).toBeCloseTo(2 * (1000 / 1.14), 0);
+  });
+
+  test("pace ticks land on whole minutes", () => {
+    const speed = Array.from({ length: 100 }, (_, i) => 1000 / (600 + i * 12)); // 10:00 .. ~29:48 /km
+    const pace = buildProfile(detail({ t: speed.map((_, i) => i * 5), speed }), "Hike")!.charts[0];
+    const ticks = paceTicks(pace.domain[0], pace.domain[1]);
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const t of ticks) expect(t % 60).toBe(0);
   });
 
   test("speed is km/h from 0", () => {

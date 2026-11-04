@@ -76,8 +76,11 @@ function paceChart(speed: Series): ChartSeries | null {
   const values = smoothSpeed(speed).map((v) => (v != null && v >= STOP_SPEED ? 1000 / v : null));
   const sorted = present(values).sort((a, b) => a - b);
   if (sorted.length === 0) return null;
+  // p5..p95, and never slower than twice the median: hikes have a long tail of slow
+  // climbing that would otherwise squash the walking pace into the top of the chart.
+  // Slower samples clip to the bottom edge; the readout still shows their value.
   let lo = percentile(sorted, 0.05);
-  let hi = percentile(sorted, 0.95);
+  let hi = Math.min(percentile(sorted, 0.95), 2 * percentile(sorted, 0.5));
   if (hi - lo < 30) [lo, hi] = [(lo + hi) / 2 - 15, (lo + hi) / 2 + 15];
   return chart("pace", values, [lo, hi], true);
 }
@@ -118,6 +121,11 @@ export function niceTicks(lo: number, hi: number, count = 3): number[] {
   const ticks: number[] = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
   return ticks;
+}
+
+/** Pace ticks (seconds per km) on whole minutes. */
+export function paceTicks(lo: number, hi: number): number[] {
+  return niceTicks(lo / 60, hi / 60, 3).map((m) => Math.round(m * 60));
 }
 
 const pt = (x: number, y: number) => `${x.toFixed(1)},${y.toFixed(1)}`;

@@ -297,7 +297,9 @@ Top to bottom:
 - **Pace/speed smoothing:** the app plots a centred 5-point moving mean of
   `speed` (about 25 s at the 5 s step), used for the readout too. Pace below
   0.3 m/s (standing) is a gap, and the pace axis spans the 5th–95th
-  percentile so one stop doesn't flatten the chart.
+  percentile, capped at twice the median pace, so one stop or a long slow
+  climb doesn't flatten the chart. Slower samples clip to the bottom edge;
+  the readout still shows their value.
 - **Hover:** pointer (mouse, pen or touch) over any chart sets one shared
   **cursor**: an index into the detail arrays. A vertical line crosses all
   charts at that point, and the readout fills in.
