@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
-  density,
+  climbingRidgeline,
+  daysInMonth,
   formatGain,
-  hilliness,
-  hillinessRidgeline,
+  POINTS_PER_DAY,
+  ridgeHeight,
   ridgeLabel,
   ridgePaths,
+  smoothDaily,
   type MonthRidge,
 } from "./ridgeline";
 import { median, quantile } from "./stats";
@@ -27,96 +29,104 @@ describe("median and quantile", () => {
   });
 });
 
-describe("hilliness", () => {
-  test("metres climbed per km", () => {
-    expect(hilliness(record({ distance: 8000, elevation_gain: 400 }))).toBe(50);
-    expect(hilliness(record({ distance: 10000, elevation_gain: 0 }))).toBe(0);
-  });
-
-  test("unknown without distance or gain, or under 1 km", () => {
-    expect(hilliness(record({ distance: undefined }))).toBeUndefined();
-    expect(hilliness(record({ elevation_gain: undefined }))).toBeUndefined();
-    expect(hilliness(record({ distance: 999, elevation_gain: 30 }))).toBeUndefined();
+describe("daysInMonth", () => {
+  test("lengths, leap years included", () => {
+    expect(daysInMonth(month(2024, 1))).toBe(31);
+    expect(daysInMonth(month(2024, 2))).toBe(29);
+    expect(daysInMonth(month(2025, 2))).toBe(28);
+    expect(daysInMonth(month(2025, 4))).toBe(30);
   });
 });
 
-describe("density", () => {
-  test("the area under the curve is the number of values", () => {
-    const xs = Array.from({ length: 2001 }, (_, i) => i * 0.05);
-    const d = density([20, 40, 60], xs, 2);
-    const area = d.reduce((s, v) => s + v * 0.05, 0);
-    expect(area).toBeCloseTo(3, 1);
+describe("smoothDaily", () => {
+  test("a lone day peaks at its own gain, in the middle of the day", () => {
+    const curve = smoothDaily([0, 0, 500, 0, 0]);
+    expect(curve).toHaveLength(5 * POINTS_PER_DAY + 1);
+    // Day 3 (index 2) runs from 2 to 3 days in; its middle, 2.5, is a sample point.
+    expect(Math.max(...curve)).toBe(500);
+    expect(curve.indexOf(500)).toBe(2.5 * POINTS_PER_DAY);
   });
 
-  test("values near 0 keep their weight, reflected at the axis", () => {
-    const xs = Array.from({ length: 401 }, (_, i) => i * 0.05);
-    const area = density([0.5], xs, 2).reduce((s, v) => s + v * 0.05, 0);
-    expect(area).toBeCloseTo(1, 1);
+  test("no gain, no height", () => {
+    expect(smoothDaily([0, 0, 0]).every((v) => v === 0)).toBe(true);
   });
 });
 
-describe("hillinessRidgeline", () => {
-  const jan = (id: string, distance?: number, gain?: number) =>
-    record({ id, ts: at("2024-01-10T08:00:00Z"), distance, elevation_gain: gain });
-  const mar = (id: string, distance?: number, gain?: number) =>
-    record({ id, ts: at("2024-03-31T23:00:00Z"), distance, elevation_gain: gain });
+describe("climbingRidgeline", () => {
+  const act = (id: string, iso: string, gain?: number) =>
+    record({ id, ts: at(iso), elevation_gain: gain });
 
   test("one ridge per month of the range, oldest first, empty months included", () => {
-    const { ridges } = hillinessRidgeline(
-      [mar("b", 5000, 50), jan("a", 10000, 100)],
+    const { ridges } = climbingRidgeline(
+      [act("b", "2024-03-31T23:00:00Z", 50), act("a", "2024-01-10T08:00:00Z", 100)],
       month(2024, 1),
       month(2024, 3),
     );
     expect(ridges.map((r) => r.month)).toEqual([month(2024, 1), month(2024, 2), month(2024, 3)]);
+    expect(ridges.map((r) => r.days)).toEqual([31, 29, 31]);
     expect(ridges.map((r) => r.count)).toEqual([1, 0, 1]);
-    expect(ridges[1]).toMatchObject({ gainM: undefined, density: null, measured: 0 });
+    expect(ridges[1]).toMatchObject({ gainM: undefined, curve: null, activeDays: [] });
   });
 
-  test("gain counts every activity; the curve only those with a hilliness", () => {
-    const [ridge] = hillinessRidgeline(
-      [jan("run", 10000, 50), jan("gym", undefined, 30), jan("unknown", 5000, undefined)],
+  test("gain is summed per UTC day; days with an activity are marked, gain or not", () => {
+    const [ridge] = climbingRidgeline(
+      [
+        act("a", "2024-01-10T06:00:00Z", 100),
+        act("b", "2024-01-10T18:00:00Z", 250),
+        act("c", "2024-01-31T23:59:59Z", 40),
+        act("gym", "2024-01-02T07:00:00Z"),
+      ],
       month(2024, 1),
       month(2024, 1),
     ).ridges;
-    expect(ridge).toMatchObject({ count: 3, measured: 1, gainM: 80, medianMPerKm: 5 });
-    expect(ridge.density).toHaveLength(96);
+    expect(ridge.daily[9]).toBe(350);
+    expect(ridge.daily[30]).toBe(40);
+    expect(ridge.daily[1]).toBe(0);
+    expect(ridge.activeDays).toEqual([2, 10, 31]);
+    expect(ridge).toMatchObject({ count: 4, gainM: 390, biggestDay: { day: 10, gainM: 350 } });
+    expect(ridge.curve).toHaveLength(31 * POINTS_PER_DAY + 1);
   });
 
-  test("the axis ends at a round number past nearly all activities", () => {
-    const flat = Array.from({ length: 60 }, (_, i) => jan(`r${i}`, 10000, 40 + i));
-    const scramble = jan("x", 2000, 900);
-    const { xMax } = hillinessRidgeline([...flat, scramble], month(2024, 1), month(2024, 1));
-    expect(xMax).toBe(10);
-    const wide = hillinessRidgeline(
-      Array.from({ length: 10 }, (_, i) => jan(`h${i}`, 10000, 300 + i * 100)),
+  test("a month whose activities have no known gain has no curve", () => {
+    const [ridge] = climbingRidgeline(
+      [act("gym", "2024-01-02T07:00:00Z")],
       month(2024, 1),
       month(2024, 1),
-    );
-    expect(wide.xMax).toBe(120);
+    ).ridges;
+    expect(ridge).toMatchObject({ gainM: undefined, curve: null, biggestDay: undefined });
+    expect(ridge.activeDays).toEqual([2]);
   });
 
-  test("a busy month's ridge is taller than a quiet one's, on one scale", () => {
-    const busy = Array.from({ length: 6 }, (_, i) => jan(`b${i}`, 10000, 50));
-    const { ridges, maxDensity } = hillinessRidgeline(
-      [...busy, mar("q", 10000, 50)],
+  test("the shared scale is the highest point of any ridge", () => {
+    const { ridges, maxM } = climbingRidgeline(
+      [act("big", "2024-01-10T08:00:00Z", 1500), act("small", "2024-02-10T08:00:00Z", 100)],
       month(2024, 1),
-      month(2024, 3),
+      month(2024, 2),
     );
-    expect(Math.max(...ridges[0].density!)).toBe(maxDensity);
-    expect(Math.max(...ridges[2].density!)).toBeCloseTo(maxDensity / 6);
+    expect(maxM).toBe(Math.max(...ridges[0].curve!));
+    expect(Math.max(...ridges[1].curve!)).toBeCloseTo(maxM / 15);
   });
 });
 
 describe("ridge geometry", () => {
-  test("paths span the width with the baseline at y = 0", () => {
-    const { line, area } = ridgePaths([0, 2, 1], 200, 2, 40);
-    expect(line).toBe("M0,0L100,-40L200,-20");
-    expect(area).toBe("M0,0L100,-40L200,-20L200,0L0,0Z");
+  test("square-root scale shared by every row", () => {
+    expect(ridgeHeight(400, 400, 80)).toBe(80);
+    expect(ridgeHeight(100, 400, 80)).toBe(40);
+    expect(ridgeHeight(0, 400, 80)).toBe(0);
+    expect(ridgeHeight(10, 0, 80)).toBe(0);
   });
 
-  test("no NaN when nothing has height, no path without a curve", () => {
-    expect(ridgePaths([0, 0], 100, 0, 40).line).toBe("M0,0L100,0");
-    expect(ridgePaths(null, 200, 1, 40)).toEqual({ line: "", area: "" });
+  test("a short month's ridge ends before the axis does", () => {
+    const feb = new Array(28 * POINTS_PER_DAY + 1).fill(0);
+    const { area } = ridgePaths(feb, 310, 1, 40);
+    expect(area.endsWith("L280,0L0,0Z")).toBe(true);
+  });
+
+  test("paths with the baseline at y = 0, nothing without a curve", () => {
+    const curve = [0, 100, 25, 0, 0];
+    const { line } = ridgePaths(curve, 31 * POINTS_PER_DAY, 100, 40);
+    expect(line.startsWith("M0,0L1,-40L2,-20")).toBe(true);
+    expect(ridgePaths(null, 200, 100, 40)).toEqual({ line: "", area: "" });
   });
 });
 
@@ -130,15 +140,17 @@ describe("labels", () => {
   test("accessible row name", () => {
     const base: MonthRidge = {
       month: month(2026, 8),
+      days: 31,
       count: 0,
-      measured: 0,
       gainM: undefined,
-      medianMPerKm: undefined,
-      density: null,
+      daily: [],
+      activeDays: [],
+      biggestDay: undefined,
+      curve: null,
     };
-    expect(ridgeLabel({ ...base, count: 23, gainM: 3817, medianMPerKm: 11.6 })).toBe(
-      "August 2026 · 23 activities · 3,817 m gain · median 12 m/km",
-    );
+    expect(
+      ridgeLabel({ ...base, count: 23, gainM: 3817, biggestDay: { day: 14, gainM: 1204 } }),
+    ).toBe("August 2026 · 23 activities · 3,817 m gain · biggest day Aug 14, 2026: 1,204 m");
     expect(ridgeLabel({ ...base, count: 1 })).toBe(
       "August 2026 · 1 activity · elevation gain unknown",
     );

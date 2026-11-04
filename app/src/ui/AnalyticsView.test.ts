@@ -31,10 +31,12 @@ describe("AnalyticsView", () => {
     expect(html).toContain("August 2024 — August 2024");
   });
 
-  test("shows the hilliness ridgeline from the activities alone", () => {
+  test("shows the climbing ridgeline from the activities alone", () => {
     const html = render();
-    expect(html).toContain("Hilliness by month");
-    expect(html).toContain('aria-label="August 2024 · 1 activity · 100 m gain · median 10 m/km"');
+    expect(html).toContain("Climbing by month");
+    expect(html).toContain(
+      'aria-label="August 2024 · 1 activity · 100 m gain · biggest day Aug 18, 2024: 100 m"',
+    );
     expect(html).toContain("click a month to show only it");
   });
 
@@ -62,7 +64,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain("No activities match the filter");
     expect(html).not.toContain("Consistency");
     expect(html).not.toContain("Activity calendar");
-    expect(html).not.toContain("Hilliness by month");
+    expect(html).not.toContain("Climbing by month");
     expect(html).not.toContain("Elevation profiles");
   });
 

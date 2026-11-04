@@ -21,7 +21,7 @@ import {
 } from "./layout";
 import { rangeTs, type ActivityFilter, type MonthIsolation } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
-import { hillinessRidgeline } from "../ridgeline";
+import { climbingRidgeline } from "../ridgeline";
 import { heatmapGrid } from "../elevationHeatmap";
 import { totalCards } from "../stats";
 import { formatMonth } from "../format";
@@ -84,7 +84,7 @@ export function AnalyticsView({
   }, [filter, visible]);
 
   const ridgeline = useMemo(
-    () => (filter ? hillinessRidgeline(visible, filter.fromMonth, filter.toMonth) : null),
+    () => (filter ? climbingRidgeline(visible, filter.fromMonth, filter.toMonth) : null),
     [filter, visible],
   );
 
@@ -144,11 +144,11 @@ export function AnalyticsView({
                 </section>
                 <section style={card}>
                   <SectionHeading
-                    title="Hilliness by month"
+                    title="Climbing by month"
                     subtitle={
                       isolation
                         ? `Click ${formatMonth(isolation.month)} again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}`
-                        : "Metres climbed per km, and gain · click a month to show only it"
+                        : "Elevation gain per day, and total · click a month to show only it"
                     }
                   />
                   {ridgeline && (
