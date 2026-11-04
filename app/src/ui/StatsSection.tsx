@@ -5,63 +5,30 @@ import type { CSSProperties } from "react";
 import { MONO } from "./theme";
 import type { StatCard } from "../stats";
 
-interface Props {
+interface HeadingProps {
   title: string;
   subtitle: string;
-  cards: StatCard[];
-  links: { url: string; label: string }[];
-  /** One row of four smaller cards (when charts sit below). */
-  compact?: boolean;
+  /** Source links. The title links to the first; the rest are listed under the subtitle. */
+  links?: { url: string; label: string }[];
 }
 
-export function StatsSection({ title, subtitle, cards, links, compact = false }: Props) {
+interface Props extends HeadingProps {
+  cards: StatCard[];
+  /** One row of four smaller cards (when charts sit below). */
+  compact?: boolean;
+  /** Cards per row. Defaults to 4 when compact, else a 2x2 grid. */
+  columns?: number;
+}
+
+export function StatsSection({ title, subtitle, cards, links, compact = false, columns }: Props) {
   return (
     <>
-      <div style={{ marginBottom: 12 }}>
-        {links.length > 0 ? (
-          // The title links to the first source, as the single link always did.
-          <a
-            href={links[0].url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={links[0].label}
-            style={titleLink}
-          >
-            {title}
-          </a>
-        ) : (
-          <span style={titleText}>{title}</span>
-        )}
-        <span
-          style={{
-            display: "block",
-            fontSize: 10,
-            letterSpacing: ".14em",
-            color: "var(--text-muted)",
-            textTransform: "uppercase",
-            fontFamily: MONO,
-            marginTop: 4,
-          }}
-        >
-          {subtitle}
-        </span>
-        {links.slice(1).map((l) => (
-          <a
-            key={l.url}
-            href={l.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={extraLink}
-          >
-            {l.label}
-          </a>
-        ))}
-      </div>
+      <SectionHeading title={title} subtitle={subtitle} links={links} />
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: compact ? "repeat(4, 1fr)" : "1fr 1fr",
+          gridTemplateColumns: `repeat(${columns ?? (compact ? 4 : 2)}, 1fr)`,
           gap: 1,
           background: "var(--card-grid)",
           borderRadius: 10,
@@ -91,6 +58,47 @@ export function StatsSection({ title, subtitle, cards, links, compact = false }:
         ))}
       </div>
     </>
+  );
+}
+
+/** A panel section's title (a link to the first source, if any) over a small uppercase
+ * subtitle, then any further source links. */
+export function SectionHeading({ title, subtitle, links = [] }: HeadingProps) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {links.length > 0 ? (
+        // The title links to the first source, as the single link always did.
+        <a
+          href={links[0].url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={links[0].label}
+          style={titleLink}
+        >
+          {title}
+        </a>
+      ) : (
+        <span style={titleText}>{title}</span>
+      )}
+      <span
+        style={{
+          display: "block",
+          fontSize: 10,
+          letterSpacing: ".14em",
+          color: "var(--text-muted)",
+          textTransform: "uppercase",
+          fontFamily: MONO,
+          marginTop: 4,
+        }}
+      >
+        {subtitle}
+      </span>
+      {links.slice(1).map((l) => (
+        <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" style={extraLink}>
+          {l.label}
+        </a>
+      ))}
+    </div>
   );
 }
 

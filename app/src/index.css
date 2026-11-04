@@ -41,6 +41,15 @@
   --scrollbar: rgba(255, 255, 255, 0.12);
   --header-fade: rgba(10, 11, 15, 0.9);
 
+  /* Activity calendar: empty day, then <1h / 1-2h / 2-4h / 4h+ of moving time. One hue
+     (the accent), validated as an ordinal ramp against the card: on dark, more time
+     reads brighter, ending on the accent itself. */
+  --heat-0: rgba(255, 255, 255, 0.06);
+  --heat-1: #873b24;
+  --heat-2: #b44725;
+  --heat-3: #dc5428;
+  --heat-4: #ff6b3d;
+
   --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.65);
   --vignette-bg: radial-gradient(
     120% 90% at 60% 40%,
@@ -83,6 +92,13 @@
   --track: rgba(60, 60, 67, 0.2);
   --scrollbar: rgba(60, 60, 67, 0.28);
   --header-fade: rgba(238, 240, 244, 0.85);
+
+  /* Activity calendar: same steps, flipped so more time reads darker on light. */
+  --heat-0: rgba(60, 60, 67, 0.08);
+  --heat-1: #f79274;
+  --heat-2: #ea6840;
+  --heat-3: #ce4617;
+  --heat-4: #a73204;
 
   --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.12);
   --vignette-bg: radial-gradient(
@@ -202,5 +218,13 @@ input[type="range"].range-dual::-moz-range-thumb {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* On a phone the Map / Analytics switch shows icons only (its buttons keep their
+   aria-labels), so it fits beside the wordmark. */
+@media (max-width: 480px) {
+  .view-switch-label {
+    display: none;
   }
 }

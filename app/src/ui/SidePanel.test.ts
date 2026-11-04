@@ -6,10 +6,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SidePanel } from "./SidePanel";
 import { createActivityFilter } from "../activityFilter";
-import { activity } from "../testFixtures";
+import { record } from "../testFixtures";
 
 const props = {
-  filter: createActivityFilter([activity()]),
+  filter: createActivityFilter([record()]),
   onFilterChange: () => {},
   colorMode: "recency" as const,
   colorDomain: {
@@ -24,9 +24,21 @@ const props = {
   onColorModeChange: () => {},
   onStartReplay: () => {},
   canReplay: true,
+  showMapControls: true,
   collapsed: false,
   onToggle: () => {},
 };
+
+describe("SidePanel on the analytics page", () => {
+  test("keeps the filter but drops map coloring and replay", () => {
+    const html = renderToStaticMarkup(
+      createElement(SidePanel, { ...props, showMapControls: false }),
+    );
+    expect(html).toContain("Activity Types");
+    expect(html).not.toContain(">Color<");
+    expect(html).not.toContain("Replay history");
+  });
+});
 
 describe("SidePanel collapse", () => {
   test("renders an in-place toggle tab when expanded", () => {
