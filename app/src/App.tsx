@@ -14,15 +14,22 @@ import {
   visibleActivities,
   type ActivityFilter,
 } from "./activityFilter";
-import type { ActivityFeatureCollection, TrackPayload, Theme } from "./types";
-import { decodeTracks } from "./tracks";
+import type { ActivitiesFile, ActivityFeatureCollection, RoutesFile, Theme } from "./types";
+import { joinActivities } from "./tracks";
 import { formatDate, formatMonth, activityLinks } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 
-const DATA_URL = `${import.meta.env.BASE_URL}tracks.json`;
+const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
+const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${r.statusText}`);
+  return (await r.json()) as T;
+}
 
 // Initial theme: a saved choice wins, else follow the OS. Kept in sync with the
 // inline <head> script in index.html so the first paint doesn't flash.
@@ -66,13 +73,9 @@ export default function App() {
   const [replayEpoch, setReplayEpoch] = useState(0);
 
   useEffect(() => {
-    fetch(DATA_URL)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        return r.json();
-      })
-      .then((payload: TrackPayload) => {
-        const decoded = decodeTracks(payload);
+    Promise.all([fetchJson<RoutesFile>(ROUTES_URL), fetchJson<ActivitiesFile>(ACTIVITIES_URL)])
+      .then(([routes, activities]) => {
+        const decoded = joinActivities(routes, activities);
         setData(decoded);
         setFilter(createActivityFilter(decoded.features));
       })

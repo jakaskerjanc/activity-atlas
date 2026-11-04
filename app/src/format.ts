@@ -4,31 +4,39 @@ import type { ActivitySource } from "./types";
 
 const DASH = "—";
 
-/** meters -> km string, `digits` decimals (default 1). */
-export function formatKm(meters: number, digits = 1): string {
+/** meters -> km string, `digits` decimals (default 1). Dash when unknown. */
+export function formatKm(meters: number | undefined, digits = 1): string {
+  if (meters == null) return DASH;
   return (meters / 1000).toFixed(digits);
 }
 
-/** seconds -> "1h 39m" or "47m". */
-export function formatDuration(seconds: number): string {
+/** meters -> rounded whole meters with thousands separators, e.g. "1,204". */
+export function formatMeters(meters: number | undefined): string {
+  if (meters == null) return DASH;
+  return Math.round(meters).toLocaleString("en-US");
+}
+
+/** seconds -> "1h 39m" or "47m". Dash when unknown. */
+export function formatDuration(seconds: number | undefined): string {
+  if (seconds == null) return DASH;
   const total = Math.round(seconds / 60);
   const h = Math.floor(total / 60);
   const m = total % 60;
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
-/** min:sec per km, e.g. "5:06". Dash when distance is zero. */
-export function pacePerKm(meters: number, seconds: number): string {
-  if (meters <= 0) return DASH;
+/** min:sec per km, e.g. "5:06". Dash when either input is unknown or distance is zero. */
+export function pacePerKm(meters: number | undefined, seconds: number | undefined): string {
+  if (meters == null || seconds == null || meters <= 0) return DASH;
   const secPerKm = seconds / (meters / 1000);
   const m = Math.floor(secPerKm / 60);
   const s = Math.round(secPerKm % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** km/h with one decimal. Dash when time is zero. */
-export function speedKmh(meters: number, seconds: number): string {
-  if (seconds <= 0) return DASH;
+/** km/h with one decimal. Dash when either input is unknown or time is zero. */
+export function speedKmh(meters: number | undefined, seconds: number | undefined): string {
+  if (meters == null || seconds == null || seconds <= 0) return DASH;
   return (meters / 1000 / (seconds / 3600)).toFixed(1);
 }
 

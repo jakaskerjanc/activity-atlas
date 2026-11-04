@@ -4,6 +4,7 @@ import {
   formatDuration,
   pacePerKm,
   speedKmh,
+  formatMeters,
   formatDate,
   monthIndex,
   monthStart,
@@ -62,6 +63,21 @@ describe("speedKmh", () => {
   });
   test("zero time yields dash", () => {
     expect(speedKmh(1000, 0)).toBe("—");
+  });
+});
+
+describe("unknown values", () => {
+  test("every formatter dashes a missing input", () => {
+    expect(formatKm(undefined)).toBe("—");
+    expect(formatDuration(undefined)).toBe("—");
+    expect(formatMeters(undefined)).toBe("—");
+    expect(pacePerKm(1000, undefined)).toBe("—");
+    expect(speedKmh(undefined, 60)).toBe("—");
+  });
+
+  test("formatMeters rounds with separators", () => {
+    expect(formatMeters(1204.4)).toBe("1,204");
+    expect(formatMeters(0)).toBe("0");
   });
 });
 
