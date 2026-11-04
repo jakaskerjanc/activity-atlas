@@ -15,6 +15,7 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
       distance: 10000,
       moving_time: 3000,
       elevation_gain: 100,
+      channels: [],
       sources: [],
       ...props,
     },
@@ -29,19 +30,53 @@ describe("aggregate", () => {
     ]);
     expect(agg).toEqual({
       count: 2,
-      totalDistanceM: 15000,
-      totalElevationM: 150,
-      totalMovingSec: 4800,
+      distance: { sum: 15000, n: 2 },
+      elevation: { sum: 150, n: 2 },
+      moving: { sum: 4800, n: 2 },
     });
   });
 
   test("empty collection is all zeros", () => {
     expect(aggregate([])).toEqual({
       count: 0,
-      totalDistanceM: 0,
-      totalElevationM: 0,
-      totalMovingSec: 0,
+      distance: { sum: 0, n: 0 },
+      elevation: { sum: 0, n: 0 },
+      moving: { sum: 0, n: 0 },
     });
+  });
+});
+
+describe("coverage", () => {
+  test("aggregate counts coverage per value", () => {
+    const agg = aggregate([
+      feature({ elevation_gain: 100 }),
+      feature({ elevation_gain: undefined }),
+      feature({ elevation_gain: 50 }),
+    ]);
+    expect(agg.count).toBe(3);
+    expect(agg.elevation).toEqual({ sum: 150, n: 2 });
+  });
+
+  test("totalCards notes partial coverage", () => {
+    const cards = totalCards([
+      feature({ elevation_gain: 100 }),
+      feature({ elevation_gain: undefined }),
+      feature({ elevation_gain: 50 }),
+    ]);
+    expect(cards[2]).toEqual({ value: "150", label: "Elevation m", note: "2 of 3" });
+    expect(cards[1].note).toBeUndefined();
+  });
+
+  test("totalCards dashes a value nobody has", () => {
+    const cards = totalCards([feature({ distance: undefined }), feature({ distance: undefined })]);
+    expect(cards[1]).toEqual({ value: "—", label: "Total km", accent: true });
+  });
+
+  test("activityCards dashes missing values", () => {
+    const cards = activityCards(feature({ distance: undefined, elevation_gain: undefined }));
+    expect(cards[0].value).toBe("—");
+    expect(cards[2].value).toBe("—");
+    expect(cards[3]).toEqual({ value: "—", label: "Pace /km" });
   });
 });
 

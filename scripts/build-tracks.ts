@@ -19,10 +19,8 @@ import { simplifyLngLat } from "./simplify.ts";
 import { toRecord, type ActivityRow } from "./numbers.ts";
 import type {
   ActivitiesFile,
-  ActivityRecord,
   ActivitySource,
   DetailFile,
-  EncodedTrack,
   RoutesFile,
 } from "./types.ts";
 
@@ -139,25 +137,11 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
   }
 }
 
-/** v3 bridge for the app until it reads the new files. TODO(Plan 4 Task 3): remove. */
-function legacyTracks(files: DisplayFiles): { v: 3; tracks: EncodedTrack[] } {
-  const tracks: EncodedTrack[] = [];
-  for (const a of files.activities.activities as ActivityRecord[]) {
-    const poly = files.routes.routes[a.id];
-    if (!poly) continue;
-    tracks.push({
-      id: a.id, name: a.name, type: a.type, ts: a.ts, start_date: a.start_date,
-      distance: a.distance ?? 0, moving_time: a.moving_time ?? 0, elevation_gain: a.elevation_gain ?? 0,
-      sources: a.sources, poly,
-    });
-  }
-  return { v: 3, tracks };
-}
-
 async function main() {
   const files = readDisplayFiles(DB_PATH);
   await writeDisplayFiles(files, OUT_DIR);
-  await writeFile(LEGACY_TRACKS, JSON.stringify(legacyTracks(files)));
+  // The pre-Plan 4 tracks.json; a stale local copy would be bundled by Vite.
+  await rm(LEGACY_TRACKS, { force: true });
   const { stats } = files;
   console.log(
     `Wrote ${Object.keys(files.routes.routes).length} routes, ${files.activities.activities.length} activities, ` +

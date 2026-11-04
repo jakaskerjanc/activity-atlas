@@ -82,20 +82,3 @@ export interface DetailFile {
   /** rpm / spm as stored */
   cad?: (number | null)[];
 }
-
-/**
- * v3 bridge (tracks.json), still written until the app reads the new files.
- * TODO(Plan 4 Task 3): remove.
- */
-export interface EncodedTrack {
-  id: string;
-  name: string;
-  type: string;
-  ts: number;
-  start_date: string;
-  distance: number;
-  moving_time: number;
-  elevation_gain: number;
-  sources: ActivitySource[];
-  poly: string;
-}
