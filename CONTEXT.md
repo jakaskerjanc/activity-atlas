@@ -21,11 +21,11 @@ The user's current choice of which activities are shown: a type selection plus a
 _Avoid_: activity window, view, selection
 
 **Type selection**:
-The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state.
+The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state. On load it holds Run, Hike, Walk and Ride (those the data has, or every type when it has none of them).
 _Avoid_: enabled types, type filter
 
 **Date range**:
-An inclusive span of whole calendar months (UTC) that an activity's start must fall within.
+An inclusive span of whole calendar months (UTC) that an activity's start must fall within. Clicking a month in the ridgeline narrows it to that month (isolating the month); clicking the month again restores the range it had before.
 _Avoid_: date window, time window
 
 **Visible activities**:
@@ -60,3 +60,15 @@ A calendar day (UTC, like the date range) with at least one visible activity.
 
 **Streak**:
 A run of consecutive active days.
+
+**Route profile**:
+An activity's elevation every 100 m of distance, measured from its start (profiles.json), so a loop starts and ends near 0 wherever it was.
+_Avoid_: elevation profile (that is the selected activity's chart)
+
+**Elevation profiles** (chart):
+The Analytics chart that draws every visible activity's route profile as a see-through line against distance in km, in its activity type's color; repeated climbs darken where the lines stack up.
+_Avoid_: heatmap
+
+**Ridgeline**:
+The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each row is labelled with the month's summed elevation gain.
+_Avoid_: joyplot

@@ -3,8 +3,10 @@ import { featureFilter } from "mapbox-gl/dist/style-spec/index.es.js";
 import {
   createActivityFilter,
   filterExpression,
+  onlyMonth,
   setFromMonth,
   setToMonth,
+  toggleMonth,
   toggleType,
   typeCounts,
   typesByCount,
@@ -26,8 +28,24 @@ const run2 = record({ id: "s:4", type: "Run", ts: at("2024-05-02T07:00:00Z") });
 const all = [run, ride, hike, run2];
 
 describe("a new activity filter", () => {
-  test("shows every activity", () => {
+  test("shows every activity of the default types", () => {
     expect(visibleActivities(createActivityFilter(all))).toEqual(all);
+  });
+
+  test("starts with only Run, Hike, Walk and Ride on", () => {
+    const swim = record({ id: "s:9", type: "Swim", ts: at("2024-02-01T07:00:00Z") });
+    const walk = record({ id: "s:8", type: "Walk", ts: at("2024-02-02T07:00:00Z") });
+    const f = createActivityFilter([...all, swim, walk]);
+    expect([...f.types].sort()).toEqual(["Hike", "Ride", "Run", "Walk"]);
+    expect(f.availableTypes).toContain("Swim");
+    expect(visibleActivities(f)).not.toContain(swim);
+    expect(visibleActivities(toggleType(f, "Swim"))).toContain(swim);
+  });
+
+  test("turns every type on when the data has none of the defaults", () => {
+    const gym = record({ id: "g:1", type: "WeightTraining" });
+    const swim = record({ id: "g:2", type: "Swim" });
+    expect([...createActivityFilter([gym, swim]).types].sort()).toEqual(["Swim", "WeightTraining"]);
   });
 });
 
@@ -172,5 +190,44 @@ describe("with no activities", () => {
   test("still has a finite date range for the slider", () => {
     const f = createActivityFilter([]);
     expect([f.minMonth, f.maxMonth, f.fromMonth, f.toMonth].every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("isolating a month", () => {
+  test("onlyMonth narrows the range to that month", () => {
+    const f = onlyMonth(createActivityFilter(all), month(2024, 3));
+    expect([f.fromMonth, f.toMonth]).toEqual([month(2024, 3), month(2024, 3)]);
+    expect(visibleActivities(f)).toEqual([ride]);
+  });
+
+  test("onlyMonth clamps to the data's months", () => {
+    const f = createActivityFilter(all);
+    expect(onlyMonth(f, month(2020, 1)).fromMonth).toBe(month(2024, 1));
+    expect(onlyMonth(f, month(2030, 1)).toMonth).toBe(month(2024, 5));
+  });
+
+  test("a click isolates the month and keeps the type selection", () => {
+    const f = toggleType(setToMonth(createActivityFilter(all), month(2024, 4)), "Ride");
+    const [isolated, memory] = toggleMonth(f, month(2024, 1), null);
+    expect([isolated.fromMonth, isolated.toMonth]).toEqual([month(2024, 1), month(2024, 1)]);
+    expect(isolated.types).toBe(f.types);
+    expect(memory).toEqual({ month: month(2024, 1), fromMonth: month(2024, 1), toMonth: month(2024, 4) });
+  });
+
+  test("a second click on the isolated month restores the range before", () => {
+    const f = setFromMonth(createActivityFilter(all), month(2024, 2));
+    const [isolated, memory] = toggleMonth(f, month(2024, 3), null);
+    const [restored, cleared] = toggleMonth(isolated, month(2024, 3), memory);
+    expect([restored.fromMonth, restored.toMonth]).toEqual([month(2024, 2), month(2024, 5)]);
+    expect(cleared).toBeNull();
+  });
+
+  test("once the range moved some other way, a click isolates afresh", () => {
+    const f = createActivityFilter(all);
+    const [isolated, memory] = toggleMonth(f, month(2024, 3), null);
+    const widened = setToMonth(isolated, month(2024, 4));
+    const [again, next] = toggleMonth(widened, month(2024, 4), memory);
+    expect([again.fromMonth, again.toMonth]).toEqual([month(2024, 4), month(2024, 4)]);
+    expect(next).toEqual({ month: month(2024, 4), fromMonth: month(2024, 3), toMonth: month(2024, 4) });
   });
 });

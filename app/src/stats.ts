@@ -85,3 +85,16 @@ export function activityCards(feature: ActivityFeature): StatCard[] {
       : { value: speedKmh(p.distance, p.moving_time), label: "Speed km/h" },
   ];
 }
+
+/** The middle value of a non-empty list (the mean of the two middle values when even). */
+export function median(values: readonly number[]): number {
+  const v = [...values].sort((a, b) => a - b);
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+
+/** The value at quantile q (0..1) of a non-empty list, nearest rank. */
+export function quantile(values: readonly number[], q: number): number {
+  const v = [...values].sort((a, b) => a - b);
+  return v[Math.round(q * (v.length - 1))];
+}
