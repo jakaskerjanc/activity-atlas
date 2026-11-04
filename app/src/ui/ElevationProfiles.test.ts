@@ -28,7 +28,8 @@ describe("ElevationProfiles", () => {
   test("axes in km and metres from the start", () => {
     expect(html).toContain('aria-label="Elevation of 3 activities against distance, overlaid"');
     expect(html).toContain("km</text>");
-    expect(html).toContain("+50 m");
+    expect(html).toMatch(/>\+\d+ m</);
+    expect(html).toMatch(/>−\d+ m</);
     expect(html).toContain("0 m");
     expect(html).not.toContain("NaN");
   });
