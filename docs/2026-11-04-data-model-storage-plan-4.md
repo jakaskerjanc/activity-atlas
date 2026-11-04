@@ -402,7 +402,7 @@ switches the app, so the site works at every commit.
     - `detailUrl(id) = `${BASE_URL}data/activity/${id}.json``
   - `ui/useActivityDetail.ts`:
     `useActivityDetail(id: string | null, hasDetail: boolean): DetailState`.
-    It keeps `{id, state}` and returns `"none"` for a stale id, so a slow
+    It keeps `{id, state}` and returns `"loading"` for a stale id, so a slow
     response for a previous selection never shows.
   - `profile.ts`:
     - `type ChartKind = "elevation" | "hr" | "pace" | "speed"`
@@ -446,8 +446,10 @@ switches the app, so the site works at every commit.
     - `speed is km/h from 0`: `domain[0] === 0`, `values[i] = speed * 3.6`.
     - `flat elevation gets a 20 m window`: `alt` all `300` → domain
       `[290, 310]`.
-    - `smoothSpeed averages present neighbours`: `[1, null, 3]` with window 3
-      → `[1, 2, 3]`.
+    - `smoothSpeed averages present neighbours`: `[1, 2, 6]` with window 3
+      → `[1.5, 3, 4]`; and `[1, null, 3]` stays `[1, null, 3]` (changed in
+      Task 5: filling a missing sample would invent a value, a design
+      anti-goal).
     - `niceTicks(0, 1234, 3)` → `[0, 500, 1000]`.
     - `linePath breaks at null`: the path has two `M` commands for
       `[1, null, 2, 3]`.
