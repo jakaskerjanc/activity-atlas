@@ -1,22 +1,24 @@
-// The hilliness ridgeline (#20): one ridge per month of the date range, oldest at the
-// top, each the month's activities spread out by metres climbed per km; taller ridges
-// overlap the row above, like a joyplot. A tick marks each month's median, and every
-// row shows the month's elevation gain. Clicking a row isolates that month through the
-// Activity filter (App owns the filter); clicking it again restores the range from
-// before. Plain SVG, like the activity charts. Numbers live in ridgeline.ts.
+// The climbing ridgeline (#20): one ridge per month of the date range, oldest at the
+// top. Along each ridge x is the day of the month and the height is that day's
+// elevation gain; taller ridges overlap the row above, like a joyplot. Dots on the
+// baseline mark days with an activity, and every row shows the month's total gain.
+// Clicking a row isolates that month through the Activity filter (App owns the filter);
+// clicking it again restores the range from before. Plain SVG, like the activity
+// charts. Numbers live in ridgeline.ts.
 
 import { useId, useMemo, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { ACCENT, MONO } from "./theme";
 import { useElementWidth } from "./useElementWidth";
 import {
+  dayX,
   formatGain,
-  MIN_DISTANCE_M,
+  ridgeHeight,
   ridgeLabel,
   ridgePaths,
-  type HillinessRidgeline,
+  type ClimbingRidgeline,
   type MonthRidge,
 } from "../ridgeline";
-import { niceTicks } from "../profile";
+import { formatMeters } from "../format";
 
 /** Row pitch, and so each row's tap target. */
 export const ROW = 32;
@@ -33,29 +35,33 @@ const FALLBACK_WIDTH = 700;
 const SCROLL_GUTTER = 10;
 const AXIS_H = 22;
 
+/** Day ticks on the axis. */
+const DAY_TICKS = [1, 8, 15, 22, 29];
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 interface Props {
-  ridgeline: HillinessRidgeline;
+  ridgeline: ClimbingRidgeline;
   /** The month isolated by a click, while the range is still just that month. */
   isolatedMonth: number | null;
   onPickMonth: (month: number) => void;
 }
 
 export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth }: Props) {
-  const { ridges, xMax, maxDensity } = ridgeline;
+  const { ridges, maxM } = ridgeline;
   const [boxRef, width] = useElementWidth<HTMLDivElement>(FALLBACK_WIDTH);
   const [hover, setHover] = useState<number | null>(null);
   // useId's characters aren't all safe inside url(#…).
   const fillId = `ridge-fill-${useId().replace(/[^\w-]/g, "")}`;
 
   const plotW = Math.max(ROW, width - SCROLL_GUTTER - LABEL_W - GAIN_W);
-  const xOf = (mPerKm: number) => (Math.min(mPerKm, xMax) / xMax) * plotW;
+  // The middle of a (1-based) day.
+  const xOf = (day: number) => dayX(day - 0.5, plotW);
 
   const rows = useMemo(() => {
     // Room above the first rows for any ridge taller than the rows above it.
     const heights = ridges.map((r) =>
-      r.density && maxDensity > 0 ? (MAX_RIDGE * Math.max(...r.density)) / maxDensity : 0,
+      r.curve ? ridgeHeight(Math.max(...r.curve), maxM, MAX_RIDGE) : 0,
     );
     const top = Math.max(0, ...heights.map((h, i) => h + BASE_GAP + 2 - (i + 1) * ROW));
     return {
@@ -63,14 +69,13 @@ export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth }: Props) {
       list: ridges.map((r, i) => ({
         ridge: r,
         baseline: top + (i + 1) * ROW - BASE_GAP,
-        ...ridgePaths(r.density, plotW, maxDensity, MAX_RIDGE),
+        ...ridgePaths(r.curve, plotW, maxM, MAX_RIDGE),
       })),
     };
-  }, [ridges, plotW, maxDensity]);
+  }, [ridges, plotW, maxM]);
 
   const height = rows.top + ridges.length * ROW;
   const rangeKey = ridges.length ? `${ridges[0].month}-${ridges[ridges.length - 1].month}` : "";
-  const ticks = niceTicks(0, xMax, Math.max(2, Math.floor(plotW / 90)));
 
   const key = (month: number) => (e: KeyboardEvent) => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -118,18 +123,12 @@ export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth }: Props) {
                 >
                   <title>{tip(ridge)}</title>
                 </rect>
-                <line x1={0} x2={plotW} y1={0} y2={0} style={baselineStyle} />
+                <line x1={0} x2={dayX(ridge.days, plotW)} y1={0} y2={0} style={baselineStyle} />
                 {area && <path d={area} fill={`url(#${fillId})`} style={noHit} />}
                 {line && <path d={line} style={{ ...ridgeLine, strokeWidth: on ? 2.2 : 1.4 }} />}
-                {ridge.medianMPerKm != null && (
-                  <line
-                    x1={xOf(ridge.medianMPerKm)}
-                    x2={xOf(ridge.medianMPerKm)}
-                    y1={0}
-                    y2={-6}
-                    style={medianTick}
-                  />
-                )}
+                {ridge.activeDays.map((d) => (
+                  <circle key={d} cx={xOf(d)} cy={0} r={1.8} style={dayDot} />
+                ))}
                 <text x={-LABEL_W + 4} y={0} style={{ ...label, ...(on ? strong : null) }}>
                   {MONTHS[ridge.month % 12]}
                   {yearLabel && <tspan style={yearStyle}> {Math.floor(ridge.month / 12)}</tspan>}
@@ -150,30 +149,31 @@ export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth }: Props) {
       <svg width="100%" height={AXIS_H} style={{ display: "block" }} aria-hidden="true">
         <g transform={`translate(${LABEL_W},0)`}>
           <line x1={0} x2={plotW} y1={0.5} y2={0.5} style={baselineStyle} />
-          {ticks.map((t) => (
-            <text key={t} x={xOf(t)} y={14} textAnchor="middle" style={axisText}>
-              {t}
+          {DAY_TICKS.map((d) => (
+            <text key={d} x={xOf(d)} y={14} textAnchor="middle" style={axisText}>
+              {d}
             </text>
           ))}
           <text x={plotW + GAIN_W - 4} y={14} textAnchor="end" style={axisText}>
-            m/km
+            day
           </text>
         </g>
       </svg>
       <p style={note}>
-        {maxDensity > 0
-          ? `Each ridge spreads the month's activities (${MIN_DISTANCE_M / 1000} km or longer) by metres climbed per km; the tick marks the median. All ridges share one height scale, so busier months stand taller.`
-          : "No activity in this range has both a distance and an elevation gain."}
+        {maxM > 0
+          ? `Elevation gain per day (UTC); dots mark days with an activity. All months share one square-root height scale, so small days stay visible; the tallest peak is ${formatMeters(maxM)} m.`
+          : "No activity in this range has a known elevation gain."}
       </p>
     </div>
   );
 }
 
-/** The native hover tooltip: the accessible name, plus how many activities shape the ridge. */
+/** The native hover tooltip: the accessible name, plus how many days had an activity. */
 function tip(ridge: MonthRidge): string {
   const base = ridgeLabel(ridge);
   if (ridge.count === 0) return base;
-  return `${base}\n${ridge.measured} of ${ridge.count} with distance and gain`;
+  const n = ridge.activeDays.length;
+  return `${base}\n${n} active ${n === 1 ? "day" : "days"}`;
 }
 
 // Open on the newest month. Module-level so React calls it once per mount.
@@ -210,10 +210,9 @@ const ridgeLine: CSSProperties = {
   strokeLinecap: "round",
 };
 
-const medianTick: CSSProperties = {
+const dayDot: CSSProperties = {
   ...noHit,
-  stroke: "var(--text-strong)",
-  strokeWidth: 1.5,
+  fill: "var(--text-muted)",
 };
 
 const label: CSSProperties = {
