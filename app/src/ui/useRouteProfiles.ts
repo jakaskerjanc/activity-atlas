@@ -1,6 +1,6 @@
-// The route profiles for the elevation profiles chart, as a load state. Fetched once per session the
-// first time a component asks (the analytics page), so the map's first load doesn't
-// grow by them.
+// The route profiles for the elevation profiles chart, as a load state. Fetched once
+// per session the first time a component asks (the analytics page), so the map's first
+// load doesn't grow by them.
 
 import { useEffect, useState } from "react";
 import { loadProfiles } from "../routeProfiles";
