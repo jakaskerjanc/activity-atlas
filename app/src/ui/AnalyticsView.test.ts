@@ -42,7 +42,7 @@ describe("AnalyticsView", () => {
 
   test("centers a calendar-wide column, kept clear of the side panel's edge tab", () => {
     expect(render()).toContain(
-      "grid-template-columns:minmax(402px, 1fr) minmax(0, 751px) minmax(24px, 1fr)",
+      "grid-template-columns:minmax(402px, 1fr) minmax(0, 753px) minmax(24px, 1fr)",
     );
     expect(render({ sidePanelExpanded: false })).toContain("minmax(70px, 1fr)");
   });

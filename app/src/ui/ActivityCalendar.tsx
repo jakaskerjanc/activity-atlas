@@ -15,9 +15,15 @@ const PITCH = CELL + GAP;
 const GUTTER = 28; // weekday labels
 const TOP = 14; // month labels
 const WEEKS = 53;
+// The hover outline sits 1px outside its cell and is stroked across that line, so it
+// reaches OUTLINE_GAP + OUTLINE_STROKE / 2 past the cell. The grid keeps that much room
+// on its right and bottom, or the last column's and row's outlines are clipped.
+const OUTLINE_GAP = 1;
+const OUTLINE_STROKE = 1.5;
+const EDGE = Math.ceil(OUTLINE_GAP + OUTLINE_STROKE / 2);
 
 /** The grid's natural width: a full year at the designed cell size. */
-export const CALENDAR_WIDTH = GUTTER + WEEKS * PITCH - GAP;
+export const CALENDAR_WIDTH = GUTTER + WEEKS * PITCH - GAP + EDGE;
 // The grid scales down with its card, but no further than this; a narrower card (a
 // phone) scrolls the year sideways instead of shrinking cells past legibility.
 const MIN_WIDTH = Math.round(CALENDAR_WIDTH * 0.8);
@@ -56,8 +62,8 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
   if (!shown) return null;
 
   // Every year at the same scale: 53 columns, or 54 for the rare year that needs it.
-  const width = GUTTER + Math.max(WEEKS, shown.weeks) * PITCH - GAP;
-  const height = TOP + 7 * PITCH - GAP;
+  const width = GUTTER + Math.max(WEEKS, shown.weeks) * PITCH - GAP + EDGE;
+  const height = TOP + 7 * PITCH - GAP + EDGE;
 
   // Pointer over a gap keeps the last day, so the hit area is the whole pitch, not
   // just the painted cell. Down as well as move, so a tap works on touch screens.
@@ -138,10 +144,10 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
           ))}
           {hovered && (
             <rect
-              x={GUTTER + hovered.week * PITCH - 1}
-              y={TOP + hovered.weekday * PITCH - 1}
-              width={CELL + 2}
-              height={CELL + 2}
+              x={GUTTER + hovered.week * PITCH - OUTLINE_GAP}
+              y={TOP + hovered.weekday * PITCH - OUTLINE_GAP}
+              width={CELL + 2 * OUTLINE_GAP}
+              height={CELL + 2 * OUTLINE_GAP}
               rx={3}
               style={outline}
             />
@@ -236,7 +242,7 @@ const axisText: CSSProperties = {
 const outline: CSSProperties = {
   fill: "none",
   stroke: "var(--text-strong)",
-  strokeWidth: 1.5,
+  strokeWidth: OUTLINE_STROKE,
   pointerEvents: "none",
 };
 
