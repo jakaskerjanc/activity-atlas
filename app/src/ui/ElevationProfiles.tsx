@@ -46,6 +46,10 @@ export function ElevationProfiles({ chart, types }: Props) {
   const plotW = Math.max(60, width - Y_AXIS_W);
   const { lines, step, xMaxM, yMin, yMax } = chart;
 
+  // The hover is an index into `lines`: a new chart (the filter changed) drops it, so the
+  // tooltip can't name a different activity than the one under the pointer.
+  useEffect(() => setHover(null), [chart]);
+
   const xOf = (m: number) => (m / xMaxM) * plotW;
   const yOf = (m: number) => ((yMax - m) / (yMax - yMin)) * PLOT_H;
 
@@ -61,8 +65,9 @@ export function ElevationProfiles({ chart, types }: Props) {
     ctx.lineWidth = 1.2;
     ctx.lineJoin = "round";
     ctx.globalAlpha = LINE_ALPHA;
+    const order = [...types];
     for (const line of lines) {
-      ctx.strokeStyle = typeColor(line.type, [...types]);
+      ctx.strokeStyle = typeColor(line.type, order);
       ctx.beginPath();
       points(line.profile, chart, plotW).forEach(([x, y], i) =>
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y),
