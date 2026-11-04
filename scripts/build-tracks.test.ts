@@ -1,98 +1,50 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import polyline from "@mapbox/polyline";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
-import { buildTracks, readPayload, type ActivityRow } from "./build-tracks.ts";
+import { readDisplayFiles, writeDisplayFiles } from "./build-tracks.ts";
+import { addActivity, addSource, addStreams, withDb } from "./testDb.ts";
 
-function row(over: Partial<ActivityRow> = {}): ActivityRow {
-  return {
-    id: "abc123", name: "Run", type: "Run", start_time: "2026-08-01T06:30:00+00:00",
-    distance: 1000, moving_time: 600, elevation_gain: 10,
-    polyline: polyline.encode([[46.0, 14.0], [46.001, 14.001], [46.002, 14.0]]),
-    ...over,
-  } as ActivityRow;
-}
-
-test("builds an encoded track with id", () => {
-  const stats = { rawPoints: 0, keptPoints: 0 };
-  const out = buildTracks([row()], stats);
-  assert.equal(out.length, 1);
-  assert.equal(out[0].id, "abc123");
-  assert.equal(out[0].elevation_gain, 10);
-  assert.ok(out[0].poly.length > 0);
-});
-
-test("skips rows with no polyline", () => {
-  const out = buildTracks([row({ id: "g1", polyline: "" })], { rawPoints: 0, keptPoints: 0 });
-  assert.equal(out.length, 0);
-});
-
-// --- v2 database bridge -----------------------------------------------------
-
-const POLY = polyline.encode([[46.0, 14.0], [46.001, 14.001], [46.002, 14.0]]);
-
-/** A throwaway v2 database holding just the columns the display bridge reads. */
-function withDb(setup: (db: Database.Database) => void, run: (path: string) => void) {
-  const dir = mkdtempSync(join(tmpdir(), "build-tracks-"));
-  const path = join(dir, "activities.sqlite");
-  const db = new Database(path);
-  db.exec(`
-    CREATE TABLE activities (
-      id TEXT PRIMARY KEY, name TEXT, type TEXT, start_time TEXT,
-      moving_time REAL, distance REAL, elevation_gain REAL,
-      polyline TEXT NOT NULL DEFAULT '', visible INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE activity_sources (
-      provider TEXT NOT NULL, provider_activity_id TEXT NOT NULL,
-      activity_id TEXT NOT NULL, deleted_at TEXT,
-      PRIMARY KEY (provider, provider_activity_id)
-    );
-  `);
-  try {
-    setup(db);
-    db.close();
-    run(path);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-function addActivity(db: Database.Database, id: string, over: Record<string, unknown> = {}) {
-  const a = {
-    name: "Run", type: "Run", start_time: "2026-08-01T06:30:00+00:00",
-    moving_time: 600, distance: 1000, elevation_gain: 10, polyline: POLY, visible: 1,
-    ...over,
-  };
-  db.prepare(
-    "INSERT INTO activities (id,name,type,start_time,moving_time,distance,elevation_gain,polyline,visible) " +
-      "VALUES (@id,@name,@type,@start_time,@moving_time,@distance,@elevation_gain,@polyline,@visible)",
-  ).run({ id, ...a });
-}
-
-function addSource(db: Database.Database, activityId: string, provider: string, pid: string, deletedAt: string | null = null) {
-  db.prepare(
-    "INSERT INTO activity_sources (provider,provider_activity_id,activity_id,deleted_at) VALUES (?,?,?,?)",
-  ).run(provider, pid, activityId, deletedAt);
-}
-
-test("drops invisible activities", () => {
+test("routes keyed by id for visible routed activities", () => {
   withDb(
-    (db) => {
-      addActivity(db, "aaa");
-      addActivity(db, "hidden", { visible: 0 });
-      addActivity(db, "nopoly", { polyline: "" });
-    },
+    (db) => addActivity(db, "aaa"),
     (path) => {
-      const { payload } = readPayload(path);
-      assert.deepEqual(payload.tracks.map((t) => t.id), ["aaa"]);
+      const { routes } = readDisplayFiles(path);
+      assert.equal(routes.v, 4);
+      assert.deepEqual(Object.keys(routes.routes), ["aaa"]);
+      assert.ok(routes.routes.aaa.length > 0);
     },
   );
 });
 
-test("sources lists live providers strava first", () => {
+test("route-less activity is in activities, not routes", () => {
+  withDb(
+    (db) => addActivity(db, "gym", { polyline: "", has_gps: 0, distance: 0 }),
+    (path) => {
+      const { routes, activities } = readDisplayFiles(path);
+      assert.deepEqual(routes.routes, {});
+      assert.deepEqual(activities.activities.map((a) => a.id), ["gym"]);
+      assert.ok(!("distance" in activities.activities[0]));
+    },
+  );
+});
+
+test("hidden activity is absent from both files", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "aaa");
+      addActivity(db, "hidden", { visible: 0 });
+    },
+    (path) => {
+      const { routes, activities } = readDisplayFiles(path);
+      assert.deepEqual(Object.keys(routes.routes), ["aaa"]);
+      assert.deepEqual(activities.activities.map((a) => a.id), ["aaa"]);
+    },
+  );
+});
+
+test("sources list live providers strava first", () => {
   withDb(
     (db) => {
       addActivity(db, "merged");
@@ -100,8 +52,7 @@ test("sources lists live providers strava first", () => {
       addSource(db, "merged", "strava", "999");
     },
     (path) => {
-      const { payload } = readPayload(path);
-      assert.deepEqual(payload.tracks[0].sources, [
+      assert.deepEqual(readDisplayFiles(path).activities.activities[0].sources, [
         { provider: "strava", id: "999" },
         { provider: "garmin", id: "100" },
       ]);
@@ -114,26 +65,120 @@ test("sources lists live providers strava first", () => {
       addSource(db, "merged", "strava", "111");
     },
     (path) => {
-      const { payload } = readPayload(path);
-      assert.deepEqual(payload.tracks[0].sources, [{ provider: "strava", id: "111" }]);
+      assert.deepEqual(readDisplayFiles(path).activities.activities[0].sources, [
+        { provider: "strava", id: "111" },
+      ]);
     },
   );
 });
 
-test("null numbers become 0, as v1 displayed them", () => {
+test("activities sorted by start then id", () => {
   withDb(
-    (db) => addActivity(db, "a", { distance: null, moving_time: null, elevation_gain: null }),
+    (db) => {
+      addActivity(db, "b", { start_time: "2026-08-02T06:30:00+00:00" });
+      addActivity(db, "z", { start_time: "2026-08-01T06:30:00+00:00" });
+      addActivity(db, "a", { start_time: "2026-08-01T06:30:00+00:00" });
+    },
     (path) => {
-      const t = readPayload(path).payload.tracks[0];
-      assert.deepEqual([t.distance, t.moving_time, t.elevation_gain], [0, 0, 0]);
+      assert.deepEqual(readDisplayFiles(path).activities.activities.map((a) => a.id), ["a", "z", "b"]);
     },
   );
 });
 
-test("missing database writes an empty payload", () => {
+test("missing database yields empty files and a sync warning", () => {
   const warnings: string[] = [];
-  const { payload } = readPayload("/nonexistent/dir/activities.sqlite", (m) => warnings.push(m));
-  assert.deepEqual(payload, { v: 3, tracks: [] });
+  const files = readDisplayFiles("/nonexistent/dir/activities.sqlite", (m) => warnings.push(m));
+  assert.deepEqual(files.routes, { v: 4, routes: {} });
+  assert.deepEqual(files.activities, { v: 1, activities: [] });
+  assert.equal(files.details.size, 0);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /sync/);
+});
+
+test("writeDisplayFiles empties the output folder first", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "display-out-"));
+  try {
+    mkdirSync(join(dir, "activity"), { recursive: true });
+    writeFileSync(join(dir, "activity", "stale.json"), "{}");
+    const files = readDisplayFiles("/nonexistent/x.sqlite", () => {});
+    await writeDisplayFiles(files, dir);
+    assert.ok(!existsSync(join(dir, "activity", "stale.json")));
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "routes.json"), "utf8")), { v: 4, routes: {} });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "activities.json"), "utf8")), { v: 1, activities: [] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("writes a detail file and sets detail for an activity with streams", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "run", { streams_sha256: "sha1" });
+      addStreams(db, "sha1", {
+        time: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        hr: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
+        altitude: [300, 300, 300, 300, 300, 301, 301, 301, 301, 301],
+      });
+    },
+    (path) => {
+      const { activities, details } = readDisplayFiles(path);
+      assert.equal(activities.activities[0].detail, true);
+      const d = details.get("run")!;
+      assert.deepEqual(d.hr, [102, 107]);
+      assert.deepEqual(d.alt, [300, 301]);
+    },
+  );
+});
+
+test("no detail for a hidden activity", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "hidden", { streams_sha256: "sha1", visible: 0 });
+      addStreams(db, "sha1", { time: [0, 1], hr: [100, 101] });
+    },
+    (path) => assert.equal(readDisplayFiles(path).details.size, 0),
+  );
+});
+
+test("no detail flag without a streams row", () => {
+  withDb(
+    (db) => addActivity(db, "orphan", { streams_sha256: "missing" }),
+    (path) => {
+      const files = readDisplayFiles(path);
+      assert.equal(files.details.size, 0);
+      assert.ok(!("detail" in files.activities.activities[0]));
+    },
+  );
+});
+
+test("rows without a usable start_time or type are skipped with a warning", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "ok");
+      addActivity(db, "no-start", { start_time: null });
+      addActivity(db, "bad-start", { start_time: "garbage" });
+      addActivity(db, "no-type", { type: null });
+    },
+    (path) => {
+      const warnings: string[] = [];
+      const { routes, activities, details } = readDisplayFiles(path, (m) => warnings.push(m));
+      assert.deepEqual(activities.activities.map((a) => a.id), ["ok"]);
+      assert.deepEqual(Object.keys(routes.routes), ["ok"]);
+      assert.equal(details.size, 0);
+      assert.equal(warnings.length, 3);
+      for (const id of ["no-start", "bad-start", "no-type"]) {
+        assert.ok(warnings.some((w) => w.includes(id)), `warning names ${id}`);
+      }
+    },
+  );
+});
+
+test("a NULL name falls back to the type", () => {
+  withDb(
+    (db) => addActivity(db, "unnamed", { name: null, type: "Hike" }),
+    (path) => {
+      const [a] = readDisplayFiles(path).activities.activities;
+      assert.equal(a.name, "Hike");
+    },
+  );
 });

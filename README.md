@@ -3,14 +3,18 @@
 **[Live site →](https://strava-map.jakas.si/)**
 
 All your Strava and Garmin activities as routes on one interactive Mapbox
-map, filterable by type and date. A GitHub Action builds a compact track file
+map, filterable by type and date, with elevation, heart-rate and pace charts
+for the selected activity. A GitHub Action builds compact display files
 from the activity database (kept in a private R2 bucket, never in git) and
 deploys a static site to GitHub Pages.
 
 ## How it works
 
 ```
-data/activities.sqlite ──▶ build-tracks.ts ──▶ app/public/tracks.json ──▶ site
+data/activities.sqlite ──▶ build-tracks.ts ──▶ app/public/data/ ──▶ site
+                                                 ├─ routes.json
+                                                 ├─ activities.json
+                                                 └─ activity/<id>.json
 ```
 
 `data/activities.sqlite` is a SQLite database of deduped activities from
@@ -19,13 +23,31 @@ Garmin live fetch. It is never committed (`data/*` is gitignored). With R2
 configured the master lives in the bucket and this file is a synced copy of
 it; without R2 it is the local database itself.
 
-**`build-tracks.ts`** reads that database and writes `app/public/tracks.json`,
-simplifying each route with Douglas–Peucker (`SIMPLIFY_TOLERANCE_M`, default
-5 m) and shipping it as a Google-encoded polyline rather than a decoded
-GeoJSON coordinate array — roughly half the payload and a much cheaper parse.
-The frontend fetches this static file and decodes the polylines back into map
-geometry (`app/src/tracks.ts`) — no Strava/Garmin API calls happen in the
-browser.
+**`build-tracks.ts`** reads that database and writes the display files to
+`app/public/data/` (emptied first, so a hidden or deleted activity never
+leaves a stale file behind):
+
+- **`routes.json`** (wire `v: 4`): one Google-encoded polyline per activity
+  with a route, keyed by activity id, simplified with Douglas–Peucker
+  (`SIMPLIFY_TOLERANCE_M`, default 10 m).
+- **`activities.json`** (`v: 1`): every visible activity's numbers (type,
+  start, distance, times, elevation, heart rate, HR zones, which channels it
+  recorded, source links). An unknown value is left out, never written as
+  `0`; provider zeros that mean "not measured" (indoor distance, HR without
+  a strap) are dropped here too.
+- **`activity/<id>.json`** (`v: 1`): the activity's samples (time, distance,
+  position, altitude, heart rate, speed, cadence), averaged into 5 s buckets
+  and capped at 1000 points, so each file is about 5–15 KB gzipped. The app
+  fetches one only when that activity is opened, to draw its elevation, heart
+  rate and pace charts and the marker that follows them along the route.
+
+The database stores streams as compressed delta-encoded blobs
+(`ingest/codec.py`); `scripts/codec.ts` decodes them, checked against
+fixtures the Python encoder writes (`scripts/fixtures/codec.json`,
+regenerate with `python -m ingest.tests.codec_fixture`). No wellness data is
+published. The frontend joins routes and numbers in `app/src/tracks.ts` — no
+Strava/Garmin API calls happen in the browser. Design:
+`docs/2026-11-04-display-files-design.md`.
 
 `npm run build` runs `build:tracks` then the app build. In CI the deploy pulls
 the database from R2 with a read-only token first (see [CI](#ci)); locally it
@@ -352,7 +374,7 @@ the repository secrets listed under [CI](#ci), including the read-only pair
 
 ```bash
 npm install
-npm run build:tracks    # regenerate app/public/tracks.json from the DB
+npm run build:tracks    # regenerate app/public/data/ from the DB
 npm --workspace app run dev
 ```
 
