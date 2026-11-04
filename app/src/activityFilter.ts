@@ -108,6 +108,18 @@ export function typeCounts(filter: ActivityFilter): Record<string, number> {
 }
 
 /**
+ * The available types, most activities first (ties by name), for listing in the
+ * filter. Counted over every activity, not the date range, so the rows keep their
+ * order while the range slider moves. availableTypes stays alphabetical: type colors
+ * are keyed to it.
+ */
+export function typesByCount(filter: ActivityFilter): string[] {
+  const counts: Record<string, number> = {};
+  for (const a of filter.activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
+  return [...filter.availableTypes].sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1));
+}
+
+/**
  * The same rule as visibleActivities, as a Mapbox filter expression over the `type`
  * and `ts` feature properties. An empty type selection yields an `in` over an empty
  * list, which matches nothing.
