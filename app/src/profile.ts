@@ -118,24 +118,46 @@ export function buildProfile(detail: DetailFile, type: string): Profile | null {
   return { xKind: "time", x: detail.t.slice(), charts };
 }
 
-/** Up to ~`count` round tick values (1/2/5 × 10^k steps) inside [lo, hi]. */
-export function niceTicks(lo: number, hi: number, count = 3): number[] {
-  if (!(hi > lo)) return [lo];
-  const raw = (hi - lo) / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw)!;
+/** Multiples of `step` inside [lo, hi], rounded so labels carry no float artefacts. */
+function multiples(lo: number, hi: number, step: number): number[] {
   const ticks: number[] = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
   return ticks;
 }
 
-/** Pace ticks (seconds per km): multiples of a nice whole-minute step (>= 1 min) inside [lo, hi]. */
+/**
+ * Round tick values (1/2/5 × 10^k steps) inside [lo, hi]: about `count` of them, but
+ * never fewer than two (when `hi > lo`) - the step shrinks until two fit.
+ */
+export function niceTicks(lo: number, hi: number, count = 3): number[] {
+  if (!(hi > lo)) return [lo];
+  const raw = (hi - lo) / count;
+  let mag = 10 ** Math.floor(Math.log10(raw));
+  let m = [1, 2, 5, 10].find((k) => k * mag >= raw)!;
+  if (m === 10) [m, mag] = [1, mag * 10];
+  for (;;) {
+    const ticks = multiples(lo, hi, m * mag);
+    if (ticks.length >= 2 || mag < (hi - lo) * 1e-6) return ticks;
+    if (m === 5) m = 2;
+    else if (m === 2) m = 1;
+    else [m, mag] = [5, mag / 10];
+  }
+}
+
+/**
+ * Pace ticks (seconds per km): multiples of a nice whole-minute step inside [lo, hi].
+ * The step shrinks (… 10, 5, 2, 1 min, never below 1) until at least two ticks fit.
+ */
 export function paceTicks(lo: number, hi: number): number[] {
   const raw = (hi - lo) / 60 / 3;
-  const steps = [1, 2, 5, 10, 15, 30, 60];
-  const step = 60 * (steps.find((s) => s >= raw) ?? 120);
-  const ticks: number[] = [];
-  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(v);
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120];
+  const found = steps.findIndex((x) => x >= raw);
+  const start = found < 0 ? steps.length - 1 : found;
+  let ticks: number[] = [];
+  for (let i = start; i >= 0; i--) {
+    ticks = multiples(lo, hi, steps[i] * 60);
+    if (ticks.length >= 2) break;
+  }
   return ticks;
 }
 
