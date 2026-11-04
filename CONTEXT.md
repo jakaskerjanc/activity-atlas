@@ -40,3 +40,12 @@ How many activities of a type fall inside the date range, regardless of whether 
 **Selected activity**:
 The single activity the user clicked to inspect. Unrelated to the type selection.
 _Avoid_: active activity
+
+**Activity detail**:
+The downsampled samples of one activity (distance, position, altitude, heart rate, speed, cadence), loaded only when it is selected.
+_Avoid_: streams (the full-resolution database data), track
+
+**Cursor**:
+The one point along the selected activity that the charts and the map marker share; set by hovering either.
+_Avoid_: hover (that is route-level, see hoverId), playhead
+

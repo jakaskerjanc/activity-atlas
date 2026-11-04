@@ -617,7 +617,18 @@ switches the app, so the site works at every commit.
 
 ## Measured
 
-Filled in by Task 8.
+Task 8, 2026-11-04, `pnpm run build:tracks` against the synced database
+(530 visible activities, 447 with a route), gzip -9:
+
+| File | Raw | Gzipped |
+|---|---|---|
+| `routes.json` | 211 KB | 150 KB |
+| `activities.json` | 240 KB | 48 KB |
+| `activity/<id>.json` × 530 | 16 MB on disk | median 9.0 KB, max 15.2 KB, total 4.5 MB |
+
+The page load fetches `routes.json` + `activities.json` (198 KB gzipped;
+the v3 `tracks.json` was 323 KB raw). One detail file is fetched per opened
+activity. `pnpm --filter app run build` copies all of it to `app/dist/data/`.
 
 ## Out of scope
 
