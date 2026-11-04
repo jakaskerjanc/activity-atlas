@@ -2,7 +2,7 @@
 // metres of distance, in whole metres relative to the start (so a loop starts and ends
 // near 0, wherever it was). Built from the detail file's samples, so it inherits their
 // 5 s bucket means, then smoothed with a centred 3-point mean to take the remaining
-// GPS/barometer jitter off the shape. Read by the Analytics elevation heatmap (#16).
+// GPS/barometer jitter off the shape. Read by the Analytics elevation profiles chart (#16).
 
 import type { DetailFile } from "./types.ts";
 

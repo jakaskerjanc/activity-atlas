@@ -65,9 +65,9 @@ A run of consecutive active days.
 An activity's elevation every 100 m of distance, measured from its start (profiles.json), so a loop starts and ends near 0 wherever it was.
 _Avoid_: elevation profile (that is the selected activity's chart)
 
-**Elevation heatmap**:
-The Analytics chart that overlays every visible activity's route profile against distance in km; the more profiles pass through a spot, the stronger its color, so repeated climbs stand out.
-_Avoid_: profile overlay
+**Elevation profiles** (chart):
+The Analytics chart that draws every visible activity's route profile as a see-through line against distance in km, in its activity type's color; repeated climbs darken where the lines stack up.
+_Avoid_: heatmap
 
 **Ridgeline**:
 The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each row is labelled with the month's summed elevation gain.

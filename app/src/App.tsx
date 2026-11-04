@@ -330,7 +330,6 @@ export default function App() {
           filter={filter}
           visible={visible}
           sidePanelExpanded={!panels.sideCollapsed}
-          theme={theme}
           isolation={filter && activeIsolation(filter, isolation)}
           onPickMonth={pickMonth}
         />

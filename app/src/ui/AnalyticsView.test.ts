@@ -15,7 +15,6 @@ const render = (props: Partial<Props> = {}) =>
       filter,
       visible: visibleActivities(filter),
       sidePanelExpanded: true,
-      theme: "dark",
       isolation: null,
       onPickMonth: () => {},
       ...props,
@@ -40,11 +39,13 @@ describe("AnalyticsView", () => {
     expect(html).toContain("click a month to show only it");
   });
 
-  test("shows the elevation heatmap once the route profiles load", () => {
+  test("shows the elevation profiles once the route profiles load", () => {
     expect(render()).toContain("Loading elevation profiles");
     const ready = (profiles: Record<string, number[]>) =>
       render({ profiles: { status: "ready", file: { v: 1, step: 100, profiles } } });
-    expect(ready({ "s:1": [0, 30, 10] })).toContain("1 activity, each measured from its start");
+    expect(ready({ "s:1": [0, 30, 10] })).toContain(
+      'aria-label="Elevation of 1 activity against distance, overlaid"',
+    );
     expect(ready({})).toContain("No visible activity has an elevation profile.");
     expect(render({ profiles: { status: "error" } })).toContain("Couldn&#x27;t load elevation profiles");
   });
