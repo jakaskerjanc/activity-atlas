@@ -65,8 +65,13 @@ def _pick(payload, mapping: dict[str, tuple]) -> dict:
 _DAILY_SUMMARY = {"resting_hr": ("heartRate", "restingValue"), "steps": ("movement", "steps", "value"),
                   "stress_avg": ("stress", "avgLevel"),
                   "body_battery_high": ("bodyBattery", "maxValue"),
-                  "body_battery_low": ("bodyBattery", "minValue")}
-_SLEEP = {"sleep_s": ("sleepTimeSeconds",), "sleep_score": ("sleepScores", "overall", "value")}
+                  "body_battery_low": ("bodyBattery", "minValue"),
+                  # breaths/min over the whole day; the API has no intraday respiration
+                  "respiration_avg": ("respiration", "avgValue"),
+                  "respiration_min": ("respiration", "minValue"),
+                  "respiration_max": ("respiration", "maxValue")}
+_SLEEP = {"sleep_s": ("sleepTimeSeconds",), "sleep_score": ("sleepScores", "overall", "value"),
+          "sleep_respiration_avg": ("averageRespirationValue",)}
 _HRV = {"hrv_avg": ("hrvSummary", "lastNightAvg"), "hrv_status": ("hrvSummary", "status")}
 _SPO2 = {"spo2_avg": ("averageSpO2",)}
 

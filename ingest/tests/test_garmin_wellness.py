@@ -112,6 +112,7 @@ def test_real_daily_summary_maps_typed_columns_and_keeps_raw(arch):
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
     assert (row["resting_hr"], row["steps"], row["stress_avg"], row["body_battery_high"],
             row["body_battery_low"]) == (55, 8000, 25, 80, 15)
+    assert (row["respiration_avg"], row["respiration_min"], row["respiration_max"]) == (19, 16, 70)
     assert json.loads(row["raw"])["daily_summary"] == json.loads(_fixture("daily_summary"))
 
 
@@ -123,6 +124,7 @@ def test_real_responses_of_the_other_endpoints_map_their_typed_columns(arch):
                                       now="2026-10-30T10:00:00+00:00"))
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
     assert (row["sleep_s"], row["sleep_score"], row["hrv_avg"], row["hrv_status"]) == (27000, 75, 40, "BALANCED")
+    assert row["sleep_respiration_avg"] == 64.0
     assert row["spo2_avg"] is None                  # pulse ox was off: averageSpO2 is null
     assert row["steps"] is None                     # the steps endpoint is raw only
     assert set(json.loads(row["raw"])) == {"sleep", "hrv", "spo2", "steps"}
@@ -247,10 +249,11 @@ def test_wrongly_typed_fields_stay_none(arch):
     day = "2026-10-27"
     client = FakeClient({
         SUMMARY: _summary(day, resting_hr={"value": 52}, movement={"steps": {"value": True}},
-                          stress={"avgLevel": "high"}),
+                          stress={"avgLevel": "high"}, respiration={"avgValue": None, "minValue": "6"}),
         f"/hrv-service/hrv/{day}": json.dumps({"hrvSummary": {"lastNightAvg": [44], "status": {"x": 1}}}).encode(),
     })
     apply_wellness(conn, arch, _fetch(client, arch, conn, since=day))
     row = conn.execute("SELECT * FROM daily_stats WHERE date=?", (day,)).fetchone()
     assert (row["resting_hr"], row["steps"], row["stress_avg"], row["hrv_avg"], row["hrv_status"]) == (None,) * 5
+    assert (row["respiration_avg"], row["respiration_min"], row["respiration_max"]) == (None,) * 3
     assert json.loads(row["raw"])["daily_summary"]["data"][0]["heartRate"]["restingValue"] == {"value": 52}
