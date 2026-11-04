@@ -9,7 +9,7 @@ from ingest.garmin_import import GarminImporter
 from ingest.rebuild import rebuild
 from ingest.records import WellnessRecord
 from ingest.strava_import import StravaImporter
-from ingest.tests.factories import fixture_bytes
+from ingest.tests.factories import fixture_bytes, garmin_heart_rate
 from ingest.tests.test_garmin_import import _garmin_zip
 from ingest.tests.test_strava_import import GYM, HEADER, _row, _zip
 
@@ -149,3 +149,22 @@ def test_rebuild_keeps_wellness_tables(tmp_path):
     rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
     assert _snapshot(dbp, "daily_stats", "date") == stats
     assert _snapshot(dbp, "daily_series", "date, channel") == series
+
+
+def test_rebuild_reproduces_api_intraday_series_from_the_archive(tmp_path):
+    dbp, arch = str(tmp_path / "db.sqlite"), LocalArchive(str(tmp_path / "arch"))
+    fit_sha = arch.put_blob(fixture_bytes("monitoring.fit"))
+    hr_sha = arch.put_blob(garmin_heart_rate("2026-04-11", 7200, [(1775858400, 60), (1775859900, 99)]))
+    recs = [WellnessRecord("garmin", "monitoring_fit", fit_sha, NOW, fit_sha, "m.fit", {"kind": "garmin_export"}),
+            WellnessRecord("garmin", "heart_rate", "2026-04-11", NOW, hr_sha, None,
+                           {"kind": "garmin_api", "path": "/wellness-service/wellness/dailyHeartRate"})]
+    for rec in recs:
+        arch.put_wellness(rec)
+    conn = engine.open_for_write(dbp, arch, now=NOW)
+    wellness.apply_wellness(conn, arch, recs)
+    conn.commit(); conn.close()
+    series = _snapshot(dbp, "daily_series", "date, channel")
+    assert [r[2] for r in series if r[1] == "hr"] == [194]       # the FIT's 193 plus the API's midnight sample
+    for _ in range(2):
+        rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
+        assert _snapshot(dbp, "daily_series", "date, channel") == series

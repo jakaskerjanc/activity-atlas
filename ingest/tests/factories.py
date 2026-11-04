@@ -1,6 +1,7 @@
 """Shared builders for the v2 engine tests."""
+import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from ingest import db
 from ingest.model import REPORTED_KEYS, SourceActivity
@@ -48,3 +49,18 @@ def src(provider: str, pid: str, *, name=None, type="Run", start="06:00", day="2
         reported=rep, hr_zones=hr_zones, gear=list(gear or []), summary=dict(summary or {}),
         file_sha256=file_sha256, parsed=parsed, fetched_at=fetched_at,
     )
+
+
+def garmin_heart_rate(day: str, offset_s: int, values: list) -> bytes:
+    """A dailyHeartRate response for ``day`` in the real shape: the local day
+    at a fixed UTC offset, ``values`` as [unix_s, bpm | None] pairs."""
+    start = datetime.combine(date.fromisoformat(day), datetime.min.time())
+    fmt = lambda t: t.isoformat(timespec="milliseconds")[:-2]       # "2026-10-30T00:00:00.0"
+    return json.dumps({
+        "calendarDate": day,
+        "startTimestampGMT": fmt(start - timedelta(seconds=offset_s)),
+        "endTimestampGMT": fmt(start + timedelta(days=1, seconds=-offset_s)),
+        "startTimestampLocal": fmt(start), "endTimestampLocal": fmt(start + timedelta(days=1)),
+        "heartRateValueDescriptors": [{"key": "timestamp", "index": 0}, {"key": "heartrate", "index": 1}],
+        "heartRateValues": [[t * 1000, v] for t, v in values],
+    }).encode()
