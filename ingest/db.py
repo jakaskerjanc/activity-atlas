@@ -12,7 +12,7 @@ import sqlite3
 
 from .codec import CHANNEL_SCALES
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class SchemaMismatch(Exception):
@@ -155,6 +155,10 @@ CREATE TABLE daily_stats (
   body_battery_low REAL,
   weight_kg REAL,
   spo2_avg REAL,
+  respiration_avg REAL,
+  respiration_min REAL,
+  respiration_max REAL,
+  sleep_respiration_avg REAL,
   raw TEXT
 );
 

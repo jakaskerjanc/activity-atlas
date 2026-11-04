@@ -209,6 +209,14 @@ also fill typed `daily_stats` columns; the others are kept raw only.
   `ingest/tests/fixtures/garmin_wellness` holds those responses, trimmed and
   with made-up numbers. The raw responses are always archived, so a corrected
   mapping only needs a rebuild.
+- Respiration (breaths/min) is daily figures only: `respiration_avg`,
+  `respiration_min` and `respiration_max` from `daily_summary`, and
+  `sleep_respiration_avg` from `sleep`. Stress likewise is `stress_avg` from
+  `daily_summary`. The Personal API has no intraday stress or respiration:
+  Garmin Connect's `/wellness-service/wellness/dailyStress/{date}` and
+  `/wellness-service/wellness/daily/respiration/{date}` return 404 (checked
+  2026-11-04), so those `daily_series` channels come from the export's
+  monitoring FITs alone.
 - How far back the API serves data: daily values from the watch's first day
   (2025-04-19), but the intraday series (heart rate through the day, hourly
   SpO2, HRV readings) only for about the last 4 months. Days the fetch misses
