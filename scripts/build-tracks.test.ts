@@ -150,3 +150,35 @@ test("no detail flag without a streams row", () => {
     },
   );
 });
+
+test("rows without a usable start_time or type are skipped with a warning", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "ok");
+      addActivity(db, "no-start", { start_time: null });
+      addActivity(db, "bad-start", { start_time: "garbage" });
+      addActivity(db, "no-type", { type: null });
+    },
+    (path) => {
+      const warnings: string[] = [];
+      const { routes, activities, details } = readDisplayFiles(path, (m) => warnings.push(m));
+      assert.deepEqual(activities.activities.map((a) => a.id), ["ok"]);
+      assert.deepEqual(Object.keys(routes.routes), ["ok"]);
+      assert.equal(details.size, 0);
+      assert.equal(warnings.length, 3);
+      for (const id of ["no-start", "bad-start", "no-type"]) {
+        assert.ok(warnings.some((w) => w.includes(id)), `warning names ${id}`);
+      }
+    },
+  );
+});
+
+test("a NULL name falls back to the type", () => {
+  withDb(
+    (db) => addActivity(db, "unnamed", { name: null, type: "Hike" }),
+    (path) => {
+      const [a] = readDisplayFiles(path).activities.activities;
+      assert.equal(a.name, "Hike");
+    },
+  );
+});
