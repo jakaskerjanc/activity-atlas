@@ -2,7 +2,7 @@
 // Trace Atlas panels. Which activities are shown is the Activity filter's call
 // (activityFilter.ts); this file holds it and hands its results to the map and panels.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MapView } from "./MapView";
 import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
@@ -21,6 +21,9 @@ import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
+import { useActivityDetail } from "./ui/useActivityDetail";
+import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
+import { buildProfile } from "./profile";
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -63,6 +66,9 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // The shared chart/map cursor: an index into the selected activity's detail samples.
+  const [cursor, setCursor] = useState<number | null>(null);
+  useEffect(() => setCursor(null), [selectedId]);
 
   // Replay transport. `progress` is the single source of truth (0..1); App runs
   // the rAF clock while playing and MapView renders whatever frame it resolves to.
@@ -137,6 +143,7 @@ export default function App() {
     if (timeline.length === 0) return;
     setSelectedId(null);
     setHoverId(null);
+    setCursor(null);
     setProgress(0);
     setReplaying(true);
     setReplayEpoch((n) => n + 1);
@@ -179,6 +186,33 @@ export default function App() {
         : (data.features.find((f) => f.properties.id === selectedId) ?? null),
     [data, selectedId],
   );
+
+  // The selected activity's samples and the charts built from them.
+  const detailState = useActivityDetail(selectedId, selectedFeature?.properties.detail === true);
+  const selectedDetail = detailState.status === "ready" ? detailState.detail : null;
+  const profile = useMemo(
+    () =>
+      selectedDetail && selectedFeature
+        ? buildProfile(selectedDetail, selectedFeature.properties.type)
+        : null,
+    [selectedDetail, selectedFeature],
+  );
+
+  const panelBody = useMemo(() => {
+    if (!selectedFeature) return undefined;
+    if (selectedDetail && profile) {
+      return (
+        <ActivityCharts
+          detail={selectedDetail}
+          profile={profile}
+          type={selectedFeature.properties.type}
+          cursor={cursor}
+          onCursor={setCursor}
+        />
+      );
+    }
+    return <p style={statusLine}>{detailMessage(detailState, profile != null)}</p>;
+  }, [selectedFeature, selectedDetail, profile, cursor, detailState]);
 
   // InfoPanel content: selected activity, or aggregate totals.
   const { title, subtitle, cards, links } = useMemo<{
@@ -273,6 +307,8 @@ export default function App() {
               subtitle={subtitle}
               cards={cards}
               links={links}
+              body={panelBody}
+              compactCards={profile != null}
               collapsed={panels.bottomCollapsed}
               onToggle={panels.toggleBottom}
             />
@@ -305,3 +341,11 @@ export default function App() {
     </div>
   );
 }
+
+// The muted line in place of charts (loading, failed, or no samples).
+const statusLine: CSSProperties = {
+  margin: "12px 0 0",
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: 11,
+  color: "var(--text-muted)",
+};

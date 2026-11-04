@@ -10,9 +10,11 @@ interface Props {
   subtitle: string;
   cards: StatCard[];
   links: { url: string; label: string }[];
+  /** One row of four smaller cards (when charts sit below). */
+  compact?: boolean;
 }
 
-export function StatsSection({ title, subtitle, cards, links }: Props) {
+export function StatsSection({ title, subtitle, cards, links, compact = false }: Props) {
   return (
     <>
       <div style={{ marginBottom: 12 }}>
@@ -59,7 +61,7 @@ export function StatsSection({ title, subtitle, cards, links }: Props) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: compact ? "repeat(4, 1fr)" : "1fr 1fr",
           gap: 1,
           background: "var(--card-grid)",
           borderRadius: 10,
@@ -67,8 +69,13 @@ export function StatsSection({ title, subtitle, cards, links }: Props) {
         }}
       >
         {cards.map((c) => (
-          <div key={c.label} style={{ background: "var(--card-bg)", padding: "10px 12px" }}>
-            <div style={c.accent ? accentVal : bigVal}>{c.value}</div>
+          <div
+            key={c.label}
+            style={{ background: "var(--card-bg)", padding: compact ? "8px 10px" : "10px 12px" }}
+          >
+            <div style={{ ...(c.accent ? accentVal : bigVal), ...(compact ? { fontSize: 16 } : {}) }}>
+              {c.value}
+            </div>
             <div
               style={{
                 fontSize: 10,
