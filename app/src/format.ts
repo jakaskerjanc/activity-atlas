@@ -34,6 +34,21 @@ export function pacePerKm(meters: number | undefined, seconds: number | undefine
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/** seconds per km -> "5:06". */
+export function formatPace(secPerKm: number): string {
+  const total = Math.round(secPerKm);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** seconds -> "2:14:05", or "14:05" under an hour. */
+export function formatClock(seconds: number): string {
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
 /** km/h with one decimal. Dash when either input is unknown or time is zero. */
 export function speedKmh(meters: number | undefined, seconds: number | undefined): string {
   if (meters == null || seconds == null || seconds <= 0) return DASH;
