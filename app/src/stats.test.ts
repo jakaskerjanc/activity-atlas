@@ -57,14 +57,13 @@ describe("coverage", () => {
     expect(agg.elevation).toEqual({ sum: 150, n: 2 });
   });
 
-  test("totalCards notes partial coverage", () => {
+  test("totalCards sums partial coverage without a note", () => {
     const cards = totalCards([
       feature({ elevation_gain: 100 }),
       feature({ elevation_gain: undefined }),
       feature({ elevation_gain: 50 }),
     ]);
-    expect(cards[2]).toEqual({ value: "150", label: "Elevation m", note: "2 of 3" });
-    expect(cards[1].note).toBeUndefined();
+    expect(cards[2]).toEqual({ value: "150", label: "Elevation m" });
   });
 
   test("totalCards dashes a value nobody has", () => {

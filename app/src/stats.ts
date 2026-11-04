@@ -15,8 +15,6 @@ export interface StatCard {
   label: string;
   /** true = render in accent color */
   accent?: boolean;
-  /** Coverage caveat, e.g. "437 of 447" when some activities lack the value. */
-  note?: string;
 }
 
 /** A sum over the activities that have a value, and how many those are. */
@@ -56,11 +54,9 @@ export function aggregate(features: ActivityFeature[]): Totals {
   return t;
 }
 
-/** A total card: dash when nobody has the value, a coverage note when only some do. */
-function totalCard(c: Coverage, count: number, format: (v: number) => string, card: Omit<StatCard, "value">): StatCard {
-  const out: StatCard = { value: c.n === 0 ? "—" : format(c.sum), ...card };
-  if (c.n > 0 && c.n < count) out.note = `${c.n} of ${count}`;
-  return out;
+/** A total card: the sum over activities that have the value, or a dash when none do. */
+function totalCard(c: Coverage, format: (v: number) => string, card: Omit<StatCard, "value">): StatCard {
+  return { value: c.n === 0 ? "—" : format(c.sum), ...card };
 }
 
 /** Four aggregate cards for the current filter. */
@@ -68,9 +64,9 @@ export function totalCards(features: ActivityFeature[]): StatCard[] {
   const t = aggregate(features);
   return [
     { value: String(t.count), label: "Activities" },
-    totalCard(t.distance, t.count, (m) => formatKm(m, 0), { label: "Total km", accent: true }),
-    totalCard(t.elevation, t.count, formatMeters, { label: "Elevation m" }),
-    totalCard(t.moving, t.count, formatDuration, { label: "Moving" }),
+    totalCard(t.distance, (m) => formatKm(m, 0), { label: "Total km", accent: true }),
+    totalCard(t.elevation, formatMeters, { label: "Elevation m" }),
+    totalCard(t.moving, formatDuration, { label: "Moving" }),
   ];
 }
 
