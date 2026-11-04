@@ -23,12 +23,27 @@ describe("profileChart", () => {
     expect(profileChart([line("a", new Array(112).fill(0))], 100)!.xMaxM).toBe(15000);
   });
 
-  test("outliers beyond the quantiles run off the chart and are counted", () => {
+  test("a route past the length quantile runs off the right edge and is counted", () => {
     const short = Array.from({ length: 30 }, (_, i) => line(`s${i}`, [0, 10, 20, 10, 0]));
-    const long = line("long", Array.from({ length: 200 }, (_, i) => (i < 100 ? i * 10 : (200 - i) * 10)));
+    const long = line("long", Array.from({ length: 200 }, () => 0));
     const c = profileChart([...short, long], 100)!;
-    expect(c).toMatchObject({ xMaxM: 1000, yMax: 20, cut: 1 });
+    expect(c).toMatchObject({ xMaxM: 1000, cut: 1 });
     expect(c.lines).toHaveLength(31);
+  });
+
+  test("the y axis always fits the highest and lowest point", () => {
+    const short = Array.from({ length: 30 }, (_, i) => line(`s${i}`, [0, 10, 20, 10, 0]));
+    const alpine = line("alpine", [0, 900, 1934, 900, 0]);
+    const valley = line("valley", [0, -40, -127, -40, 0]);
+    const c = profileChart([...short, alpine, valley], 100)!;
+    expect(c).toMatchObject({ yMax: 1940, yMin: -130, cut: 0 });
+  });
+
+  test("a summit past the right edge doesn't stretch the y axis", () => {
+    const short = Array.from({ length: 30 }, (_, i) => line(`s${i}`, [0, 10, 20, 10, 0]));
+    const longRide = line("ride", [...new Array(50).fill(5), 1500, 0]);
+    const c = profileChart([...short, longRide], 100)!;
+    expect(c).toMatchObject({ xMaxM: 1000, yMax: 20, cut: 1 });
   });
 });
 

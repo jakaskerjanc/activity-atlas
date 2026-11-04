@@ -6,10 +6,10 @@
 
 import { quantile } from "./stats";
 
-/** The longest and highest profiles run off the chart at these quantiles, so one
- * century ride or alpine day doesn't squeeze everything else into a corner. */
+/** The longest profiles run off the right edge past this quantile, so one century ride
+ * doesn't squeeze everything else into the left corner. Elevation is never cut: the y
+ * axis always reaches the highest and lowest point drawn. */
 const X_QUANTILE = 0.95;
-const Y_QUANTILE = 0.95;
 
 /** One activity's line. */
 export interface ProfileLine {
@@ -31,7 +31,7 @@ export interface ProfileChart {
   /** Elevation shown, in metres relative to the start: bottom and top edges. */
   yMin: number;
   yMax: number;
-  /** How many lines run past the right edge, or above or below the chart. */
+  /** How many lines run past the right edge. */
   cut: number;
 }
 
@@ -46,14 +46,15 @@ export const lengthM = (line: ProfileLine, step: number) => (line.profile.length
 export function profileChart(lines: ProfileLine[], step: number): ProfileChart | null {
   if (lines.length === 0) return null;
   const lengths = lines.map((l) => lengthM(l, step));
-  const highs = lines.map((l) => Math.max(...l.profile));
-  const lows = lines.map((l) => Math.min(...l.profile));
   // Whole km, or whole 5 km once the axis is past 10 km.
   const longest = quantile(lengths, X_QUANTILE);
   const xMaxM = ceilTo(longest, longest > 10_000 ? 5000 : 1000);
-  const yMax = ceilTo(quantile(highs, Y_QUANTILE), 10);
-  const yMin = floorTo(quantile(lows, 1 - Y_QUANTILE), 10);
-  const cut = lines.filter((_, i) => lengths[i] > xMaxM || highs[i] > yMax || lows[i] < yMin).length;
+  // The highest and lowest point drawn: a long ride's summit past the right edge
+  // doesn't stretch the axis for a part nobody sees.
+  const shown = lines.map((l) => l.profile.slice(0, Math.ceil(xMaxM / step) + 1));
+  const yMax = ceilTo(Math.max(...shown.map((p) => Math.max(...p))), 10);
+  const yMin = floorTo(Math.min(...shown.map((p) => Math.min(...p))), 10);
+  const cut = lengths.filter((l) => l > xMaxM).length;
   return { lines, step, xMaxM, yMin, yMax, cut };
 }
 

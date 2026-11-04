@@ -15,7 +15,7 @@ import { niceTicks } from "../profile";
 
 const Y_AXIS_W = 48;
 const X_AXIS_H = 22;
-const PLOT_H = 280;
+const PLOT_H = 420;
 const FALLBACK_WIDTH = 700;
 const LINE_ALPHA = 0.3;
 /** How close (in pixels, vertically) the pointer must be to pick a line. */
@@ -89,7 +89,7 @@ export function ElevationProfiles({ chart, types }: Props) {
   const hovered = hover ? lines[hover.index] : null;
   const xKm = xMaxM / 1000;
   const xTicks = niceTicks(0, xKm, Math.max(2, Math.floor(plotW / 80)));
-  const yTicks = niceTicks(yMin, yMax, 4);
+  const yTicks = niceTicks(yMin, yMax, Math.round(PLOT_H / 60));
 
   return (
     <div ref={boxRef}>
@@ -182,7 +182,8 @@ export function ElevationProfiles({ chart, types }: Props) {
       <p style={note}>
         Each line is one activity's elevation from its start. Lines are see-through, so climbs
         you repeat darken where they stack up; hover a line to see which activity it is.
-        {chart.cut > 0 && ` ${chart.cut} run past the ${xKm} km or elevation edges and are cut there.`}
+        {chart.cut > 0 &&
+          ` ${chart.cut} longer than ${xKm} km run past the right edge and are cut there.`}
       </p>
     </div>
   );
