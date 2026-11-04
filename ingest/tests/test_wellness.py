@@ -6,7 +6,7 @@ import pytest
 from ingest import codec, wellness
 from ingest.archive import LocalArchive
 from ingest.records import WellnessRecord
-from ingest.tests.factories import FETCHED, fixture_bytes, fresh
+from ingest.tests.factories import FETCHED, fixture_bytes, fresh, garmin_heart_rate
 from ingest.wellness import DayPart, apply_wellness
 
 DAY = "2026-04-11"
@@ -139,3 +139,52 @@ def test_input_whose_dates_go_away_clears_the_day(arch, mon):
         assert apply_wellness(conn, arch, [emptied]) == 1
     for t in ("wellness_inputs", "daily_stats", "daily_series"):
         assert conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] == 0
+
+
+# --- API heart rate next to the monitoring FIT -------------------------------
+# monitoring.fit's HR runs from 1775859900 (00:25 local) to 1775878200 (05:30 local), at +02:00
+
+FIT_FIRST, FIT_LAST = 1775859900, 1775878200
+LOCAL_MIDNIGHT = 1775858400        # 2026-04-11T00:00+02:00
+
+
+def _api_hr(arch, values, key=DAY):
+    return _put(arch, garmin_heart_rate(key, 7200, values), source="heart_rate", key=key, kind="garmin_api")
+
+
+def test_monitoring_fit_hr_wins_and_api_hr_fills_only_where_the_fit_has_no_sample(arch, mon):
+    api = _api_hr(arch, [(LOCAL_MIDNIGHT, 60),          # 25 min before the FIT's first sample: kept
+                         (FIT_FIRST, 99),               # the FIT's own instant: dropped
+                         (FIT_FIRST + 150, 99),         # 30 s from a FIT sample: dropped
+                         (FIT_LAST + 60, 99),           # dropped
+                         (FIT_LAST + 120, 61),          # 120 s from the FIT's last sample: kept
+                         (FIT_LAST + 240, None)])       # null: dropped
+    conn = fresh()
+    apply_wellness(conn, arch, [mon])
+    fit_hr = _series(conn)["hr"]
+    fit_t, fit_v = codec.decode("time", fit_hr["time"]), codec.decode("hr", fit_hr["data"])
+    apply_wellness(conn, arch, [api])
+    hr = _series(conn)["hr"]
+    assert hr["sample_count"] == 193 + 2 and hr["utc_offset_s"] == 7200
+    t, v = codec.decode("time", hr["time"]), codec.decode("hr", hr["data"])
+    assert t == [0] + fit_t + [FIT_LAST + 120 + 7200 - (LOCAL_MIDNIGHT + 7200)] and v == [60] + fit_v + [61]
+    assert len(set(t)) == len(t)
+    assert set(_series(conn)) == {"hr", "stress", "respiration"}
+
+
+def test_api_hr_alone_fills_the_day(arch):
+    conn = fresh()
+    apply_wellness(conn, arch, [_api_hr(arch, [(FIT_FIRST, 70), (FIT_FIRST + 120, 71)])])
+    hr = _series(conn)["hr"]
+    assert codec.decode("time", hr["time"]) == [1500, 1620] and codec.decode("hr", hr["data"]) == [70, 71]
+
+
+def test_series_do_not_depend_on_input_order_or_reapplying(arch, mon):
+    api = _api_hr(arch, [(LOCAL_MIDNIGHT, 60), (FIT_FIRST, 99), (FIT_LAST + 600, 61)])
+    one, two = fresh(), fresh()
+    apply_wellness(one, arch, [mon, api])
+    apply_wellness(two, arch, [api])
+    apply_wellness(two, arch, [mon])           # the API input is re-read from wellness_inputs
+    assert _snapshot(one) == _snapshot(two)
+    apply_wellness(one, arch, [api, mon])
+    assert _snapshot(one) == _snapshot(two)
