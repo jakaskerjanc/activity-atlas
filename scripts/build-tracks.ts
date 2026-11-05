@@ -123,7 +123,11 @@ export function readDisplayFiles(
 ): DisplayFiles {
   const stats: Stats = { rawPoints: 0, keptPoints: 0 };
   if (!existsSync(dbPath)) {
-    warn(`No database at ${dbPath}; writing empty display files. Run \`pnpm sync\` to pull it from R2.`);
+    warn(
+      `No database at ${dbPath}; writing empty display files. Import an export ` +
+        "(`pnpm run import:strava` / `pnpm run import:garmin`), run `pnpm run sync` to pull it from R2, " +
+        "or set DB_PATH.",
+    );
     return emptyFiles(stats);
   }
   const db = new Database(dbPath, { readonly: true });
