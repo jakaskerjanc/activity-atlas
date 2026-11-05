@@ -2,7 +2,8 @@
 // Trace Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
 // (re-triggered by REPLAY). Which activities show is decided upstream (activityFilter.ts);
 // this module only applies the expression it is handed. In the Elevation color mode the
-// routes are drawn as grade runs (grade.ts) instead of whole lines.
+// routes are drawn as grade runs (grade.ts) instead of whole lines. A distance
+// comparison's city route, when shown, is drawn dashed on top with its two ends labelled.
 
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
@@ -17,7 +18,7 @@ import {
 import { lineGradient, type GradeRoutes } from "./grade";
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
-import { fitPadding } from "./ui/layout";
+import { fitOffset, fitPadding } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
@@ -48,6 +49,18 @@ const HOVER_CORE_ID = "activities-hover-core";
 const CURSOR_SOURCE_ID = "activity-cursor";
 const CURSOR_RING_ID = "activity-cursor-ring";
 const CURSOR_DOT_ID = "activity-cursor-dot";
+// A comparison city's route: a dashed line over a casing, in the theme's strongest ink so
+// it reads apart from the activities in every color mode.
+const CITY_SOURCE_ID = "city-route";
+const CITY_CASING_ID = "city-route-casing";
+const CITY_LINE_ID = "city-route-line";
+const CITY_INK: Record<Theme, { line: string; casing: string }> = {
+  dark: { line: "#ffffff", casing: "rgba(14, 15, 19, 0.75)" },
+  light: { line: "#1c1c1e", casing: "rgba(255, 255, 255, 0.9)" },
+};
+// Fit margin for the end labels, which sit centered above their dots: about half a long
+// name's width, and more than a label's height.
+const CITY_LABEL_ROOM = 70;
 const FADE_MS = 1200;
 
 const NO_POINTS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -59,6 +72,17 @@ const ACTIVE_STATE: ExpressionSpecification = ["boolean", ["feature-state", "act
 
 /** Matches nothing — parks the active layers when no route is drawing. */
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
+
+/** A city route end: a dot with the place's name beside it (styled in index.css). */
+function cityMarker(name: string, end: "origin" | "city"): HTMLElement {
+  const el = document.createElement("div");
+  el.className = `city-marker city-marker--${end}`;
+  const label = document.createElement("span");
+  label.className = "city-marker__label";
+  label.textContent = name;
+  el.append(label);
+  return el;
+}
 
 /** Point the four base route layers (glow, core, and their hover twins) at one filter. */
 function applyBaseFilter(map: mapboxgl.Map, expr: FilterSpecification | null) {
@@ -101,6 +125,20 @@ interface Props {
   selectedDetail: DetailFile | null;
   /** Set (or clear) the cursor from a pointer over the selected route. */
   onCursor: (i: number | null) => void;
+  /** A distance comparison's route to its city, or null. */
+  cityRoute: CityRouteLine | null;
+  /** Bumped each time a city route is asked for, so asking again refits the camera. */
+  cityRouteEpoch: number;
+}
+
+/** A comparison city's route, as the map draws it. */
+export interface CityRouteLine {
+  /** Changes when a different city or group is shown. */
+  key: string;
+  /** [lng, lat], from the origin to the city */
+  coords: [number, number][];
+  originName: string;
+  cityName: string;
 }
 
 /** Home view on initial load: Slovenia, centered on Ljubljana. */
@@ -138,6 +176,8 @@ export function MapView(props: Props) {
   // True while the cursor was last set by the map, so map events never clear a
   // cursor the charts own.
   const mapOwnsCursorRef = useRef(false);
+  // The city route's end markers (DOM overlays, so they survive a style swap).
+  const cityMarkersRef = useRef<mapboxgl.Marker[]>([]);
 
   /** Single source of truth for the highlighted track: hover beats selection, and
    * replay suspends highlighting. Both the base-layer dimming and the feature-state
@@ -149,10 +189,10 @@ export function MapView(props: Props) {
 
   /** Fit padding for the current canvas + panel state. Recomputed at fit time so a
    * collapsed side panel stops reserving room, and a narrow canvas clamps to fit. */
-  function currentFitPadding() {
+  function currentFitPadding(margin = 0) {
     const el = mapRef.current?.getContainer();
     if (!el) return { top: 0, bottom: 0, left: 0, right: 0 };
-    return fitPadding(el.clientWidth, el.clientHeight, propsRef.current.sidePanelExpanded);
+    return fitPadding(el.clientWidth, el.clientHeight, propsRef.current.sidePanelExpanded, margin);
   }
 
   /** Repaint the base layers for the current active presence + fade factor. The
@@ -313,6 +353,57 @@ export function MapView(props: Props) {
     );
   }
 
+  /** Draw the city route (or nothing) and move its end markers. */
+  function applyCityRoute() {
+    const map = mapRef.current;
+    const src = map?.getSource(CITY_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (!map || !src) return;
+    const route = propsRef.current.cityRoute;
+    src.setData(
+      route
+        ? {
+            type: "FeatureCollection",
+            features: [
+              { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route.coords } },
+            ],
+          }
+        : NO_LINES,
+    );
+    for (const m of cityMarkersRef.current) m.remove();
+    cityMarkersRef.current = route
+      ? [
+          new mapboxgl.Marker({ element: cityMarker(route.originName, "origin") })
+            .setLngLat(route.coords[0])
+            .addTo(map),
+          new mapboxgl.Marker({ element: cityMarker(route.cityName, "city") })
+            .setLngLat(route.coords[route.coords.length - 1])
+            .addTo(map),
+        ]
+      : [];
+  }
+
+  /** Fly to the whole city route, clear of the panels. */
+  function fitCityRoute() {
+    const map = mapRef.current;
+    const route = propsRef.current.cityRoute;
+    if (!map || !route) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const c of route.coords) bounds.extend(c);
+    const padding = currentFitPadding(CITY_LABEL_ROOM);
+    const camera = map.cameraForBounds(bounds, { padding, maxZoom: 10 });
+    if (!camera) return;
+    map.flyTo({
+      ...camera,
+      // A long route is wide enough that centering it on the canvas would tuck its
+      // start under the side panel.
+      offset: fitOffset(padding),
+      duration: 1600,
+      curve: 1.2,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+      essential: true,
+    });
+  }
+
   /** Clear the cursor if the map set it (pointer left the selected route). */
   function releaseCursor() {
     if (!mapOwnsCursorRef.current) return;
@@ -452,6 +543,29 @@ export function MapView(props: Props) {
         },
       });
     }
+    // City route — over the activities, under the cursor.
+    if (!map.getSource(CITY_SOURCE_ID)) {
+      map.addSource(CITY_SOURCE_ID, { type: "geojson", data: NO_LINES });
+    }
+    const ink = CITY_INK[propsRef.current.theme];
+    if (!map.getLayer(CITY_CASING_ID)) {
+      map.addLayer({
+        id: CITY_CASING_ID,
+        type: "line",
+        source: CITY_SOURCE_ID,
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": ink.casing, "line-width": 6 },
+      });
+    }
+    if (!map.getLayer(CITY_LINE_ID)) {
+      map.addLayer({
+        id: CITY_LINE_ID,
+        type: "line",
+        source: CITY_SOURCE_ID,
+        layout: { "line-join": "round" },
+        paint: { "line-color": ink.line, "line-width": 2.4, "line-dasharray": [2, 1.6] },
+      });
+    }
     // Cursor marker — topmost: a light ring under an accent dot.
     if (!map.getSource(CURSOR_SOURCE_ID)) {
       map.addSource(CURSOR_SOURCE_ID, { type: "geojson", data: NO_POINTS });
@@ -477,6 +591,7 @@ export function MapView(props: Props) {
     gradientKeyRef.current = null;
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
     applyCursor();
+    applyCityRoute();
   }
 
   // Init map once.
@@ -509,6 +624,8 @@ export function MapView(props: Props) {
         applyActiveRoutes();
         startFade();
       }
+      // A city route asked for before the map was ready.
+      fitCityRoute();
     });
 
     // Hover highlighting (glow is the wider hit target). Suspended during replay.
@@ -546,6 +663,8 @@ export function MapView(props: Props) {
 
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      for (const m of cityMarkersRef.current) m.remove();
+      cityMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
@@ -628,6 +747,14 @@ export function MapView(props: Props) {
     if (!loadedRef.current) return;
     applyCursor();
   }, [props.cursorPoint, replaying]);
+
+  // Draw a newly shown city route (or take it down) and bring all of it into view. Asking
+  // for the same route again (a new epoch) refits, in case the map was moved since.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    applyCityRoute();
+    fitCityRoute();
+  }, [props.cityRoute?.key, props.cityRouteEpoch]);
 
   // A new selection starts with no map-owned cursor.
   useEffect(() => {

@@ -74,6 +74,9 @@ function analyticsTotals(filter: ActivityFilter): string[] {
       sidePanelExpanded: true,
       isolation: null,
       onPickMonth: () => {},
+      cities: { status: "loading" },
+      comparisons: [],
+      onShowCity: () => {},
     }),
   );
   expect(html).toContain("Totals");

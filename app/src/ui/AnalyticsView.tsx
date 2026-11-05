@@ -8,7 +8,9 @@ import { SectionHeading, StatsSection } from "./StatsSection";
 import { ActivityCalendar, CALENDAR_WIDTH } from "./ActivityCalendar";
 import { Ridgeline } from "./Ridgeline";
 import { ElevationProfiles } from "./ElevationProfiles";
+import { CityComparisons } from "./CityComparisons";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
+import type { CitiesState } from "./useCities";
 import { eyebrow, glass, MONO } from "./theme";
 import { useMediaQuery } from "./useMediaQuery";
 import {
@@ -30,7 +32,8 @@ import { climbingRidgeline } from "../ridgeline";
 import { profileChart } from "../elevationProfiles";
 import { totalCards } from "../stats";
 import { formatMonth } from "../format";
-import type { ActivityRecord } from "../types";
+import type { CityComparison } from "../cityMatch";
+import type { ActivityRecord, Profile } from "../types";
 
 interface Props {
   /** null until the data loads. */
@@ -44,6 +47,12 @@ interface Props {
   onPickMonth: (month: number) => void;
   /** The route profiles' load state; tests pass one in, the page fetches them otherwise. */
   profiles?: ProfilesState;
+  /** The city distances' load state; App owns it, since the map draws a city route too. */
+  cities: CitiesState;
+  /** The visible activities' distance comparisons, as App hands them to the map. */
+  comparisons: CityComparison[];
+  /** A comparison's "Show on map": switch to the map, showing that group's route. */
+  onShowCity: (profile: Profile) => void;
 }
 
 const EDGE = 24;
@@ -64,6 +73,9 @@ export function AnalyticsView({
   isolation,
   onPickMonth,
   profiles: given,
+  cities,
+  comparisons,
+  onShowCity,
 }: Props) {
   const fetched = useRouteProfiles();
   const profiles = given ?? fetched;
@@ -137,6 +149,21 @@ export function AnalyticsView({
                     subtitle="Distance, climbing and time"
                     cards={totals}
                     columns={statColumns}
+                  />
+                </section>
+                <section style={card}>
+                  <SectionHeading
+                    title="How far is that?"
+                    subtitle={
+                      cities.status === "ready"
+                        ? `Your distance as one trip from ${cities.data.origin.name}`
+                        : "Your distance as one trip"
+                    }
+                  />
+                  <CityComparisons
+                    cities={cities}
+                    comparisons={comparisons}
+                    onShowOnMap={onShowCity}
                   />
                 </section>
                 <section style={card}>

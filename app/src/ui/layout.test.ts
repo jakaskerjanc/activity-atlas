@@ -3,7 +3,7 @@
 // left/right of 330/360 broke exactly that below ~690px.
 
 import { describe, expect, test } from "vitest";
-import { fitPadding, SIDE_PANEL_CLEARANCE } from "./layout";
+import { fitOffset, fitPadding, SIDE_PANEL_CLEARANCE } from "./layout";
 
 describe("fitPadding", () => {
   test("reserves the side panel's strip when it is expanded", () => {
@@ -28,6 +28,13 @@ describe("fitPadding", () => {
     expect(100 - pad.top - pad.bottom).toBeGreaterThanOrEqual(47.99);
   });
 
+  test("adds a margin on every side, still clamped to the viewport", () => {
+    expect(fitPadding(1440, 900, false, 70)).toEqual({ left: 94, right: 94, top: 160, bottom: 150 });
+    const pad = fitPadding(400, 300, true, 70);
+    expect(400 - pad.left - pad.right).toBeGreaterThanOrEqual(47.99);
+    expect(300 - pad.top - pad.bottom).toBeGreaterThanOrEqual(47.99);
+  });
+
   test("leaves content room across the range of plausible widths", () => {
     for (const width of [320, 480, 680, 1000, 1280, 1920]) {
       for (const expanded of [true, false]) {
@@ -35,5 +42,12 @@ describe("fitPadding", () => {
         expect(width - left - right).toBeGreaterThanOrEqual(47.99);
       }
     }
+  });
+});
+
+describe("fitOffset", () => {
+  test("shifts the center by half the difference between opposite sides", () => {
+    expect(fitOffset({ left: 426, right: 24, top: 90, bottom: 80 })).toEqual([201, 5]);
+    expect(fitOffset({ left: 24, right: 24, top: 80, bottom: 80 })).toEqual([0, 0]);
   });
 });
