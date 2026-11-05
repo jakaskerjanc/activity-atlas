@@ -33,7 +33,9 @@ function payload(cities: EncodedCity[], v = CITY_PAYLOAD_VERSION): CityDistanceP
 
 describe("decodeCities", () => {
   test("decodes polylines to [lng, lat] and keeps scalar fields", () => {
-    const [c] = decodeCities(payload([city()]));
+    const { origin, cities } = decodeCities(payload([city()]));
+    expect(origin).toEqual({ name: "Ljubljana", lat: 46.0569, lon: 14.5058 });
+    const [c] = cities;
     expect(c.name).toBe("Zagreb");
     expect(c.fc).toBe("PPLC");
     expect(c.cycling?.m).toBe(153000);
@@ -45,12 +47,12 @@ describe("decodeCities", () => {
   });
 
   test("preserves null profiles", () => {
-    const [c] = decodeCities(payload([city()]));
+    const [c] = decodeCities(payload([city()])).cities;
     expect(c.walking).toBeNull();
   });
 
   test("a degenerate (< 2 point) route decodes to null", () => {
-    const [c] = decodeCities(payload([city({ walking: { m: 1, poly: encodeLngLat([PATH[0]]) } })]));
+    const [c] = decodeCities(payload([city({ walking: { m: 1, poly: encodeLngLat([PATH[0]]) } })])).cities;
     expect(c.walking).toBeNull();
   });
 
@@ -64,16 +66,17 @@ describe("loadCities", () => {
     vi.unstubAllGlobals();
   });
 
-  test("fetches city-distances.json from the base URL and decodes it", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(payload([city()]))));
-    vi.stubGlobal("fetch", fetchMock);
-    const cities = await loadCities();
-    expect(fetchMock).toHaveBeenCalledWith(`${import.meta.env.BASE_URL}city-distances.json`, { signal: undefined });
-    expect(cities[0].cycling?.coords).toHaveLength(3);
-  });
-
-  test("throws on a non-OK response", async () => {
+  test("forgets a failed load, then fetches, decodes and keeps the dataset", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 404, statusText: "Not Found" })));
     await expect(loadCities()).rejects.toThrow(/404/);
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(payload([city()]))));
+    vi.stubGlobal("fetch", fetchMock);
+    const data = await loadCities();
+    expect(fetchMock).toHaveBeenCalledWith(`${import.meta.env.BASE_URL}city-distances.json`);
+    expect(data.cities[0].cycling?.coords).toHaveLength(3);
+
+    expect(await loadCities()).toBe(data);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
