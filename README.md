@@ -61,7 +61,49 @@ Strava/Garmin API calls happen in the browser. Design:
 
 `pnpm run build` runs `build:tracks` then the app build. In CI the deploy pulls
 the database from R2 with a read-only token first (see [CI](#ci)); locally it
-reads `data/activities.sqlite` (`pnpm run sync` refreshes it from R2).
+reads `data/activities.sqlite` and falls back to `data/demo/activities.sqlite`
+when that file does not exist (`pnpm run sync` refreshes the personal one from
+R2).
+
+## Demo data
+
+A copy of the template ships a small synthetic dataset so the site works
+before any import and without R2:
+
+![The demo map, with routes around Maribor](docs/screenshots/demo-map.png)
+
+![The demo analytics page](docs/screenshots/demo-analytics.png)
+
+- `data/demo/routes.json` — base routes around Maribor, routed along OSM paths
+  with elevation. Generated once by `ingest/demo/routes.py` and committed.
+- `data/demo/activities.sqlite` — about 100 made-up Strava activities over
+  15 months, generated from those routes by `ingest/demo/build.py` and imported
+  through the real Strava importer. Committed.
+
+`build-tracks.ts` uses `data/activities.sqlite` when it exists and otherwise
+builds from the demo database, so a fresh clone can run:
+
+```bash
+pnpm install
+cp .example.env .env      # add VITE_MAPBOX_TOKEN (see below)
+pnpm run dev              # builds the display files, then starts Vite
+```
+
+The deploy workflow does the same: `scripts/ci_db.sh` prints
+`data/demo/activities.sqlite` when no R2 secret is set. The demo's gear names
+(`Demo road bike`, `Demo trail shoes`, …) and the `data/demo/` path mark it as
+synthetic; it contains no personal data.
+
+Regenerate the demo database after changing the routes or the generator:
+
+```bash
+pnpm run build:demo
+```
+
+The seed is fixed, so the same `routes.json` produces the same database. It
+reads only `data/demo/routes.json`; it never opens the personal database or
+archive. To use your own data, import it as below — `data/activities.sqlite`
+then takes precedence over the demo automatically.
 
 ## Populating the database
 
@@ -418,16 +460,22 @@ database in R2.
 
 ## Setting up your own copy
 
-Use this if you've cloned/forked the repo to run it against your own
-activity history.
+Use this if you want to run the template against your own activity history.
+You can try the demo first: after `pnpm install`, `cp .example.env .env` and a
+free [Mapbox token](#2-create-a-mapbox-token), `pnpm run dev` shows the demo
+data immediately.
 
-### 1. Fork and clone
+### 1. Create a copy and install
 
 You need Node with pnpm and Python 3.12 or newer (CI uses 3.12).
 
+Create a repository from the template (recommended — it starts with clean
+history) or fork it, then clone your copy:
+
 ```bash
-gh repo fork <owner>/activity-atlas --clone
-cd activity-atlas
+gh repo create my-activity-atlas --template <owner>/activity-atlas --clone
+# or: gh repo fork <owner>/activity-atlas --clone
+cd my-activity-atlas
 pnpm install
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -443,10 +491,15 @@ the dependencies installed.
 
 ### 2. Create a Mapbox token
 
-Create a **public** token at <https://account.mapbox.com/access-tokens/>,
-restricted by URL to the domain you serve the site from
-(e.g. `https://<user>.github.io` or your custom domain). Add it to `.env` as
+The map is the one part that needs an account: create a **public** token at
+<https://account.mapbox.com/access-tokens/> (the free tier is enough),
+restricted by URL to the domain you serve the site from (e.g.
+`https://<user>.github.io` or your custom domain). Add it to `.env` as
 `VITE_MAPBOX_TOKEN`.
+
+Without a token the demo still deploys and the panels, analytics and activity
+charts work, but the map tiles do not load. This is the only required secret;
+the demo data needs nothing else.
 
 ### 3. Export and import your activity history
 
@@ -468,9 +521,10 @@ export again is safe: nothing is added twice.
 To see your data locally, build the display files and start the app:
 
 ```bash
-pnpm run build:tracks
-pnpm --filter app run dev
+pnpm run dev
 ```
+
+(`pnpm run dev` runs `build:tracks` first, so it picks up the new database.)
 
 ### 4. Push secrets to GitHub Actions
 
@@ -485,13 +539,14 @@ Cloudflare account to deploy.
 
 ### 5. Enable Pages and run the workflow
 
-- Settings → Pages → Source = GitHub Actions.
+- Settings → Pages → Source = **GitHub Actions**. Do this before the first
+  deploy, or the workflow has no Pages site to publish to.
 - Optional: set a custom domain under Settings → Pages (a CNAME record to
   `<user>.github.io`) and enable **Enforce HTTPS**. Without one the site is
   served at `https://<user>.github.io/<repo>/`; the build takes that base path
   from the Pages settings.
 - Push to `main` (or run **Deploy** manually from the Actions tab) to build
-  and deploy.
+  and deploy. Until you add your own data, the site shows the demo dataset.
 
 ### 6. Publish your own data with R2
 
@@ -505,10 +560,10 @@ the repository secrets listed under [CI](#ci), including the read-only pair
 
 ```bash
 pnpm install
-pnpm run build:tracks    # regenerate app/public/data/ from the DB
-pnpm --filter app run dev
+pnpm run dev    # build app/public/data/ from the DB, then start Vite
 ```
 
-`pnpm run build:tracks` only needs to be re-run when the activity database
-changes (e.g. after an import) — for day-to-day frontend work,
-`pnpm --filter app run dev` alone is enough.
+`pnpm run dev` rebuilds the display files on every start, which is quick (the
+demo database is small). For day-to-day frontend work you can leave Vite
+running and re-run `pnpm run build:tracks` in another shell only when the
+activity database changes (e.g. after an import).
