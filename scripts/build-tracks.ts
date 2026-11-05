@@ -1,5 +1,6 @@
 // Build the display files in app/public/data/ from the SQLite database at
-// DB_PATH (default data/activities.sqlite, synced from R2). See
+// DB_PATH (default data/activities.sqlite, synced from R2, or the committed
+// data/demo/activities.sqlite when that does not exist). See
 // docs/2026-11-04-display-files-design.md. No network.
 //
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
@@ -189,6 +190,12 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
 }
 
 async function main() {
+  if (!process.env.DB_PATH && DB_PATH === DEMO_DB_PATH) {
+    console.log(
+      `No ${PERSONAL_DB_PATH}; building from the demo database. Import an export or ` +
+        "run `pnpm run sync` to use your own data.",
+    );
+  }
   const files = readDisplayFiles(DB_PATH);
   await writeDisplayFiles(files, OUT_DIR);
   // The pre-Plan 4 tracks.json; a stale local copy would be bundled by Vite.

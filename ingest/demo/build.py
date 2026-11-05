@@ -309,7 +309,7 @@ def build(routes_doc: dict, out: str, workdir: str, *, seed: int = SEED,
     writer = csv.writer(csv_text, lineterminator="\n")
     writer.writerow(CSV_HEADER)
     writer.writerows(rows)
-    (export / "activities.csv").write_text(csv_text.getvalue())
+    (export / "activities.csv").write_text(csv_text.getvalue(), encoding="utf-8")
 
     zip_path = work / "strava-export.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -357,7 +357,7 @@ def main():
     ap.add_argument("--routes", default="data/demo/routes.json")
     ap.add_argument("--out", default="data/demo/activities.sqlite")
     args = ap.parse_args()
-    with open(args.routes) as f:
+    with open(args.routes, encoding="utf-8") as f:
         routes_doc = json.load(f)
     with tempfile.TemporaryDirectory(prefix="activity-atlas-demo-") as work:
         stats = build(routes_doc, args.out, work)
