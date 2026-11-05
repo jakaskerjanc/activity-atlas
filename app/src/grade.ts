@@ -21,8 +21,22 @@ import type { ActivityFeature, ActivityFeatureCollection, ProfilesFile } from ".
 export const GRADE_MAX = 15;
 /** Width (%) of one grade bucket: runs split where the bucket changes. */
 export const GRADE_BUCKET = 1.5;
-/** Descent, flat and climb colors at -GRADE_MAX, 0 and +GRADE_MAX. */
-export const GRADE_STOPS = ["#4cc9f0", "#666b76", "#ff3b30"];
+/** Grade (%) up to which a route reads as flat, either way. */
+export const GRADE_FLAT = 3;
+
+/**
+ * The color scale, ascending by grade (%), interpolated between stops. Climbs follow
+ * the green -> yellow -> red that Strava's gradient map and most grade tools use (the
+ * yellow -> red mix passes through orange); descents fade from the flat green to
+ * blue, so a descent never reads as a climb.
+ */
+export const GRADE_SCALE: { grade: number; color: string }[] = [
+  { grade: -GRADE_MAX, color: "#3d8bfd" },
+  { grade: -GRADE_FLAT, color: "#3ecf6e" },
+  { grade: GRADE_FLAT, color: "#3ecf6e" },
+  { grade: 7.5, color: "#ffd23f" },
+  { grade: GRADE_MAX, color: "#ff3b30" },
+];
 
 /** What a run feature carries: enough for the filter, replay, highlight and color. */
 export interface GradeRunProps {
@@ -182,18 +196,14 @@ function runFeature(
 
 /** The data-driven line-color over a run's `grade` (colors.ts sends grade-less features to NEUTRAL). */
 export function gradeRamp(): ExpressionSpecification {
-  const [down, flat, up] = GRADE_STOPS;
-  return [
-    "interpolate",
-    ["linear"],
-    ["get", "grade"],
-    -GRADE_MAX,
-    down,
-    0,
-    flat,
-    GRADE_MAX,
-    up,
-  ] as unknown as ExpressionSpecification;
+  const expr: unknown[] = ["interpolate", ["linear"], ["get", "grade"]];
+  for (const s of GRADE_SCALE) expr.push(s.grade, s.color);
+  return expr as unknown as ExpressionSpecification;
+}
+
+/** The scale as CSS linear-gradient stops ("color pos%") across -GRADE_MAX..GRADE_MAX. */
+export function gradeLegendStops(): string[] {
+  return GRADE_SCALE.map((s) => `${s.color} ${((s.grade + GRADE_MAX) / (2 * GRADE_MAX)) * 100}%`);
 }
 
 function hexRgb(hex: string): [number, number, number] {
@@ -204,9 +214,14 @@ function hexRgb(hex: string): [number, number, number] {
 /** The ramp's color at a grade, as the style would interpolate it (linear RGB mix). */
 export function gradeColor(grade: number): string {
   const g = Math.max(-GRADE_MAX, Math.min(GRADE_MAX, grade));
-  const [down, flat, up] = GRADE_STOPS.map(hexRgb);
-  const [from, to, t] = g < 0 ? [flat, down, -g / GRADE_MAX] : [flat, up, g / GRADE_MAX];
-  const mix = from.map((c, i) => Math.round(c + (to[i] - c) * t));
+  let i = 0;
+  while (i < GRADE_SCALE.length - 2 && g > GRADE_SCALE[i + 1].grade) i++;
+  const lo = GRADE_SCALE[i];
+  const hi = GRADE_SCALE[i + 1];
+  const t = (g - lo.grade) / (hi.grade - lo.grade);
+  const from = hexRgb(lo.color);
+  const to = hexRgb(hi.color);
+  const mix = from.map((c, k) => Math.round(c + (to[k] - c) * t));
   return `#${mix.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 

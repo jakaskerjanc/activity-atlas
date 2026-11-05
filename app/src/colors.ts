@@ -7,7 +7,7 @@
 import type { ExpressionSpecification } from "mapbox-gl";
 import type { ActivityFeature } from "./types";
 import { formatDate } from "./format";
-import { GRADE_MAX, GRADE_STOPS, gradeRamp } from "./grade";
+import { GRADE_MAX, gradeLegendStops, gradeRamp } from "./grade";
 
 export const ACCENT = "#ff6b3d";
 /** Routes whose colored value is unknown: grey, so they never read as the ramp's low end. */
@@ -218,7 +218,7 @@ export function legendFor(mode: ColorMode, domain: ColorDomain): Legend {
     case "elevation":
       return {
         kind: "gradient",
-        stops: GRADE_STOPS,
+        stops: gradeLegendStops(),
         minLabel: `−${GRADE_MAX}% descent`,
         midLabel: "flat",
         maxLabel: `+${GRADE_MAX}% climb`,
