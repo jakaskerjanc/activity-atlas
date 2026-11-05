@@ -1,6 +1,6 @@
-# strava-on-maps
+# Activity Atlas
 
-A personal map of every recorded activity (Strava + Garmin), drawn as routes over a base map with filtering, coloring, and a chronological replay.
+A personal atlas of every recorded activity (Strava + Garmin): routes drawn over a base map with filtering, coloring, and a chronological replay, plus an analytics page and daily wellness data.
 
 ## Language
 

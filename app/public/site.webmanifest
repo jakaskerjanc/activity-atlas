@@ -1,9 +1,9 @@
 {
-  "name": "Trace · Activity Atlas",
-  "short_name": "Trace",
+  "name": "Activity Atlas",
+  "short_name": "Atlas",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
   ],
   "theme_color": "#0e0f13",
   "background_color": "#0e0f13",

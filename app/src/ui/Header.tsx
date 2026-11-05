@@ -1,8 +1,8 @@
-// Top bar: TRACE / Activity Atlas wordmark, the Map / Analytics page switch, and the
+// Top bar: the Activity Atlas wordmark, the Map / Analytics page switch, and the
 // light/dark theme toggle. Overlays both pages.
 
 import type { ComponentType, CSSProperties } from "react";
-import { MONO, glass } from "./theme";
+import { glass } from "./theme";
 import type { Theme } from "../types";
 import type { View } from "./useView";
 
@@ -46,20 +46,17 @@ export function Header({ theme, onToggleTheme, view, onViewChange }: Props) {
             boxShadow: "0 0 14px var(--accent)",
           }}
         />
-        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: ".14em" }}>TRACE</span>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 9.5,
-              letterSpacing: ".22em",
-              color: "var(--text-muted)",
-              textTransform: "uppercase",
-            }}
-          >
-            Activity Atlas
-          </span>
-        </div>
+        <span
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            letterSpacing: ".14em",
+            textTransform: "uppercase",
+            lineHeight: 1.15,
+          }}
+        >
+          Activity Atlas
+        </span>
       </div>
 
       <div

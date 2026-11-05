@@ -26,9 +26,9 @@ def main() -> None:
     # up the client's start-up. Otherwise the first tool call checks R2.
     if not args.no_sync and not os.path.exists(path):
         syncer.maybe_sync(force=True)
-        print(f"strava-on-maps MCP: sync {syncer.last_outcome}", file=sys.stderr)
+        print(f"activity-atlas MCP: sync {syncer.last_outcome}", file=sys.stderr)
     if not os.path.exists(path):
-        print(f"strava-on-maps MCP: no database at {path} (and none could be synced: {syncer.last_outcome})",
+        print(f"activity-atlas MCP: no database at {path} (and none could be synced: {syncer.last_outcome})",
               file=sys.stderr)
         raise SystemExit(2)
 

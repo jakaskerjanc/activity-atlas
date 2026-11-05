@@ -1,5 +1,5 @@
 // Top-level wiring: load the GeoJSON once, own all UI state, and feed the map + the
-// Trace Atlas panels. Which activities are shown is the Activity filter's call
+// Activity Atlas panels. Which activities are shown is the Activity filter's call
 // (activityFilter.ts); this file holds it and hands its results to the map, the
 // analytics page, and the panels.
 

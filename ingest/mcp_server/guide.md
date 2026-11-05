@@ -1,4 +1,4 @@
-# strava-on-maps data guide
+# Activity Atlas data guide
 
 One person's activities (Strava + Garmin, merged and deduplicated) and daily
 Garmin wellness data, read-only. Use the tools below; they apply the

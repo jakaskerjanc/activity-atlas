@@ -1,5 +1,5 @@
 // Owns the Mapbox GL map. Renders activity routes as a glow + core line pair in the
-// Trace Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
+// Activity Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
 // (re-triggered by REPLAY). Which activities show is decided upstream (activityFilter.ts);
 // this module only applies the expression it is handed. In the Elevation color mode the
 // routes are drawn as grade runs (grade.ts) instead of whole lines. A distance
