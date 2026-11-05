@@ -57,9 +57,9 @@ published. The frontend joins routes and numbers in `app/src/tracks.ts` — no
 Strava/Garmin API calls happen in the browser. Design:
 `docs/2026-11-04-display-files-design.md`.
 
-`npm run build` runs `build:tracks` then the app build. In CI the deploy pulls
+`pnpm run build` runs `build:tracks` then the app build. In CI the deploy pulls
 the database from R2 with a read-only token first (see [CI](#ci)); locally it
-reads `data/activities.sqlite` (`npm run sync` refreshes it from R2).
+reads `data/activities.sqlite` (`pnpm run sync` refreshes it from R2).
 
 ## Populating the database
 
@@ -67,8 +67,8 @@ Activities get into `data/activities.sqlite` via a one-shot backfill from
 bulk data exports. Pass each export **zip** as downloaded:
 
 ```bash
-npm run import:strava -- <strava-export.zip>
-npm run import:garmin -- <garmin-export.zip>
+pnpm run import:strava -- <strava-export.zip>
+pnpm run import:garmin -- <garmin-export.zip>
 ```
 
 Each import first stores the zip byte for byte, plus every file it reads
@@ -111,7 +111,7 @@ Ongoing incremental fetch from the Garmin Connect Personal API
 ## Rebuild
 
 ```bash
-npm run rebuild -- [--db data/activities.sqlite] [--archive file://data/archive]
+pnpm run rebuild -- [--db data/activities.sqlite] [--archive file://data/archive]
 ```
 
 Rebuilds the database from the archive's source records. If any activity in
@@ -131,10 +131,10 @@ the pulled R2 copy, so exit code 4 does not apply.
 When the matcher gets an activity wrong, fix it by hand:
 
 ```bash
-npm run activity -- merge <keep-id> <other-id>          # one activity, recorded twice
-npm run activity -- split <id> garmin:<garmin-activity-id>   # two activities merged by mistake
-npm run activity -- hide <id>                           # keep it, but leave it off the site
-npm run activity -- unhide <id>
+pnpm run activity -- merge <keep-id> <other-id>          # one activity, recorded twice
+pnpm run activity -- split <id> garmin:<garmin-activity-id>   # two activities merged by mistake
+pnpm run activity -- hide <id>                           # keep it, but leave it off the site
+pnpm run activity -- unhide <id>
 ```
 
 Each command takes `--db PATH` (default `data/activities.sqlite`). Merged and
@@ -167,7 +167,7 @@ Add the key to the root `.env` (gitignored; see [Config](#config)):
 GARMIN_PERSONAL_API_KEY=<your key>
 ```
 
-then run `npm run fetch:garmin`. Credentials resolve in this order: an explicit
+then run `pnpm run fetch:garmin`. Credentials resolve in this order: an explicit
 `--api-key-file PATH`, then a `GARMIN_PERSONAL_API_KEY` environment variable,
 then `GARMIN_PERSONAL_API_KEY` in `.env`. If no key is found, the fetch exits
 with code 2. The fetch stores every list page, activity ZIP and activity file
@@ -332,7 +332,7 @@ What it does:
   (`R2_RO_ACCESS_KEY_ID`, `R2_RO_SECRET_ACCESS_KEY`) from `<checkout>/.env`.
   On start, and before a tool call when the last check is over an hour old, it
   compares R2's etag with the local file's MD5 and downloads only when they
-  differ, replacing `data/activities.sqlite` the same way `npm run sync` does.
+  differ, replacing `data/activities.sqlite` the same way `pnpm run sync` does.
   Without R2 it reads the local file as it is and never overwrites it.
 - **Read-only:** both connections open the file read-only; `query` also runs
   under an SQLite authorizer that allows only reads of the database's own
@@ -368,10 +368,10 @@ against the newer database, up to 3 attempts). A snapshot is kept in
 R2 database. Refresh it on demand with:
 
 ```bash
-npm run sync
+pnpm run sync
 ```
 
-`npm run sync` overwrites the local copy with the R2 database; without R2
+`pnpm run sync` overwrites the local copy with the R2 database; without R2
 configured it exits 1, because the local database is already the master.
 
 After deleting or recreating anything in the bucket, delete
@@ -383,7 +383,7 @@ busy (nothing was uploaded; run again). `6` means R2 has no database yet and
 `--init-db` was not passed.
 
 The first import into an empty bucket needs `--init-db`
-(`npm run import:strava -- <export.zip> --init-db`); no other command creates the
+(`pnpm run import:strava -- <export.zip> --init-db`); no other command creates the
 database in R2.
 
 ## Setting up your own copy
@@ -393,12 +393,23 @@ activity history.
 
 ### 1. Fork and clone
 
+You need Node with pnpm and Python 3.12 or newer (CI uses 3.12).
+
 ```bash
 gh repo fork <owner>/strava-on-maps --clone
 cd strava-on-maps
-npm install
+pnpm install
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 cp .example.env .env
+export PYTHON_BIN=.venv/bin/python
 ```
+
+The `pnpm run import:*`, `sync`, `rebuild`, `activity` and `test:py` scripts
+run `$PYTHON_BIN`, falling back to `python3`. Keep `PYTHON_BIN` pointed at the
+virtual environment (in your shell profile or with
+[direnv](https://direnv.net/)), or the scripts run a Python that does not have
+the dependencies installed.
 
 ### 2. Create a Mapbox token
 
@@ -414,13 +425,22 @@ or Delete Your Account → Download Request) and/or Garmin Connect (Account
 Settings → Export Your Data), then run the importers:
 
 ```bash
-npm run import:strava -- <strava-export.zip>
-npm run import:garmin -- <garmin-export.zip>
+pnpm run import:strava -- <strava-export.zip>
+pnpm run import:garmin -- <garmin-export.zip>
 ```
 
-Add `--db data/v2.sqlite` to both commands. This archives the exports under
-`data/archive/` (gitignored) and creates the new database, which is never
-committed (see [Populating the database](#populating-the-database)).
+Run them from the repository root. This archives the exports under
+`data/archive/` and writes the database to `data/activities.sqlite`. Both are
+gitignored and never committed (see
+[Populating the database](#populating-the-database)). Importing the same
+export again is safe: nothing is added twice.
+
+To see your data locally, build the display files and start the app:
+
+```bash
+pnpm run build:tracks
+pnpm --filter app run dev
+```
 
 ### 4. Push secrets to GitHub Actions
 
@@ -453,11 +473,11 @@ the repository secrets listed under [CI](#ci), including the read-only pair
 ## Local development
 
 ```bash
-npm install
-npm run build:tracks    # regenerate app/public/data/ from the DB
-npm --workspace app run dev
+pnpm install
+pnpm run build:tracks    # regenerate app/public/data/ from the DB
+pnpm --filter app run dev
 ```
 
-`npm run build:tracks` only needs to be re-run when the activity database
+`pnpm run build:tracks` only needs to be re-run when the activity database
 changes (e.g. after an import) — for day-to-day frontend work,
-`npm --workspace app run dev` alone is enough.
+`pnpm --filter app run dev` alone is enough.
