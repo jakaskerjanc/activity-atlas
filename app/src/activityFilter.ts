@@ -172,6 +172,19 @@ export function typesByCount(filter: ActivityFilter): string[] {
   return [...filter.availableTypes].sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1));
 }
 
+/** Fewest activities (over all dates) a type needs to get a row in the type list. */
+export const MIN_LISTED_TYPE_ACTIVITIES = 5;
+
+/**
+ * The types the filter's type list shows: typesByCount without the rare ones (fewer
+ * than MIN_LISTED_TYPE_ACTIVITIES activities), which would only clutter it.
+ */
+export function listedTypes(filter: ActivityFilter): string[] {
+  const counts: Record<string, number> = {};
+  for (const a of filter.activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
+  return typesByCount(filter).filter((t) => counts[t] >= MIN_LISTED_TYPE_ACTIVITIES);
+}
+
 /**
  * The same rule as visibleActivities, as a Mapbox filter expression over the `type`
  * and `ts` feature properties. An empty type selection yields an `in` over an empty

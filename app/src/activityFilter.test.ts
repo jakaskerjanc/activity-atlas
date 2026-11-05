@@ -3,6 +3,8 @@ import { featureFilter } from "mapbox-gl/dist/style-spec/index.es.js";
 import {
   createActivityFilter,
   filterExpression,
+  listedTypes,
+  MIN_LISTED_TYPE_ACTIVITIES,
   onlyMonth,
   setFromMonth,
   setToMonth,
@@ -134,6 +136,25 @@ describe("types by count", () => {
 
   test("leave availableTypes alphabetical, since type colors are keyed to it", () => {
     expect(createActivityFilter(all).availableTypes).toEqual(["Hike", "Ride", "Run"]);
+  });
+});
+
+describe("listed types", () => {
+  // Enough runs to be listed, one ride short of it.
+  const runs = Array.from({ length: MIN_LISTED_TYPE_ACTIVITIES }, (_, i) =>
+    record({ id: `s:r${i}`, type: "Run", ts: at("2024-01-15T08:00:00Z") }),
+  );
+  const rides = Array.from({ length: MIN_LISTED_TYPE_ACTIVITIES - 1 }, (_, i) =>
+    record({ id: `s:b${i}`, type: "Ride", ts: at("2024-03-01T00:00:00Z") }),
+  );
+
+  test("leave out types with too few activities", () => {
+    expect(listedTypes(createActivityFilter([...runs, ...rides]))).toEqual(["Run"]);
+  });
+
+  test("count over every date, so a type doesn't vanish as the range narrows", () => {
+    const f = setFromMonth(createActivityFilter([...runs, ...rides]), month(2024, 3));
+    expect(listedTypes(f)).toEqual(["Run"]);
   });
 });
 
