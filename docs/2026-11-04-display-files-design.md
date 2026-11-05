@@ -342,9 +342,11 @@ Top to bottom:
   the value. When none do, the value is "—". (Changed after the PR at the
   owner's request: the coverage note, e.g. `437 of 447`, is removed; totals
   skip unknown values without saying so.)
-- **Color ramps:** the elevation and speed modes compute their domain from the
-  activities that have the value. An activity without it draws in a neutral
-  grey instead of the ramp's low end.
+- **Color ramps:** the speed mode computes its domain from the activities that
+  have the value. An activity without it draws in a neutral grey instead of the
+  ramp's low end. (Since #18 the elevation mode colors each route along its
+  length by grade, on a fixed ±15% scale read from profiles.json; a route
+  without a profile draws in the same neutral grey.)
 
 ### Narrow screens
 

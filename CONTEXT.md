@@ -65,6 +65,10 @@ A run of consecutive active days.
 An activity's elevation every 100 m of distance, measured from its start (profiles.json), so a loop starts and ends near 0 wherever it was.
 _Avoid_: elevation profile (that is the selected activity's chart)
 
+**Grade**:
+How steep a route is at a point: rise over run in %, read from its route profile. The map's Elevation color mode colors each route along its length by grade, on a fixed scale: green within ±1%, climbs through yellow and red to dark red, descents through blue to dark blue, saturating at ±15%.
+_Avoid_: gradient (that is the color ramp), slope
+
 **Elevation profiles** (chart):
 The Analytics chart that draws every visible activity's route profile as a see-through line against distance in km, in its activity type's color; repeated climbs darken where the lines stack up.
 _Avoid_: heatmap

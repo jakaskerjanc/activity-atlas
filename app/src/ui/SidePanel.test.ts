@@ -15,8 +15,6 @@ const props = {
   colorDomain: {
     tsMin: 0,
     tsMax: 1,
-    elevMin: 0,
-    elevMax: 1,
     speedMin: 0,
     speedMax: 1,
     types: ["Run"],

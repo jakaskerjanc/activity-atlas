@@ -32,6 +32,8 @@ import { useActivityDetail } from "./ui/useActivityDetail";
 import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
 import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
+import { gradeRoutes } from "./grade";
+import { useRouteProfiles } from "./ui/useRouteProfiles";
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -119,12 +121,20 @@ export default function App() {
   );
   const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
-  // Color scale domain from the visible set, so recency/elevation/speed ramps
+  // Color scale domain from the visible set, so recency/speed ramps
   // span what's actually shown. Type→color stays keyed to the full type list
   // (availableTypes) so a type doesn't change color as others are toggled off.
   const colorDomain = useMemo(
     () => ({ ...computeDomain(visibleOnMap), types: [...(filter?.availableTypes ?? [])] }),
     [visibleOnMap, filter?.availableTypes],
+  );
+
+  // The Elevation color mode colors routes by grade, from the route profiles: fetched the
+  // first time it is picked, then split into grade runs once per data load.
+  const profiles = useRouteProfiles(colorMode === "elevation");
+  const grade = useMemo(
+    () => (data && profiles.status === "ready" ? gradeRoutes(data, profiles.file) : null),
+    [data, profiles],
   );
 
   // Chronological step list for the visible activities, and the frame the
@@ -296,6 +306,7 @@ export default function App() {
           visible={visibleOnMap}
           colorMode={colorMode}
           colorDomain={colorDomain}
+          grade={grade}
           hoverId={hoverId}
           selectedId={selectedId}
           onHover={setHoverId}
