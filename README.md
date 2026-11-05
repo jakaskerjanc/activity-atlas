@@ -346,8 +346,9 @@ What it does:
 
 `app/public/city-distances.json` holds a few hundred cities with real bike and foot
 route distances (and simplified route lines) from Ljubljana, used to say
-"you rode 2,500 km — that's Ljubljana → Lisbon". It is network-derived, so it
-is **committed** and not rebuilt by `pnpm run build`.
+"you rode 2,500 km — that's Ljubljana → Lisbon". The Analytics page shows it under
+**How far is that?**, and **Show on map** draws the route on the map. It is
+network-derived, so it is **committed** and not rebuilt by `pnpm run build`.
 
 To regenerate (rare):
 

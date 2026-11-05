@@ -1,7 +1,7 @@
 # Design: Distance → comparison-city ("you rode X km — that's Ljubljana → Y")
 
-Date: 2026-09-19 (revised 2026-09-23)
-Status: draft, decisions settled
+Date: 2026-09-19 (revised 2026-09-23; UI added 2026-11-05)
+Status: decisions settled
 
 ## Problem
 
@@ -30,11 +30,10 @@ Constraints that shape the design:
 
 ## Scope
 
-**Data layer only**: the build script, the committed dataset, and pure,
-tested app-side helpers (`loadCities`, `activityGroup`, `groupTotals`,
-`seededRng`, `pickCity`). **No UI** in this change. The layer is merged to
-`main` on its own; nothing loads the file until the UI exists, so it has no
-runtime cost meanwhile. UI decisions are listed under Non-goals.
+The build script, the committed dataset, pure tested app-side helpers
+(`loadCities`, `activityGroup`, `groupTotals`, `seededRng`, `pickCity`,
+`cityComparisons`), and the UI: a card on the Analytics page, and the city's
+route drawn on the map (see [UI](#ui)).
 
 ## Router: OSRM (FOSSGIS public server), not Mapbox
 
@@ -89,12 +88,12 @@ GeoNames subset (build input, committed, pre-filtered)
         │      ferry check, simplify route to 500 m, encode polyline
         │    stage C (pure): validate coverage + sanity, print report
         ▼
-app/public/city-distances.json   (COMMITTED — network-derived; ~1.7 MB raw / ~1.0 MB gz)
-        │  fetched lazily by the future UI
+app/public/city-distances.json   (COMMITTED — network-derived; measured 778 KB raw / 290 KB gz)
+        │  fetched the first time the Analytics page (or a city route) needs it
         ▼
-app/src/cities.ts     loadCities() → parsed + decoded CityDistance[]
-app/src/cityMatch.ts  activityGroup / groupTotals / seededRng / pickCity
-        │  (future UI: features → groupTotals → pickCity → draw route.coords)
+app/src/cities.ts     loadCities() → { origin, cities: CityDistance[] }, decoded once
+app/src/cityMatch.ts  activityGroup / groupTotals / seededRng / pickCity / cityComparisons
+        │  visible activities → cityComparisons → Analytics card; "Show on map" → route.coords
 ```
 
 Alternatives rejected:
@@ -244,22 +243,24 @@ at street zoom.
 }
 ```
 
-Committed to git (unlike `tracks.json`, which `.gitignore` rebuilds each build
-because it is network-free). Each regeneration adds ~2 MB to history, which is
+Committed to git (unlike the display files in `app/public/data/`, which every
+build regenerates from the database). Each regeneration adds ~2 MB to history, which is
 fine at the expected rare cadence. The `.jsonl` cache *is* gitignored.
 
 ## Runtime: loading (`app/src/cities.ts`)
 
 ```ts
-async function loadCities(signal?: AbortSignal): Promise<CityDistance[]>;
+function loadCities(): Promise<CityData>; // { origin: CityOrigin; cities: CityDistance[] }
 ```
 
 Fetches `city-distances.json`, checks `v` (throws on an unknown version), and
-decodes each polyline once into `[lng, lat][]` (mirrors `tracks.ts`:
-`@mapbox/polyline` gives `[lat,lng]`, so flip). *When* to call it is the UI's
-decision; it is never imported at startup. Result shape per city:
+decodes each polyline once into `[lng, lat][]` (`@mapbox/polyline` gives
+`[lat,lng]`, so flip). The promise is kept for the session, like the route
+profiles (`routeProfiles.ts`); a failed load is forgotten so the next call
+retries. `useCities(enabled)` wraps it as a load state. Result shape per city:
 
 ```ts
+interface CityOrigin { name: string; lat: number; lon: number }
 interface CityRoute { m: number; coords: [number, number][] }
 interface CityDistance {
   id: number; name: string; country: string; fc: string;
@@ -275,13 +276,15 @@ interface CityDistance {
 type Profile = "cycling" | "walking";
 
 function activityGroup(type: string): Profile | null;
-function groupTotals(features: ActivityFeature[]): Record<Profile, number>; // meters
+function groupTotals(activities: readonly ActivityRecord[]): Record<Profile, number>; // meters
 function seededRng(profile: Profile, totalM: number): () => number;
 
-type CityPick =
-  | { kind: "match"; city: CityDistance; route: CityRoute; ratio: number } // ratio = targetM / route.m
-  | { kind: "over"; farthest: CityDistance; route: CityRoute }             // target beyond the farthest city
-  | { kind: "under"; nearest: CityDistance; route: CityRoute };            // target short of the nearest city
+interface CityPick {
+  kind: "match" | "over" | "under"; // over: beyond the farthest city; under: short of the nearest
+  city: CityDistance;               // the match, or the farthest / nearest city
+  route: CityRoute;
+  ratio: number;                    // targetM / route.m
+}
 
 function pickCity(
   cities: CityDistance[],
@@ -289,6 +292,9 @@ function pickCity(
   profile: Profile,
   rng: () => number = Math.random,
 ): CityPick;
+
+interface CityComparison { profile: Profile; totalM: number; pick: CityPick }
+function cityComparisons(activities: readonly ActivityRecord[], cities: CityDistance[]): CityComparison[];
 ```
 
 **`activityGroup`**: which comparison an activity feeds.
@@ -299,9 +305,10 @@ function pickCity(
   That includes `TrailRun`.
 - Anything else (`Workout`, `Swim`, …) → `null`.
 
-**`groupTotals`**: sums `distance` per group, skipping `null` groups. It works
-on whatever set the caller passes: the current filter's features, or a single
-selected activity. The UI shows one comparison per group with a total > 0.
+**`groupTotals`**: sums `distance` per group, skipping `null` groups and
+activities without a distance. It works on whatever records the caller passes;
+the UI passes the visible activities, with or without a route, the same set
+the Totals card counts.
 
 **`seededRng`**: a small deterministic PRNG (e.g. mulberry32), seeded from a
 hash of `profile` and `totalM` rounded to the km. The same filter always gives
@@ -320,8 +327,50 @@ the same city; a different total can give a different one.
   nearest and farthest): return the **closest city by |log(m / targetM)|** as
   a `match`, with its true `ratio`. Stage C's coverage check makes this rare
   below 6,000 km.
-- `kind` alone tells the caller which case it is; there is no `null` to
-  interpret. `route.coords` is what a map layer draws, with no network call.
+- Every case carries `city`, `route` and `ratio`; `kind` tells the caller which
+  case it is, and there is no `null` to interpret. `route.coords` is what a map
+  layer draws, with no network call.
+
+**`cityComparisons`**: one `CityComparison` per group with a total > 0 (cycling
+first), each picked with `seededRng(profile, totalM)`, so the same activities
+always land on the same city. A group no city has a route for is left out.
+
+## UI
+
+**Analytics: "How far is that?"**, the card under Totals. One row per
+comparison:
+
+```
+RIDES · 2,704 KM
+Ljubljana → Krasnodar                                  [Show on map →]
+2,648 km by bike · Russia · 102% of the way
+```
+
+- The share is `ratio` as a percentage, or "2.3×" from twice the route on.
+  `under` leads the route with "Not yet", `over` with "Beyond".
+- The country is the ISO code through `Intl.DisplayNames`.
+- While the cities load, or if they fail, the card says so in a status line.
+
+**"Show on map"** switches to the map and draws that group's route:
+
+- A dashed line in the theme's strongest ink (white on dark, near-black on
+  light) over a casing, above the activities, so it reads apart from them in
+  every color mode. Its ends are DOM markers labelled with the origin and city
+  names (no glyphs needed from the base style).
+- The camera flies to the whole route, in the strip clear of the side panel.
+  Mapbox's `cameraForBounds` only uses the padding for the zoom, so the fly-to
+  is offset by the padding's asymmetry (`fitOffset`), with room for the labels.
+- The bottom panel shows the trip: title "Ljubljana → City", subtitle
+  "By bike · Country", cards Route km, Rides/On foot km, Of the way, and
+  Straight km (great circle), and a "Hide route" button.
+
+**State.** App holds only *which group's* route is shown. The comparison
+itself is derived from the visible activities, so the route follows the
+activity filter: a filter that changes the total can move it to another city
+(the camera refits), and one that leaves the group no distance takes it down.
+The route and a selected activity share the bottom panel, so selecting an
+activity, clicking empty map, or starting replay hides the route. It isn't in
+the URL; back from the map returns to Analytics.
 
 ## Testing
 
@@ -351,12 +400,13 @@ the same city; a different total can give a different one.
   - No live network in CI.
 - **App (vitest):**
   - `cities.ts`: parse + decode with a fixture (`[lat,lng]` → `[lng,lat]`
-    flip, `null` profiles preserved, unknown `v` rejected).
+    flip, origin kept, `null` profiles preserved, unknown `v` rejected); the
+    load is kept, and a failed one retried.
   - `activityGroup`: `Ride`, `EBikeRide` and `GravelRide` → cycling; `Run`,
     `TrailRun`, `Walk` and `Hike` → walking; `VirtualRide`, `VirtualRun`,
     `Workout` and `Swim` → `null`.
-  - `groupTotals`: mixed features are summed per group, and excluded types are
-    ignored.
+  - `groupTotals`: mixed activities are summed per group; excluded types and
+    unknown distances are ignored.
   - `seededRng`: the same input gives the same sequence; a different
     total/profile gives a different sequence.
   - `pickCity`:
@@ -365,6 +415,12 @@ the same city; a different total can give a different one.
     - `over`, `under`
     - capital/regional weighting (injected `rng`)
     - profile isolation (cities with a `null` route for the profile are ignored)
+  - `cityComparisons`: one per group with distance, cycling first; reproducible.
+  - `cityView.ts`: km and share formatting, country names, the row detail, and
+    the map panel's cards.
+  - `AnalyticsView`: the card's loading, error, empty and ready states, and the
+    "Show on map" button.
+  - `layout.ts`: `fitPadding`'s margin and `fitOffset`.
 
 ## File plan
 
@@ -378,8 +434,16 @@ Add:
 - `app/public/city-distances.json`: generated, **committed** output.
 - `app/src/cities.ts` + `app/src/cities.test.ts`.
 - `app/src/cityMatch.ts` + `app/src/cityMatch.test.ts`.
+- `app/src/cityView.ts` + `app/src/cityView.test.ts`: display text.
+- `app/src/ui/useCities.ts`: the load state.
+- `app/src/ui/CityComparisons.tsx`: the Analytics card's rows.
 
 Edit:
+- `app/src/App.tsx`: which group's route is shown, and the bottom panel for it.
+- `app/src/ui/AnalyticsView.tsx`: the "How far is that?" card.
+- `app/src/MapView.tsx` + `app/src/index.css`: the route layers, end markers,
+  and the fit.
+- `app/src/ui/layout.ts`: `fitPadding` margin, `fitOffset`.
 - `scripts/types.ts` (or a new `scripts/city-types.ts`): the wire types
   (`CityDistancePayload`, encoded per-profile route). Mirror the app-side copy
   per the existing keep-in-sync convention (`app/src/types.ts`).
@@ -392,13 +456,10 @@ Edit:
 No Mapbox token changes: routing never touches Mapbox, and the app makes no
 routing calls at runtime.
 
-## Non-goals / deferred to the UI work
+## Non-goals
 
-- Where the comparison appears, and its copy. This includes "≈" vs "N.N ×"
-  when the ratio is off, and the `over`/`under` wording.
-- Route styling, and when `loadCities` is called.
-- Behaviour with a selected activity, filter changes and replay.
 - A "🎲 another city" re-roll button.
+- A comparison for a single selected activity.
 - **Multiple origins**: design assumes Ljubljana only. A second origin would
   re-run stage B per origin and key the asset by origin.
 - **If the public OSRM server ever becomes unusable** for the (rare)
