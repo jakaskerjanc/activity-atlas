@@ -4,7 +4,7 @@
 
 import type { CityDistance, CityRoute } from "./cities";
 import { isFootBased } from "./format";
-import type { ActivityFeature, Profile } from "./types";
+import type { ActivityRecord, Profile } from "./types";
 
 /** Which comparison an activity feeds; null = not a distance on the ground. */
 export function activityGroup(type: string): Profile | null {
@@ -14,12 +14,15 @@ export function activityGroup(type: string): Profile | null {
   return null;
 }
 
-/** Total meters per group for whatever feature set the caller passes. */
-export function groupTotals(features: ActivityFeature[]): Record<Profile, number> {
+/**
+ * Total meters per group for whatever activities the caller passes, with or without a
+ * route, like the Totals card. An unknown distance counts as nothing.
+ */
+export function groupTotals(activities: readonly ActivityRecord[]): Record<Profile, number> {
   const totals: Record<Profile, number> = { cycling: 0, walking: 0 };
-  for (const f of features) {
-    const group = activityGroup(f.properties.type);
-    if (group) totals[group] += f.properties.distance;
+  for (const a of activities) {
+    const group = activityGroup(a.type);
+    if (group && a.distance != null) totals[group] += a.distance;
   }
   return totals;
 }
@@ -56,13 +59,18 @@ export function seededRng(profile: Profile, totalM: number): () => number {
 
 // --- Picking a city ---------------------------------------------------------
 
-export type CityPick =
-  /** ratio = targetM / route.m */
-  | { kind: "match"; city: CityDistance; route: CityRoute; ratio: number }
-  /** target beyond the farthest city */
-  | { kind: "over"; farthest: CityDistance; route: CityRoute }
-  /** target short of the nearest city */
-  | { kind: "under"; nearest: CityDistance; route: CityRoute };
+export interface CityPick {
+  /**
+   * match: a city about the target away (or the closest one, in a gap between cities).
+   * over: the target is beyond the farthest city, which is `city`.
+   * under: the target is short of the nearest city, which is `city`.
+   */
+  kind: "match" | "over" | "under";
+  city: CityDistance;
+  route: CityRoute;
+  /** targetM / route.m: how much of the route the target covers */
+  ratio: number;
+}
 
 /** Initial match band (±fraction of the target), doubled until MAX_BAND. */
 export const BAND = 0.05;
@@ -111,23 +119,54 @@ export function pickCity(
     .sort((a, b) => a.route.m - b.route.m || a.city.id - b.city.id);
   if (pool.length === 0) throw new Error(`No cities with a ${profile} route`);
 
+  const result = (kind: CityPick["kind"], { city, route }: Candidate): CityPick => ({
+    kind,
+    city,
+    route,
+    ratio: targetM > 0 ? targetM / route.m : 0,
+  });
+
   const nearest = pool[0];
   const farthest = pool[pool.length - 1];
-  if (!(targetM > 0) || targetM < nearest.route.m * (1 - MAX_BAND))
-    return { kind: "under", nearest: nearest.city, route: nearest.route };
-  if (targetM > farthest.route.m * (1 + MAX_BAND))
-    return { kind: "over", farthest: farthest.city, route: farthest.route };
+  if (!(targetM > 0) || targetM < nearest.route.m * (1 - MAX_BAND)) return result("under", nearest);
+  if (targetM > farthest.route.m * (1 + MAX_BAND)) return result("over", farthest);
 
   for (let band = BAND; band <= MAX_BAND + 1e-9; band *= 2) {
     const inBand = pool.filter(({ route }) => Math.abs(route.m - targetM) <= band * targetM);
-    if (inBand.length > 0) {
-      const { city, route } = weightedPick(inBand, rng);
-      return { kind: "match", city, route, ratio: targetM / route.m };
-    }
+    if (inBand.length > 0) return result("match", weightedPick(inBand, rng));
   }
 
   // In-range gap: nothing within ±MAX_BAND, so take the closest on a log scale.
   const off = (c: Candidate) => Math.abs(Math.log(c.route.m / targetM));
-  const closest = pool.reduce((best, c) => (off(c) < off(best) ? c : best));
-  return { kind: "match", city: closest.city, route: closest.route, ratio: targetM / closest.route.m };
+  return result("match", pool.reduce((best, c) => (off(c) < off(best) ? c : best)));
+}
+
+// --- Comparisons for a set of activities -------------------------------------
+
+/** The groups, in the order they're shown. */
+export const PROFILES: readonly Profile[] = ["cycling", "walking"];
+
+/** One distance comparison: a group's total, and the city it reaches. */
+export interface CityComparison {
+  profile: Profile;
+  /** the group's total over the activities, meters */
+  totalM: number;
+  pick: CityPick;
+}
+
+/**
+ * A comparison per group with distance (cycling first), each picked with the seeded rng
+ * so the same activities always land on the same city. A group no city has a route for
+ * is left out.
+ */
+export function cityComparisons(
+  activities: readonly ActivityRecord[],
+  cities: CityDistance[],
+): CityComparison[] {
+  const totals = groupTotals(activities);
+  return PROFILES.flatMap((profile) => {
+    const totalM = totals[profile];
+    if (!(totalM > 0) || !cities.some((c) => c[profile])) return [];
+    return [{ profile, totalM, pick: pickCity(cities, totalM, profile, seededRng(profile, totalM)) }];
+  });
 }

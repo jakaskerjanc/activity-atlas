@@ -1,17 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { activityGroup, groupTotals, seededRng } from "./cityMatch";
-import type { ActivityFeature } from "./types";
+import { activityGroup, cityComparisons, groupTotals, pickCity, seededRng } from "./cityMatch";
+import type { CityDistance } from "./cities";
+import { record } from "./testFixtures";
 
-function feature(type: string, distance: number): ActivityFeature {
-  return {
-    type: "Feature",
-    geometry: { type: "LineString", coordinates: [[14.5, 46], [14.6, 46.1]] },
-    properties: {
-      id: `s:${type}${distance}`, name: type, type, ts: 0, start_date: "",
-      distance, moving_time: 0, elevation_gain: 0,
-    },
-  };
-}
+const activity = (type: string, distance: number | undefined) =>
+  record({ id: `s:${type}${distance}`, type, distance });
 
 describe("activityGroup", () => {
   test.each(["Ride", "EBikeRide", "GravelRide", "MountainBikeRide"])("%s → cycling", (t) => {
@@ -28,14 +21,21 @@ describe("activityGroup", () => {
 describe("groupTotals", () => {
   test("sums meters per group and ignores excluded types", () => {
     const totals = groupTotals([
-      feature("Ride", 40_000),
-      feature("GravelRide", 10_000),
-      feature("Run", 8_000),
-      feature("Hike", 12_000),
-      feature("VirtualRide", 30_000),
-      feature("Swim", 2_000),
+      activity("Ride", 40_000),
+      activity("GravelRide", 10_000),
+      activity("Run", 8_000),
+      activity("Hike", 12_000),
+      activity("VirtualRide", 30_000),
+      activity("Swim", 2_000),
     ]);
     expect(totals).toEqual({ cycling: 50_000, walking: 20_000 });
+  });
+
+  test("an unknown distance counts as nothing", () => {
+    expect(groupTotals([activity("Ride", undefined), activity("Ride", 5_000)])).toEqual({
+      cycling: 5_000,
+      walking: 0,
+    });
   });
 
   test("empty input → zeros", () => {
@@ -63,9 +63,6 @@ describe("seededRng", () => {
   });
 });
 
-import { pickCity } from "./cityMatch";
-import type { CityDistance } from "./cities";
-
 function c(
   id: number,
   cyclingKm: number | null,
@@ -86,7 +83,7 @@ describe("pickCity", () => {
   test("in-band match with its ratio", () => {
     const pick = pickCity([c(1, 100), c(2, 150), c(3, 200)], km(152), "cycling", first);
     expect(pick).toMatchObject({ kind: "match", city: { id: 2 } });
-    if (pick.kind === "match") expect(pick.ratio).toBeCloseTo(152 / 150);
+    expect(pick.ratio).toBeCloseTo(152 / 150);
   });
 
   test("widens the band progressively (5 → 10 → 20 %)", () => {
@@ -99,25 +96,29 @@ describe("pickCity", () => {
     // 400 km: nothing within ±40 %. |log(1000/400)| < |log(100/400)|.
     const pick = pickCity([c(1, 100), c(2, 1000)], km(400), "cycling", first);
     expect(pick).toMatchObject({ kind: "match", city: { id: 2 } });
-    if (pick.kind === "match") expect(pick.ratio).toBeCloseTo(0.4);
+    expect(pick.ratio).toBeCloseTo(0.4);
   });
 
   test("beyond the farthest city (+40 %) → over", () => {
     const cities = [c(1, 20), c(2, 10_000)];
-    expect(pickCity(cities, km(15_000), "cycling", first)).toMatchObject({ kind: "over", farthest: { id: 2 } });
+    const over = pickCity(cities, km(15_000), "cycling", first);
+    expect(over).toMatchObject({ kind: "over", city: { id: 2 } });
+    expect(over.ratio).toBeCloseTo(1.5);
     expect(pickCity(cities, km(13_000), "cycling", first)).toMatchObject({ kind: "match", city: { id: 2 } });
   });
 
   test("short of the nearest city (−40 %) → under", () => {
     const cities = [c(1, 20), c(2, 10_000)];
-    expect(pickCity(cities, km(10), "cycling", first)).toMatchObject({ kind: "under", nearest: { id: 1 } });
+    const under = pickCity(cities, km(10), "cycling", first);
+    expect(under).toMatchObject({ kind: "under", city: { id: 1 } });
+    expect(under.ratio).toBeCloseTo(0.5);
   });
 
-  test("zero or negative total → under, never a 0/NaN ratio match", () => {
+  test("zero or negative total → under with a 0 ratio, never a NaN", () => {
     const cities = [c(1, 20), c(2, 10_000)];
-    expect(pickCity(cities, 0, "cycling", first).kind).toBe("under");
-    expect(pickCity(cities, -5, "cycling", first).kind).toBe("under");
-    expect(pickCity(cities, Number.NaN, "cycling", first).kind).toBe("under");
+    for (const target of [0, -5, Number.NaN]) {
+      expect(pickCity(cities, target, "cycling", first)).toMatchObject({ kind: "under", ratio: 0 });
+    }
   });
 
   test("capitals weigh 2x population", () => {
@@ -151,5 +152,35 @@ describe("pickCity", () => {
     const a = pickCity(cities, km(104), "cycling", seededRng("cycling", km(104)));
     const b = pickCity(cities, km(104), "cycling", seededRng("cycling", km(104)));
     expect(a).toEqual(b);
+  });
+});
+
+describe("cityComparisons", () => {
+  const cities = [
+    c(1, 100, { walking: { m: km(90), coords: [[0, 0], [1, 1]] } }),
+    c(2, 2_000),
+  ];
+
+  test("one comparison per group with distance, cycling first", () => {
+    const out = cityComparisons(
+      [activity("Run", km(50)), activity("Walk", km(40)), activity("Ride", km(1_900))],
+      cities,
+    );
+    expect(out.map((x) => [x.profile, x.totalM, x.pick.city.id])).toEqual([
+      ["cycling", km(1_900), 2],
+      ["walking", km(90), 1],
+    ]);
+  });
+
+  test("leaves out a group without distance, or without any city to compare", () => {
+    expect(cityComparisons([activity("Ride", km(100)), activity("Swim", km(2))], cities)).toHaveLength(1);
+    expect(cityComparisons([activity("Run", km(10))], [c(2, 2_000)])).toEqual([]);
+    expect(cityComparisons([], cities)).toEqual([]);
+  });
+
+  test("the same activities always pick the same city", () => {
+    const many = Array.from({ length: 10 }, (_, i) => c(i + 1, 100 + i));
+    const rides = [activity("Ride", km(104))];
+    expect(cityComparisons(rides, many)).toEqual(cityComparisons(rides, many));
   });
 });
