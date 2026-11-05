@@ -23,6 +23,11 @@ import { nearestSample } from "./routeCursor";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+/** Without a token mapboxgl.Map throws on construction and takes the whole app
+ * down with it. Skip the map instead, so the panels and Analytics still work
+ * (e.g. a fresh template copy showing the demo data). Every effect below
+ * already no-ops while mapRef is null. */
+const HAS_TOKEN = Boolean(import.meta.env.VITE_MAPBOX_TOKEN);
 
 /** Base map that reads well under each theme's panels. Light uses the toned streets
  * style (roads/parks/water) so the translucent liquid-glass panels have real color
@@ -596,7 +601,7 @@ export function MapView(props: Props) {
 
   // Init map once.
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!HAS_TOKEN || !containerRef.current || mapRef.current) return;
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: STYLE_URL[propsRef.current.theme],
@@ -838,5 +843,23 @@ export function MapView(props: Props) {
     });
   }, [selectedId, data]);
 
+  if (!HAS_TOKEN) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+          textAlign: "center",
+          color: "var(--text-muted)",
+        }}
+      >
+        Map unavailable: set VITE_MAPBOX_TOKEN in .env (see the README).
+      </div>
+    );
+  }
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
 }

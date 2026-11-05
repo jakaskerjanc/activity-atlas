@@ -497,9 +497,9 @@ restricted by URL to the domain you serve the site from (e.g.
 `https://<user>.github.io` or your custom domain). Add it to `.env` as
 `VITE_MAPBOX_TOKEN`.
 
-Without a token the demo still deploys and the panels, analytics and activity
-charts work, but the map tiles do not load. This is the only required secret;
-the demo data needs nothing else.
+Without a token the demo still deploys and the panels and Analytics page work,
+but the map area only shows a note asking for the token. This is the only
+required secret; the demo data needs nothing else.
 
 ### 3. Export and import your activity history
 
