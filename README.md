@@ -1,10 +1,12 @@
-# Strava on Maps
+# Activity Atlas
 
-**[Live site →](https://strava-map.jakas.si/)**
+**[Live site →](https://activity-atlas.jakas.si/)**
 
 All your Strava and Garmin activities as routes on one interactive Mapbox
 map, filterable by type and date, with elevation, heart-rate and pace charts
-for the selected activity. A GitHub Action builds compact display files
+for the selected activity, an Analytics page of totals and trends, and a local
+MCP server that lets an LLM answer questions about your activities and daily
+wellness data. A GitHub Action builds compact display files
 from the activity database (kept in a private R2 bucket, never in git) and
 deploys a static site to GitHub Pages.
 
@@ -310,7 +312,7 @@ Register it once in Claude Code (user scope, so the absolute paths stay out of
 the repo), with `<checkout>` your clone's absolute path:
 
 ```bash
-claude mcp add --scope user strava-on-maps \
+claude mcp add --scope user activity-atlas \
   -e PYTHONPATH=<checkout> \
   -- <checkout>/.venv/bin/python -m ingest.mcp_server --db <checkout>/data/activities.sqlite
 ```
@@ -424,8 +426,8 @@ activity history.
 You need Node with pnpm and Python 3.12 or newer (CI uses 3.12).
 
 ```bash
-gh repo fork <owner>/strava-on-maps --clone
-cd strava-on-maps
+gh repo fork <owner>/activity-atlas --clone
+cd activity-atlas
 pnpm install
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -443,7 +445,7 @@ the dependencies installed.
 
 Create a **public** token at <https://account.mapbox.com/access-tokens/>,
 restricted by URL to the domain you serve the site from
-(e.g. `https://strava-map.jakas.si`). Add it to `.env` as
+(e.g. `https://<user>.github.io` or your custom domain). Add it to `.env` as
 `VITE_MAPBOX_TOKEN`.
 
 ### 3. Export and import your activity history
@@ -484,9 +486,10 @@ Cloudflare account to deploy.
 ### 5. Enable Pages and run the workflow
 
 - Settings → Pages → Source = GitHub Actions.
-- Optional: set a custom domain under Settings → Pages (this site uses
-  `strava-map.jakas.si`, a CNAME to `<user>.github.io`) and enable
-  **Enforce HTTPS**.
+- Optional: set a custom domain under Settings → Pages (a CNAME record to
+  `<user>.github.io`) and enable **Enforce HTTPS**. Without one the site is
+  served at `https://<user>.github.io/<repo>/`; the build takes that base path
+  from the Pages settings.
 - Push to `main` (or run **Deploy** manually from the Actions tab) to build
   and deploy.
 

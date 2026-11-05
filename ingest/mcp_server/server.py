@@ -39,7 +39,7 @@ def _filter(types, date_from, date_to, name_contains, min_distance_m, max_distan
 
 
 def build_server(ctx: ServerContext) -> MCPServer:
-    server = MCPServer(name="strava-on-maps", instructions=guide_text(ctx.db))
+    server = MCPServer(name="activity-atlas", instructions=guide_text(ctx.db))
 
     def run(fn: Callable[[], dict], force_sync: bool = False) -> dict:
         with ctx.lock:

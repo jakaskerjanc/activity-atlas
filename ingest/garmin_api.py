@@ -28,7 +28,7 @@ _DOWNLOAD_PATH = "/download-service/files/activity/"
 API_KEY_ENV = "GARMIN_PERSONAL_API_KEY"
 BASE_URL_ENV = "GARMIN_PERSONAL_API_BASE_URL"
 DOTENV_FILE = config.DOTENV_FILE
-USER_AGENT = "strava-on-maps/0.1"
+USER_AGENT = "activity-atlas/0.1"
 
 
 class GarminApiError(Exception):

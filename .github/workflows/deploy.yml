@@ -55,12 +55,16 @@ jobs:
         run: |
           path=$(scripts/ci_db.sh)
           echo "path=$path" >> "$GITHUB_OUTPUT"
+      # Before the build: its base_path ("" on a custom domain, "/<repo>" on
+      # <user>.github.io) is the site's URL prefix.
+      - uses: actions/configure-pages@v6
+        id: pages
       - name: Build site
         env:
           VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}
           DB_PATH: ${{ steps.db.outputs.path }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: pnpm run build
-      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: app/dist

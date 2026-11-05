@@ -14,7 +14,7 @@ from collections.abc import Callable
 from .activities import counted
 
 URL = "https://nominatim.openstreetmap.org/search"
-USER_AGENT = "strava-on-maps-mcp/0.1 (+https://github.com/jakaskerjanc/strava-on-maps)"
+USER_AGENT = "activity-atlas-mcp/0.1 (+https://github.com/jakaskerjanc/activity-atlas)"
 MIN_INTERVAL_S = 1.0
 TIMEOUT_S = 10
 

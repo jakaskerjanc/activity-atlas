@@ -1,4 +1,4 @@
-// Shared visual tokens for the Trace Atlas chrome. Text/control colors resolve to CSS
+// Shared visual tokens for the Activity Atlas chrome. Text/control colors resolve to CSS
 // variables (see index.css) so they flip between the dark and light themes via the
 // data-theme attribute on <html>. The panel material itself is also CSS — the
 // --panel-bg/--panel-border/--panel-blur tokens in index.css.

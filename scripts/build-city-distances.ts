@@ -127,7 +127,7 @@ export function selectCandidates(cities: GeoCity[], origin: LatLon = ORIGIN): Ca
 
 export const OSRM_BASE = "https://routing.openstreetmap.de";
 const OSRM_PROFILE: Record<Profile, string> = { cycling: "bike", walking: "foot" };
-export const USER_AGENT = "strava-on-maps-build (https://github.com/jakaskerjanc/strava-on-maps)";
+export const USER_AGENT = "activity-atlas-build (https://github.com/jakaskerjanc/activity-atlas)";
 /** Douglas–Peucker tolerance (meters) for stored route lines: overview quality. */
 export const SIMPLIFY_M = 500;
 /** Total ferry distance above which a profile's route is rejected. */

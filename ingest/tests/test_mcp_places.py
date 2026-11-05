@@ -39,7 +39,7 @@ def test_request_shape(tmp_path):
 
 
 def test_user_agent_names_the_app_not_a_person():
-    assert places.USER_AGENT == "strava-on-maps-mcp/0.1 (+https://github.com/jakaskerjanc/strava-on-maps)"
+    assert places.USER_AGENT == "activity-atlas-mcp/0.1 (+https://github.com/jakaskerjanc/activity-atlas)"
     assert "@" not in places.USER_AGENT
 
 
