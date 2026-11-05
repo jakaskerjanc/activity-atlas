@@ -173,7 +173,15 @@ describe("legendFor", () => {
   test("elevation legend is descent / flat / climb with the % bounds", () => {
     expect(legendFor("elevation", domain())).toEqual({
       kind: "gradient",
-      stops: ["#3d8bfd 0%", "#3ecf6e 40%", "#3ecf6e 60%", "#ffd23f 75%", "#ff3b30 100%"],
+      stops: [
+        "#1e3a8a 0%",
+        "#3d8bfd 25%",
+        "#3ecf6e 46.67%",
+        "#3ecf6e 53.33%",
+        "#ffd23f 66.67%",
+        "#ff3b30 83.33%",
+        "#8b0a0a 100%",
+      ],
       minLabel: "−15% descent",
       midLabel: "flat",
       maxLabel: "+15% climb",

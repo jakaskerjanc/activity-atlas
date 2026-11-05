@@ -14,9 +14,9 @@ import { lineColorExpression } from "./colors";
 import { activity } from "./testFixtures";
 import type { ActivityFeature, ActivityRecord } from "./types";
 
-const BLUE = "#3d8bfd";
+const DARK_BLUE = "#1e3a8a";
 const GREEN = "#3ecf6e";
-const RED = "#ff3b30";
+const DARK_RED = "#8b0a0a";
 
 /** Degrees of latitude per metre on the sphere grade.ts measures on. */
 const DEG_PER_M = 180 / (Math.PI * 6371008.8);
@@ -117,15 +117,17 @@ describe("gradeRoutes", () => {
 describe("gradeColor", () => {
   test("hits every stop of the scale and saturates past its ends", () => {
     for (const s of GRADE_SCALE) expect(gradeColor(s.grade)).toBe(s.color);
-    expect(gradeColor(-99)).toBe(BLUE);
-    expect(gradeColor(99)).toBe(RED);
+    expect(gradeColor(-99)).toBe(DARK_BLUE);
+    expect(gradeColor(99)).toBe(DARK_RED);
   });
 
-  test("flat stays green both ways; steeper climbs pass through orange", () => {
-    expect(gradeColor(-2)).toBe(GREEN);
+  test("only near-flat is pure green; climbs pass through orange", () => {
+    expect(gradeColor(-1)).toBe(GREEN);
     expect(gradeColor(0)).toBe(GREEN);
-    expect(gradeColor(2)).toBe(GREEN);
-    expect(gradeColor(11.25)).toBe("#ff8738"); // halfway yellow -> red
+    expect(gradeColor(1)).toBe(GREEN);
+    expect(gradeColor(1.5)).not.toBe(GREEN);
+    expect(gradeColor(-1.5)).not.toBe(GREEN);
+    expect(gradeColor(7.5)).toBe("#ff8738"); // halfway yellow -> red
   });
 });
 
@@ -136,7 +138,7 @@ describe("lineGradient", () => {
       { from: 0.4, grade: 0 },
       { from: 0.7, grade: -15 },
     ]) as unknown[];
-    expect(expr).toEqual(["step", ["line-progress"], RED, 0.4, GREEN, 0.7, BLUE]);
+    expect(expr).toEqual(["step", ["line-progress"], DARK_RED, 0.4, GREEN, 0.7, DARK_BLUE]);
   });
 
   test("a one-run route is a single color over the whole line", () => {

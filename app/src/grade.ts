@@ -22,20 +22,23 @@ export const GRADE_MAX = 15;
 /** Width (%) of one grade bucket: runs split where the bucket changes. */
 export const GRADE_BUCKET = 1.5;
 /** Grade (%) up to which a route reads as flat, either way. */
-export const GRADE_FLAT = 3;
+export const GRADE_FLAT = 1;
 
 /**
  * The color scale, ascending by grade (%), interpolated between stops. Climbs follow
  * the green -> yellow -> red that Strava's gradient map and most grade tools use (the
- * yellow -> red mix passes through orange); descents fade from the flat green to
- * blue, so a descent never reads as a climb.
+ * yellow -> red mix passes through orange), darkening to deep red at the steepest;
+ * descents fade from the flat green through blue to dark blue, so a descent never
+ * reads as a climb.
  */
 export const GRADE_SCALE: { grade: number; color: string }[] = [
-  { grade: -GRADE_MAX, color: "#3d8bfd" },
+  { grade: -GRADE_MAX, color: "#1e3a8a" },
+  { grade: -7.5, color: "#3d8bfd" },
   { grade: -GRADE_FLAT, color: "#3ecf6e" },
   { grade: GRADE_FLAT, color: "#3ecf6e" },
-  { grade: 7.5, color: "#ffd23f" },
-  { grade: GRADE_MAX, color: "#ff3b30" },
+  { grade: 5, color: "#ffd23f" },
+  { grade: 10, color: "#ff3b30" },
+  { grade: GRADE_MAX, color: "#8b0a0a" },
 ];
 
 /** What a run feature carries: enough for the filter, replay, highlight and color. */
@@ -203,7 +206,10 @@ export function gradeRamp(): ExpressionSpecification {
 
 /** The scale as CSS linear-gradient stops ("color pos%") across -GRADE_MAX..GRADE_MAX. */
 export function gradeLegendStops(): string[] {
-  return GRADE_SCALE.map((s) => `${s.color} ${((s.grade + GRADE_MAX) / (2 * GRADE_MAX)) * 100}%`);
+  return GRADE_SCALE.map((s) => {
+    const pct = Math.round(((s.grade + GRADE_MAX) / (2 * GRADE_MAX)) * 10000) / 100;
+    return `${s.color} ${pct}%`;
+  });
 }
 
 function hexRgb(hex: string): [number, number, number] {
