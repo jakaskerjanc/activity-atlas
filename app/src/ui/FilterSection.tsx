@@ -1,5 +1,5 @@
-// Filter controls: activity-type toggles (most activities first, with live counts) +
-// date-range sliders.
+// Filter controls: activity-type toggles (most activities first, with live counts; rare
+// types left out) + date-range sliders.
 // Rendered as a section inside the merged SidePanel.
 
 import { useMemo, type CSSProperties } from "react";
@@ -10,7 +10,7 @@ import {
   setToMonth,
   toggleType,
   typeCounts,
-  typesByCount,
+  listedTypes,
   type ActivityFilter,
 } from "../activityFilter";
 
@@ -22,7 +22,7 @@ interface Props {
 export function FilterSection({ filter, onChange }: Props) {
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
-  const types = useMemo(() => typesByCount(filter), [filter]);
+  const types = useMemo(() => listedTypes(filter), [filter]);
   return (
     <>
       <div style={{ ...eyebrow, marginBottom: 8 }}>Activity Types</div>
