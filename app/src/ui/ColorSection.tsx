@@ -62,6 +62,7 @@ function LegendView({ legend }: { legend: Legend }) {
       />
       <div style={gradientLabels}>
         <span>{legend.minLabel}</span>
+        {legend.midLabel != null && <span>{legend.midLabel}</span>}
         <span>{legend.maxLabel}</span>
       </div>
     </div>

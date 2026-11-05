@@ -33,8 +33,6 @@ function feature(props: Partial<ActivityFeatureProps>): ActivityFeature {
 const domain = (over: Partial<ColorDomain> = {}): ColorDomain => ({
   tsMin: 0,
   tsMax: 100,
-  elevMin: 0,
-  elevMax: 500,
   speedMin: 5,
   speedMax: 20,
   types: ["Hike", "Ride", "Run"],
@@ -60,26 +58,16 @@ describe("computeDomain", () => {
     expect(d.speedMax).toBeCloseTo(10);
   });
 
-  test("elevation bounds are the true min and max of the set", () => {
-    const d = computeDomain([
-      feature({ elevation_gain: 100 }),
-      feature({ elevation_gain: 900 }),
-      feature({ elevation_gain: 300 }),
-    ]);
-    expect(d.elevMin).toBe(100);
-    expect(d.elevMax).toBe(900);
-  });
-
   test("narrowing the set never raises the max (monotonic under subsetting)", () => {
     const all = [
-      feature({ elevation_gain: 100, ts: 1 }),
-      feature({ elevation_gain: 500, ts: 2 }),
-      feature({ elevation_gain: 900, ts: 3 }),
+      feature({ distance: 5000, moving_time: 3600, ts: 1 }),
+      feature({ distance: 10000, moving_time: 3600, ts: 2 }),
+      feature({ distance: 30000, moving_time: 3600, ts: 3 }),
     ];
     const full = computeDomain(all);
-    // A date-window subset that drops the highest-gain activity.
+    // A date-window subset that drops the fastest activity.
     const subset = computeDomain(all.filter((f) => f.properties.ts <= 2));
-    expect(subset.elevMax).toBeLessThanOrEqual(full.elevMax);
+    expect(subset.speedMax).toBeLessThanOrEqual(full.speedMax);
   });
 
   test("empty input is all zeros with no types", () => {
@@ -87,8 +75,6 @@ describe("computeDomain", () => {
     expect(d).toEqual({
       tsMin: 0,
       tsMax: 0,
-      elevMin: 0,
-      elevMax: 0,
       speedMin: 0,
       speedMax: 0,
       types: [],
@@ -97,16 +83,6 @@ describe("computeDomain", () => {
 });
 
 describe("unknown values", () => {
-  test("domain ignores activities without elevation", () => {
-    const d = computeDomain([
-      feature({ elevation_gain: 300 }),
-      feature({ elevation_gain: undefined }),
-      feature({ elevation_gain: 700 }),
-    ]);
-    expect(d.elevMin).toBe(300);
-    expect(d.elevMax).toBe(700);
-  });
-
   test("domain ignores activities without distance or moving time for speed", () => {
     const d = computeDomain([
       feature({ distance: 10000, moving_time: 3600 }),
@@ -117,12 +93,19 @@ describe("unknown values", () => {
     expect(d.speedMax).toBeCloseTo(10);
   });
 
-  test("elevation expression falls back to NEUTRAL when absent", () => {
+  test("elevation colors a run's grade and falls back to NEUTRAL without one", () => {
     const e = lineColorExpression("elevation", domain()) as unknown[];
     expect(e[0]).toBe("case");
-    expect(e[1]).toEqual(["has", "elevation_gain"]);
-    expect((e[2] as unknown[])[0]).toBe("interpolate");
+    expect(e[1]).toEqual(["has", "grade"]);
+    expect((e[2] as unknown[]).slice(0, 3)).toEqual(["interpolate", ["linear"], ["get", "grade"]]);
     expect(e[e.length - 1]).toBe(NEUTRAL);
+  });
+
+  test("the elevation scale is fixed, whatever the visible set", () => {
+    const wide = lineColorExpression("elevation", domain({ tsMin: 0, speedMax: 90 }));
+    const narrow = lineColorExpression("elevation", domain({ tsMin: 50, speedMax: 6 }));
+    expect(wide).toEqual(narrow);
+    expect(legendFor("elevation", domain({ speedMax: 90 }))).toEqual(legendFor("elevation", domain()));
   });
 
   test("speed expression falls back to NEUTRAL when distance or time is absent", () => {
@@ -153,7 +136,7 @@ describe("lineColorExpression", () => {
   });
 
   test("degenerate domain (min == max) still yields a valid ascending ramp", () => {
-    const expr = lineColorExpression("elevation", domain({ elevMin: 42, elevMax: 42 }));
+    const expr = lineColorExpression("speed", domain({ speedMin: 42, speedMax: 42 }));
     const arr = (expr as unknown[])[2] as unknown[]; // the ramp inside the NEUTRAL case
     expect(Number(arr[3])).toBeLessThan(Number(arr[arr.length - 2]));
   });
@@ -185,6 +168,16 @@ describe("typeColor", () => {
 describe("legendFor", () => {
   test("uniform has no legend", () => {
     expect(legendFor("uniform", domain())).toEqual({ kind: "none" });
+  });
+
+  test("elevation legend is descent / flat / climb with the % bounds", () => {
+    expect(legendFor("elevation", domain())).toEqual({
+      kind: "gradient",
+      stops: ["#4cc9f0", "#666b76", "#ff3b30"],
+      minLabel: "−15% descent",
+      midLabel: "flat",
+      maxLabel: "+15% climb",
+    });
   });
 
   test("speed legend labels carry the km/h unit and rounded bounds", () => {

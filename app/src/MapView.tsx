@@ -1,7 +1,8 @@
 // Owns the Mapbox GL map. Renders activity routes as a glow + core line pair in the
 // Trace Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
 // (re-triggered by REPLAY). Which activities show is decided upstream (activityFilter.ts);
-// this module only applies the expression it is handed.
+// this module only applies the expression it is handed. In the Elevation color mode the
+// routes are drawn as grade runs (grade.ts) instead of whole lines.
 
 import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
@@ -13,6 +14,7 @@ import {
   type ColorMode,
   type ColorDomain,
 } from "./colors";
+import { lineGradient, type GradeRoutes } from "./grade";
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds } from "./cluster";
 import { fitPadding } from "./ui/layout";
@@ -30,10 +32,13 @@ const STYLE_URL: Record<Theme, string> = {
 };
 
 const SOURCE_ID = "activities";
+// Whole routes for the drawing route in replay: line-trim-offset trims each feature on
+// its own, so the drawing route must be one feature even while SOURCE_ID holds runs.
+const ACTIVE_SOURCE_ID = "activities-active";
 const GLOW_ID = "activities-glow";
 const CORE_ID = "activities-core";
-// The single route currently drawing in replay gets its own layers on top, so
-// line-trim-offset (a per-layer paint prop) reveals just it while completed routes
+// The single route currently drawing in replay gets its own layers (and source) on top,
+// so line-trim-offset (a per-layer paint prop) reveals just it while completed routes
 // stay fully painted underneath.
 const ACTIVE_GLOW_ID = "activities-active-glow";
 const ACTIVE_CORE_ID = "activities-active-core";
@@ -46,6 +51,7 @@ const CURSOR_DOT_ID = "activity-cursor-dot";
 const FADE_MS = 1200;
 
 const NO_POINTS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+const NO_LINES: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Per-feature highlight gate. Toggling feature-state is cheap; swapping paint
  * expressions would force Mapbox to reload the whole source on every hover. */
@@ -72,6 +78,8 @@ interface Props {
   visible: ActivityFeature[];
   colorMode: ColorMode;
   colorDomain: ColorDomain;
+  /** The routes as grade runs, once the route profiles load; drawn in Elevation mode. */
+  grade: GradeRoutes | null;
   hoverId: string | null;
   selectedId: string | null;
   onHover: (id: string | null) => void;
@@ -106,6 +114,8 @@ const prefersReducedMotion = () =>
 export function MapView(props: Props) {
   const { data, mapFilter, colorMode, colorDomain, hoverId, selectedId } = props;
   const { replaying, replayFrame, replayEpoch } = props;
+  // What the route layers draw: grade runs in Elevation mode (once loaded), else whole routes.
+  const routeData = colorMode === "elevation" && props.grade ? props.grade.collection : data;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -122,6 +132,9 @@ export function MapView(props: Props) {
   const rafRef = useRef<number | null>(null);
 
   const syncedActiveRef = useRef<string | null>(null);
+  // The drawing route whose line-gradient is set (null: none), so frames only rewrite
+  // it when the route changes.
+  const gradientKeyRef = useRef<string | null>(null);
   // True while the cursor was last set by the map, so map events never clear a
   // cursor the charts own.
   const mapOwnsCursorRef = useRef(false);
@@ -201,6 +214,42 @@ export function MapView(props: Props) {
     // The drawing route follows the same color scale so it reads as one of the set.
     map.setPaintProperty(ACTIVE_GLOW_ID, "line-color", color);
     map.setPaintProperty(ACTIVE_CORE_ID, "line-color", color);
+    // Grade runs meet end to end: round caps would overlap at every seam and bead the
+    // translucent layers, so they butt instead (joins inside a run stay round). The
+    // opaque hover core hides any overlap, so it keeps round caps.
+    const cap = mode === "elevation" ? "butt" : "round";
+    for (const id of [GLOW_ID, CORE_ID, HOVER_GLOW_ID]) map.setLayoutProperty(id, "line-cap", cap);
+    applyActiveGradient(propsRef.current.replayFrame);
+  }
+
+  /** In Elevation mode, paint the drawing route with its runs' colors as a line-gradient
+   * (it is one whole feature, so it has no per-run `grade` to read); otherwise clear it
+   * so line-color applies. */
+  function applyActiveGradient(frame: ReplayFrame | null) {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(ACTIVE_GLOW_ID)) return;
+    const p = propsRef.current;
+    const stops = frame && p.colorMode === "elevation" ? p.grade?.stops.get(frame.id) : undefined;
+    const key = stops && frame ? frame.id : null;
+    if (key === gradientKeyRef.current) return;
+    gradientKeyRef.current = key;
+    const gradient = stops ? lineGradient(stops) : undefined;
+    map.setPaintProperty(ACTIVE_GLOW_ID, "line-gradient", gradient);
+    map.setPaintProperty(ACTIVE_CORE_ID, "line-gradient", gradient);
+  }
+
+  /** Point the route source at the current routes: grade runs or whole lines. */
+  function applyRoutes() {
+    const p = propsRef.current;
+    const routes = p.colorMode === "elevation" && p.grade ? p.grade.collection : p.data;
+    const src = mapRef.current?.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    src?.setData(routes ?? NO_LINES);
+  }
+
+  /** Point the drawing-route source at the whole lines. */
+  function applyActiveRoutes() {
+    const src = mapRef.current?.getSource(ACTIVE_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    src?.setData(propsRef.current.data ?? NO_LINES);
   }
 
   /**
@@ -213,6 +262,7 @@ export function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !map.getLayer(ACTIVE_GLOW_ID)) return;
 
+    applyActiveGradient(frame);
     if (!frame) {
       map.setFilter(ACTIVE_GLOW_ID, MATCH_NONE);
       map.setFilter(ACTIVE_CORE_ID, MATCH_NONE);
@@ -305,11 +355,18 @@ export function MapView(props: Props) {
     if (!map.getSource(SOURCE_ID)) {
       map.addSource(SOURCE_ID, {
         type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-        // Required for line-trim-offset (the replay draw-on reveal).
-        lineMetrics: true,
+        data: NO_LINES,
         // Exposes each feature's string id to feature-state (hover/select highlight).
+        // Grade runs share their activity's id, so one write highlights the whole route.
         promoteId: "id",
+      });
+    }
+    if (!map.getSource(ACTIVE_SOURCE_ID)) {
+      map.addSource(ACTIVE_SOURCE_ID, {
+        type: "geojson",
+        data: NO_LINES,
+        // Required for line-trim-offset (the replay draw-on reveal) and line-gradient.
+        lineMetrics: true,
       });
     }
     if (!map.getLayer(GLOW_ID)) {
@@ -368,7 +425,7 @@ export function MapView(props: Props) {
       map.addLayer({
         id: ACTIVE_GLOW_ID,
         type: "line",
-        source: SOURCE_ID,
+        source: ACTIVE_SOURCE_ID,
         filter: MATCH_NONE,
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
@@ -384,7 +441,7 @@ export function MapView(props: Props) {
       map.addLayer({
         id: ACTIVE_CORE_ID,
         type: "line",
-        source: SOURCE_ID,
+        source: ACTIVE_SOURCE_ID,
         filter: MATCH_NONE,
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
@@ -416,6 +473,8 @@ export function MapView(props: Props) {
       });
     }
     applyBaseFilter(map, propsRef.current.mapFilter);
+    // A rebuilt layer starts with no line-gradient, whatever was last set.
+    gradientKeyRef.current = null;
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
     applyCursor();
   }
@@ -444,10 +503,10 @@ export function MapView(props: Props) {
       installLayers();
       loadedRef.current = true;
 
-      const d = propsRef.current.data;
-      if (d) {
+      if (propsRef.current.data) {
         // Map is already constructed at the home view; no jumpTo needed here.
-        (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
+        applyRoutes();
+        applyActiveRoutes();
         startFade();
       }
     });
@@ -505,8 +564,8 @@ export function MapView(props: Props) {
     appliedStyleRef.current = url;
     map.once("style.load", () => {
       installLayers();
-      const d = propsRef.current.data;
-      if (d) (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource).setData(d);
+      applyRoutes();
+      applyActiveRoutes();
       syncedActiveRef.current = null;
       syncFeatureState(true);
       fadeRef.current = 1;
@@ -517,14 +576,24 @@ export function MapView(props: Props) {
     map.setStyle(url);
   }, [props.theme]);
 
-  // Update source when data arrives/changes, then replay the reveal.
+  // Update the drawing-route source when data arrives/changes, then replay the reveal.
+  // The route source follows routeData (below), which changes with data.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !data) return;
-    (map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined)?.setData(data);
+    applyActiveRoutes();
     map.jumpTo({ center: SLOVENIA_CENTER, zoom: SLOVENIA_ZOOM });
     startFade();
   }, [data]);
+
+  // Swap whole routes for grade runs (and back) as the color mode or the runs change.
+  // New features start without feature-state, so the highlight is written again.
+  useEffect(() => {
+    if (!loadedRef.current || !routeData) return;
+    applyRoutes();
+    syncFeatureState(true);
+    applyActiveGradient(propsRef.current.replayFrame);
+  }, [routeData]);
 
   // Apply filter changes. Skipped while replaying — applyReplay owns the base
   // layers' filter then (it folds the current filter into the completed set).

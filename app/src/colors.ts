@@ -7,6 +7,7 @@
 import type { ExpressionSpecification } from "mapbox-gl";
 import type { ActivityFeature } from "./types";
 import { formatDate } from "./format";
+import { GRADE_MAX, GRADE_STOPS, gradeRamp } from "./grade";
 
 export const ACCENT = "#ff6b3d";
 /** Routes whose colored value is unknown: grey, so they never read as the ramp's low end. */
@@ -31,11 +32,10 @@ export const COLOR_MODES: { mode: ColorMode; label: string }[] = [
 
 // --- Palettes -------------------------------------------------------------
 // Sequential ramps ordered low -> high. Recency uses a cool->warm temperature
-// so old routes stay visible on the dark base; elevation uses ColorBrewer
-// YlOrRd and speed uses a viridis-like ramp (both colorblind-safe sequences).
+// so old routes stay visible on the dark base; speed uses a viridis-like ramp
+// (colorblind-safe). Elevation colors by grade along the route (grade.ts).
 
 const RECENCY_STOPS = ["#3aa6c2", "#f0a35e", "#ff5230"];
-const ELEVATION_STOPS = ["#ffeda0", "#feb24c", "#f03b20"];
 const SPEED_STOPS = ["#3b528b", "#21918c", "#fde725"];
 
 /** Qualitative palette for per-type coloring, assigned by sorted type order. */
@@ -55,9 +55,6 @@ const TYPE_PALETTE = [
 export interface ColorDomain {
   tsMin: number;
   tsMax: number;
-  /** meters of elevation gain (true min/max of the set) */
-  elevMin: number;
-  elevMax: number;
   /** km/h (true min/max of the set) */
   speedMin: number;
   speedMax: number;
@@ -74,18 +71,17 @@ function speedKmh(f: ActivityFeature): number | undefined {
 
 /**
  * Derive the value domain used by the ramp modes from the given features —
- * callers pass the currently-visible set so the recency/elevation/speed ramps
- * span what's on screen. Uses true min/max (not percentiles) so the bounds are
+ * callers pass the currently-visible set so the recency/speed ramps span
+ * what's on screen. Uses true min/max (not percentiles) so the bounds are
  * honest and monotonic: narrowing the filter can never raise a max or lower a
- * min. Elevation gain and average speed are aggregate values, so there are no
- * instantaneous spikes to clamp.
+ * min. Average speed is an aggregate value, so there are no instantaneous
+ * spikes to clamp. Elevation needs no domain: % grade is absolute, so its
+ * scale is fixed.
  */
 export function computeDomain(features: ActivityFeature[]): ColorDomain {
   const types = new Set<string>();
   let tsMin = Infinity;
   let tsMax = -Infinity;
-  let elevMin = Infinity;
-  let elevMax = -Infinity;
   let speedMin = Infinity;
   let speedMax = -Infinity;
   for (const f of features) {
@@ -94,10 +90,6 @@ export function computeDomain(features: ActivityFeature[]): ColorDomain {
     if (p.ts < tsMin) tsMin = p.ts;
     if (p.ts > tsMax) tsMax = p.ts;
     // Unknown values stay out of the domain (they draw NEUTRAL, see lineColorExpression).
-    if (p.elevation_gain != null) {
-      elevMin = Math.min(elevMin, p.elevation_gain);
-      elevMax = Math.max(elevMax, p.elevation_gain);
-    }
     if (s != null) {
       speedMin = Math.min(speedMin, s);
       speedMax = Math.max(speedMax, s);
@@ -105,15 +97,13 @@ export function computeDomain(features: ActivityFeature[]): ColorDomain {
     types.add(p.type);
   }
   if (features.length === 0) {
-    return { tsMin: 0, tsMax: 0, elevMin: 0, elevMax: 0, speedMin: 0, speedMax: 0, types: [] };
+    return { tsMin: 0, tsMax: 0, speedMin: 0, speedMax: 0, types: [] };
   }
   // A set where nobody has the value collapses to 0..0 rather than ±Infinity.
   const finite = (v: number) => (Number.isFinite(v) ? v : 0);
   return {
     tsMin,
     tsMax,
-    elevMin: finite(elevMin),
-    elevMax: finite(elevMax),
     speedMin: finite(speedMin),
     speedMax: finite(speedMax),
     types: [...types].sort(),
@@ -178,7 +168,8 @@ function typeMatch(types: string[]): string | ExpressionSpecification {
 /**
  * The Mapbox `line-color` paint value for a mode. `uniform` and `heat` render
  * a single accent color (heat conveys frequency through overlap density, not
- * hue); the rest map a feature property onto a color ramp.
+ * hue); the rest map a feature property onto a color ramp. Elevation reads the
+ * `grade` of grade-run features (grade.ts), so the map must be drawing those.
  */
 export function lineColorExpression(
   mode: ColorMode,
@@ -191,10 +182,7 @@ export function lineColorExpression(
     case "recency":
       return ramp(get("ts"), domain.tsMin, domain.tsMax, RECENCY_STOPS);
     case "elevation":
-      return whenKnown(
-        ["has", "elevation_gain"],
-        ramp(get("elevation_gain"), domain.elevMin, domain.elevMax, ELEVATION_STOPS),
-      );
+      return whenKnown(["has", "grade"], gradeRamp());
     case "speed":
       return whenKnown(
         ["all", ["has", "distance"], ["has", "moving_time"]],
@@ -209,7 +197,7 @@ export function lineColorExpression(
 
 export type Legend =
   | { kind: "none" }
-  | { kind: "gradient"; stops: string[]; minLabel: string; maxLabel: string }
+  | { kind: "gradient"; stops: string[]; minLabel: string; maxLabel: string; midLabel?: string }
   | { kind: "categorical"; entries: { label: string; color: string }[] };
 
 /** Legend view-model describing the active color mode's scale. */
@@ -230,9 +218,10 @@ export function legendFor(mode: ColorMode, domain: ColorDomain): Legend {
     case "elevation":
       return {
         kind: "gradient",
-        stops: ELEVATION_STOPS,
-        minLabel: `${Math.round(domain.elevMin)} m`,
-        maxLabel: `${Math.round(domain.elevMax)} m`,
+        stops: GRADE_STOPS,
+        minLabel: `−${GRADE_MAX}% descent`,
+        midLabel: "flat",
+        maxLabel: `+${GRADE_MAX}% climb`,
       };
     case "speed":
       return {

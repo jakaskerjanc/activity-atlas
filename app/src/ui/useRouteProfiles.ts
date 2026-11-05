@@ -1,6 +1,7 @@
-// The route profiles for the elevation profiles chart, as a load state. Fetched once
-// per session the first time a component asks (the analytics page), so the map's first
-// load doesn't grow by them.
+// The route profiles, as a load state: for the elevation profiles chart, and for the
+// map's Elevation color mode (grade along each route). Fetched once per session the
+// first time a component asks (the analytics page, or picking Elevation), so the map's
+// first load doesn't grow by them.
 
 import { useEffect, useState } from "react";
 import { loadProfiles } from "../routeProfiles";
@@ -17,9 +18,11 @@ async function fetchJson(url: string): Promise<unknown> {
   return r.json();
 }
 
-export function useRouteProfiles(): ProfilesState {
+/** `enabled` false holds off the fetch; a file already loaded stays ready. */
+export function useRouteProfiles(enabled = true): ProfilesState {
   const [state, setState] = useState<ProfilesState>({ status: "loading" });
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     loadProfiles(fetchJson).then(
       (file) => live && setState({ status: "ready", file }),
@@ -28,6 +31,6 @@ export function useRouteProfiles(): ProfilesState {
     return () => {
       live = false;
     };
-  }, []);
+  }, [enabled]);
   return state;
 }
