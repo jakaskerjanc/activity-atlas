@@ -298,6 +298,50 @@ gh secret set GARMIN_PERSONAL_API_KEY    # paste the new key at the prompt
 
 Only the expired key is replaced; nothing else rotates.
 
+## Ask an LLM about your data (MCP)
+
+`ingest/mcp_server` is a local, read-only [MCP](https://modelcontextprotocol.io)
+server over `data/activities.sqlite`, for questions like "is my running pace
+improving year over year?" or "which hikes reached the Triglav summit?". Any
+agent that can start a stdio MCP server can use it; Claude Code is the one
+documented here. Design: `docs/2026-11-04-mcp-server-design.md`.
+
+Register it once in Claude Code (user scope, so the absolute paths stay out of
+the repo), with `<checkout>` your clone's absolute path:
+
+```bash
+claude mcp add --scope user strava-on-maps \
+  -e PYTHONPATH=<checkout> \
+  -- <checkout>/.venv/bin/python -m ingest.mcp_server --db <checkout>/data/activities.sqlite
+```
+
+Other MCP clients need the same command:
+`<checkout>/.venv/bin/python -m ingest.mcp_server --db <checkout>/data/activities.sqlite`
+with `PYTHONPATH=<checkout>`. Add `--no-sync` to skip the R2 check at start.
+
+What it does:
+
+- **Tools:** `guide`, `summarize`, `list_activities`, `get_activity`,
+  `activity_samples`, `wellness`, `wellness_series`, `find_place`,
+  `activities_near`, `query` (read-only SQL) and `sync`. The `guide` (also sent
+  as the server's instructions) states the definitions every tool applies:
+  local dates, Monday weeks, pace = total moving time ÷ total distance, HR
+  weighted by moving time, unknown values never counted as 0. Every result
+  says what was counted and how current the data is.
+- **Sync:** with R2 configured it uses the read-only token
+  (`R2_RO_ACCESS_KEY_ID`, `R2_RO_SECRET_ACCESS_KEY`) from `<checkout>/.env`.
+  On start, and before a tool call when the last check is over an hour old, it
+  compares R2's etag with the local file's MD5 and downloads only when they
+  differ, replacing `data/activities.sqlite` the same way `npm run sync` does.
+  Without R2 it reads the local file as it is and never overwrites it.
+- **Read-only:** both connections open the file read-only; `query` also runs
+  under an SQLite authorizer that allows only reads of the database's own
+  tables, stops after 10 s and caps rows. `daily_stats.raw`,
+  `activity_sources.summary_json` and `activity_sources.reported` read as NULL.
+- **What leaves the machine:** the conversation with the model, and place names
+  you search for, sent to OpenStreetMap's Nominatim (cached in
+  `data/mcp/places.json`, at most one request a second).
+
 ## Config
 
 Add these to a root `.env` (see `.example.env`):
