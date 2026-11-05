@@ -4,7 +4,7 @@
 // analytics page, and the panels.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { MapView } from "./MapView";
+import { MapView, type CityRouteLine } from "./MapView";
 import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
@@ -21,7 +21,13 @@ import {
   type ActivityFilter,
   type MonthIsolation,
 } from "./activityFilter";
-import type { ActivitiesFile, ActivityFeatureCollection, RoutesFile, Theme } from "./types";
+import type {
+  ActivitiesFile,
+  ActivityFeatureCollection,
+  Profile,
+  RoutesFile,
+  Theme,
+} from "./types";
 import { joinActivities } from "./tracks";
 import { formatDate, formatMonth, activityLinks } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
@@ -34,6 +40,9 @@ import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
+import { useCities } from "./ui/useCities";
+import { cityComparisons } from "./cityMatch";
+import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -137,6 +146,56 @@ export default function App() {
     [data, profiles],
   );
 
+  // Distance comparisons: the city each group's distance would reach, on the analytics
+  // page, and the one group whose route the map shows (null: none). The cities are
+  // fetched the first time either needs them.
+  const [cityProfile, setCityProfile] = useState<Profile | null>(null);
+  const [cityEpoch, setCityEpoch] = useState(0);
+  const cities = useCities(view === "analytics" || cityProfile != null);
+  const comparisons = useMemo(
+    () => (cities.status === "ready" ? cityComparisons(visible, cities.data.cities) : []),
+    [cities, visible],
+  );
+  const shownCity = useMemo(
+    () => (cityProfile ? (comparisons.find((c) => c.profile === cityProfile) ?? null) : null),
+    [comparisons, cityProfile],
+  );
+  // The route follows the filter to whatever city the new total reaches; a filter that
+  // leaves the group no distance takes it down.
+  useEffect(() => {
+    if (cityProfile && cities.status === "ready" && !shownCity) setCityProfile(null);
+  }, [cityProfile, cities.status, shownCity]);
+  const cityRoute = useMemo<CityRouteLine | null>(
+    () =>
+      shownCity && cities.status === "ready"
+        ? {
+            key: `${shownCity.profile}:${shownCity.pick.city.id}`,
+            coords: shownCity.pick.route.coords,
+            originName: cities.data.origin.name,
+            cityName: shownCity.pick.city.name,
+          }
+        : null,
+    [shownCity, cities],
+  );
+  // "Show on map" on the analytics page. The route and a selected activity share the
+  // bottom panel, so one replaces the other.
+  const showCity = (profile: Profile) => {
+    setSelectedId(null);
+    setCityProfile(profile);
+    setCityEpoch((n) => n + 1);
+    panels.expandBottom();
+    setView("map");
+  };
+  const selectActivity = (id: string) => {
+    setSelectedId(id);
+    setCityProfile(null);
+  };
+  // A click on empty map clears both.
+  const deselect = () => {
+    setSelectedId(null);
+    setCityProfile(null);
+  };
+
   // Chronological step list for the visible activities, and the frame the
   // current progress resolves to. Memoized so MapView's frame effect only fires
   // when the resolved frame actually changes.
@@ -180,6 +239,7 @@ export default function App() {
   const startReplay = () => {
     if (timeline.length === 0) return;
     setSelectedId(null);
+    setCityProfile(null);
     setHoverId(null);
     setCursor(null);
     setProgress(0);
@@ -256,7 +316,13 @@ export default function App() {
   );
 
   const panelBody = useMemo(() => {
-    if (!selectedFeature) return undefined;
+    if (!selectedFeature) {
+      return shownCity ? (
+        <button type="button" style={hideRouteButton} onClick={() => setCityProfile(null)}>
+          Hide route
+        </button>
+      ) : undefined;
+    }
     if (selectedDetail && profile) {
       return (
         <ActivityCharts
@@ -269,9 +335,9 @@ export default function App() {
       );
     }
     return <p style={statusLine}>{detailMessage(detailState, profile != null)}</p>;
-  }, [selectedFeature, selectedDetail, profile, cursor, detailState]);
+  }, [selectedFeature, selectedDetail, profile, cursor, detailState, shownCity]);
 
-  // InfoPanel content: selected activity, or aggregate totals.
+  // InfoPanel content: selected activity, else the shown city route, else aggregate totals.
   const { title, subtitle, cards, links } = useMemo<{
     title: string;
     subtitle: string;
@@ -287,13 +353,22 @@ export default function App() {
         links: activityLinks(p.sources),
       };
     }
+    if (shownCity && cities.status === "ready") {
+      const { origin } = cities.data;
+      return {
+        title: routeTitle(origin, shownCity.pick.city),
+        subtitle: cityRouteSubtitle(shownCity),
+        cards: cityCards(shownCity, origin),
+        links: [],
+      };
+    }
     return {
       title: "All Activities",
       subtitle: filter ? `${formatMonth(filter.fromMonth)} — ${formatMonth(filter.toMonth)}` : "",
       cards: totalCards(visible),
       links: [],
     };
-  }, [selectedFeature, visible, filter?.fromMonth, filter?.toMonth]);
+  }, [selectedFeature, shownCity, cities, visible, filter?.fromMonth, filter?.toMonth]);
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }}>
@@ -310,8 +385,8 @@ export default function App() {
           hoverId={hoverId}
           selectedId={selectedId}
           onHover={setHoverId}
-          onSelect={setSelectedId}
-          onDeselect={() => setSelectedId(null)}
+          onSelect={selectActivity}
+          onDeselect={deselect}
           replaying={replaying}
           replayFrame={replayFrame}
           replayEpoch={replayEpoch}
@@ -320,6 +395,8 @@ export default function App() {
           cursorPoint={cursorPoint}
           selectedDetail={selectedDetail}
           onCursor={setCursor}
+          cityRoute={cityRoute}
+          cityRouteEpoch={cityEpoch}
         />
       </div>
 
@@ -343,6 +420,9 @@ export default function App() {
           sidePanelExpanded={!panels.sideCollapsed}
           isolation={filter && activeIsolation(filter, isolation)}
           onPickMonth={pickMonth}
+          cities={cities}
+          comparisons={comparisons}
+          onShowCity={showCity}
         />
       )}
 
@@ -424,4 +504,19 @@ const statusLine: CSSProperties = {
   fontFamily: "'JetBrains Mono', monospace",
   fontSize: 11,
   color: "var(--text-muted)",
+};
+
+// Takes the city route off the map, back to the totals.
+const hideRouteButton: CSSProperties = {
+  appearance: "none",
+  cursor: "pointer",
+  marginTop: 12,
+  padding: "7px 12px",
+  borderRadius: 8,
+  border: "1px solid var(--control-border)",
+  background: "transparent",
+  color: "var(--text-soft)",
+  fontSize: 12,
+  fontWeight: 600,
+  letterSpacing: ".02em",
 };

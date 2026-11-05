@@ -228,3 +228,38 @@ input[type="range"].range-dual::-moz-range-thumb {
     display: none;
   }
 }
+
+/* A city route's ends on the map (MapView's cityMarker): a dot on the point, its name in
+   a small glass label centered above it. Click-through, so they never steal a map click. */
+.city-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid var(--text-strong);
+  background: var(--bg);
+  pointer-events: none;
+}
+.city-marker--city {
+  width: 14px;
+  height: 14px;
+  border-width: 3px;
+  background: var(--accent);
+}
+.city-marker__label {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-strong);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+}

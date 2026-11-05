@@ -62,21 +62,32 @@ const FIT_MIN_CONTENT = 48;
 
 /**
  * Padding to fit a track into the strip left free by the panels. `left` reserves an open
- * side panel; each axis is then scaled down proportionally if the padding would otherwise
- * leave no usable map, so a narrow screen still centers instead of silently not moving.
+ * side panel; `margin` adds room on every side (for labels drawn past the track's ends).
+ * Each axis is then scaled down proportionally if the padding would otherwise leave no
+ * usable map, so a narrow screen still centers instead of silently not moving.
  */
 export function fitPadding(
   width: number,
   height: number,
   sidePanelExpanded: boolean,
+  margin = 0,
 ): FitPadding {
   const [left, right] = fitAxis(
-    sidePanelExpanded ? SIDE_PANEL_CLEARANCE + FIT_EDGE : FIT_EDGE,
-    FIT_EDGE,
+    (sidePanelExpanded ? SIDE_PANEL_CLEARANCE + FIT_EDGE : FIT_EDGE) + margin,
+    FIT_EDGE + margin,
     width,
   );
-  const [top, bottom] = fitAxis(FIT_TOP, FIT_BOTTOM, height);
+  const [top, bottom] = fitAxis(FIT_TOP + margin, FIT_BOTTOM + margin, height);
   return { top, bottom, left, right };
+}
+
+/**
+ * The fly-to offset that centers a fit in the padded strip. Mapbox's cameraForBounds only
+ * uses the padding to pick the zoom (spread evenly on both sides), so its center lands
+ * mid-canvas; this shifts it by half the difference between opposite sides.
+ */
+export function fitOffset(p: FitPadding): [number, number] {
+  return [(p.left - p.right) / 2, (p.top - p.bottom) / 2];
 }
 
 /** Shrink a padding pair, proportionally, so it leaves at least FIT_MIN_CONTENT. */
