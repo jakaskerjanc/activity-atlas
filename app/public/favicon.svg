@@ -13,11 +13,11 @@
   <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#tile)"/>
   <rect x="0.5" y="0.5" width="511" height="511" rx="111.5" fill="none" stroke="#ffffff" stroke-opacity="0.06"/>
 
-  <!-- The letter A as one route: up the left leg to the summit, down the right
-       leg, the crossbar as an out-and-back (the retrace draws as one line), then
+  <!-- The letter A as one route: up an S-curved leg to the summit, down the other,
+       the crossbar as an out-and-back (the retrace draws as one line), then
        on to the right foot. -->
   <path
-    d="M144 384 C156 356 172 338 180 310 C188 284 206 264 216 234 C228 198 240 152 256 122 C270 152 280 190 292 222 C302 250 320 270 328 300 C290 310 230 290 186 302 C230 290 290 310 328 300 C340 330 356 352 368 384"
+    d="M144 384 C204 330 196 196 256 120 C293 166 302 238 322 300 C278 322 233 322 189 300 C233 322 278 322 322 300 C333 332 346 362 368 384"
     fill="none" stroke="url(#trace)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- start: hollow ring -->
