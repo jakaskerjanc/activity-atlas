@@ -1,6 +1,6 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Activity Atlas">
   <defs>
-    <linearGradient id="trace" x1="150" y1="360" x2="362" y2="158" gradientUnits="userSpaceOnUse">
+    <linearGradient id="trace" x1="150" y1="372" x2="362" y2="140" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ff5230"/>
       <stop offset="1" stop-color="#ff8a63"/>
     </linearGradient>
@@ -13,12 +13,15 @@
   <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#tile)"/>
   <rect x="0.5" y="0.5" width="511" height="511" rx="111.5" fill="none" stroke="#ffffff" stroke-opacity="0.06"/>
 
+  <!-- The letter A as one route: up the left leg to the summit, down the right
+       leg, the crossbar as an out-and-back (the retrace draws as one line), then
+       on to the right foot. -->
   <path
-    d="M150 360 C128 305 168 268 214 286 C262 305 300 292 296 244 C293 206 244 206 246 168 C248 140 306 138 362 158"
-    fill="none" stroke="url(#trace)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+    d="M144 384 C156 356 172 338 180 310 C188 284 206 264 216 234 C228 198 240 152 256 122 C270 152 280 190 292 222 C302 250 320 270 328 300 C290 310 230 290 186 302 C230 290 290 310 328 300 C340 330 356 352 368 384"
+    fill="none" stroke="url(#trace)" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
 
   <!-- start: hollow ring -->
-  <circle cx="150" cy="360" r="20" fill="url(#tile)" stroke="#ff5230" stroke-width="15"/>
+  <circle cx="144" cy="384" r="21" fill="url(#tile)" stroke="#ff5230" stroke-width="15"/>
   <!-- end: filled dot -->
-  <circle cx="362" cy="158" r="24" fill="#ff8a63"/>
+  <circle cx="368" cy="384" r="25" fill="#ff8a63"/>
 </svg>
