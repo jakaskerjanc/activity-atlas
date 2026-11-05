@@ -111,8 +111,8 @@ Activities get into `data/activities.sqlite` via a one-shot backfill from
 bulk data exports. Pass each export **zip** as downloaded:
 
 ```bash
-pnpm run import:strava -- <strava-export.zip>
-pnpm run import:garmin -- <garmin-export.zip>
+pnpm run import:strava <strava-export.zip>
+pnpm run import:garmin <garmin-export.zip>
 ```
 
 Each import first stores the zip byte for byte, plus every file it reads
@@ -155,7 +155,7 @@ Ongoing incremental fetch from the Garmin Connect Personal API
 ## Rebuild
 
 ```bash
-pnpm run rebuild -- [--db data/activities.sqlite] [--archive file://data/archive]
+pnpm run rebuild [--db data/activities.sqlite] [--archive file://data/archive]
 ```
 
 Rebuilds the database from the archive's source records. If any activity in
@@ -175,10 +175,10 @@ the pulled R2 copy, so exit code 4 does not apply.
 When the matcher gets an activity wrong, fix it by hand:
 
 ```bash
-pnpm run activity -- merge <keep-id> <other-id>          # one activity, recorded twice
-pnpm run activity -- split <id> garmin:<garmin-activity-id>   # two activities merged by mistake
-pnpm run activity -- hide <id>                           # keep it, but leave it off the site
-pnpm run activity -- unhide <id>
+pnpm run activity merge <keep-id> <other-id>          # one activity, recorded twice
+pnpm run activity split <id> garmin:<garmin-activity-id>   # two activities merged by mistake
+pnpm run activity hide <id>                           # keep it, but leave it off the site
+pnpm run activity unhide <id>
 ```
 
 Each command takes `--db PATH` (default `data/activities.sqlite`). Merged and
@@ -455,7 +455,7 @@ busy (nothing was uploaded; run again). `6` means R2 has no database yet and
 `--init-db` was not passed.
 
 The first import into an empty bucket needs `--init-db`
-(`pnpm run import:strava -- <export.zip> --init-db`); no other command creates the
+(`pnpm run import:strava <export.zip> --init-db`); no other command creates the
 database in R2.
 
 ## Setting up your own copy
@@ -508,8 +508,8 @@ or Delete Your Account → Download Request) and/or Garmin Connect (Account
 Settings → Export Your Data), then run the importers:
 
 ```bash
-pnpm run import:strava -- <strava-export.zip>
-pnpm run import:garmin -- <garmin-export.zip>
+pnpm run import:strava <strava-export.zip>
+pnpm run import:garmin <garmin-export.zip>
 ```
 
 Run them from the repository root. This archives the exports under
