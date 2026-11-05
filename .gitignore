@@ -16,3 +16,6 @@ app/public/data/
 app/public/tracks.json
 app/public/activities.geojson
 package-lock.json
+
+# Resumable OSRM measurement cache for build:cities (the output JSON is committed).
+scripts/data/.city-distances-cache.jsonl

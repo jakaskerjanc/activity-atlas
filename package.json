@@ -14,6 +14,7 @@
     "dev": "pnpm --filter app run dev",
     "build:tracks": "tsx scripts/build-tracks.ts",
     "build:icons": "tsx scripts/render-icons.ts",
+    "build:cities": "tsx scripts/build-city-distances.ts",
     "build": "pnpm run build:tracks && pnpm --filter app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test scripts/*.test.ts",

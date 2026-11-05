@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AnalyticsView } from "./AnalyticsView";
 import { createActivityFilter, toggleType, visibleActivities } from "../activityFilter";
 import { record } from "../testFixtures";
+import { cityComparisons } from "../cityMatch";
+import type { CityData } from "../cities";
 
 const filter = createActivityFilter([record({ type: "Run" })]);
 
@@ -17,6 +19,9 @@ const render = (props: Partial<Props> = {}) =>
       sidePanelExpanded: true,
       isolation: null,
       onPickMonth: () => {},
+      cities: { status: "loading" },
+      comparisons: [],
+      onShowCity: () => {},
       ...props,
     } as Props),
   );
@@ -50,6 +55,37 @@ describe("AnalyticsView", () => {
     expect(render({ profiles: { status: "error" } })).toContain("Couldn&#x27;t load elevation profiles");
   });
 
+  test("compares the distance with a trip from the origin, once the cities load", () => {
+    expect(render()).toContain("Loading cities…");
+    expect(render({ cities: { status: "error" } })).toContain(
+      "Couldn&#x27;t load the city distances.",
+    );
+
+    const route = (km: number) => ({ m: km * 1000, coords: [[14.5, 46], [15, 45]] as [number, number][] });
+    const data: CityData = {
+      origin: { name: "Ljubljana", lat: 46.0569, lon: 14.5058 },
+      cities: [
+        { id: 1, name: "Kranj", country: "SI", fc: "PPL", lat: 46.24, lon: 14.36, population: 37000, cycling: route(26), walking: route(27) },
+        { id: 2, name: "Zagreb", country: "HR", fc: "PPLC", lat: 45.81, lon: 15.98, population: 700000, cycling: route(153), walking: null },
+      ],
+    };
+    const html = render({
+      cities: { status: "ready", data },
+      // The fixture's 10 km run is short of the nearest city.
+      comparisons: cityComparisons(visibleActivities(filter), data.cities),
+    });
+    expect(html).toContain("Your distance as one trip from Ljubljana");
+    expect(html).toContain("On foot · 10 km");
+    expect(html).toContain("Not yet");
+    expect(html).toContain("27 km on foot · Slovenia · 37% of the way");
+    expect(html).toContain('aria-label="Show Ljubljana → Kranj on foot on the map"');
+    expect(html).not.toContain("Rides");
+
+    expect(render({ cities: { status: "ready", data }, comparisons: [] })).toContain(
+      "No visible ride, run, walk or hike has a distance.",
+    );
+  });
+
   test("names the range a second click restores while a month is isolated", () => {
     const month = 2024 * 12 + 7;
     const html = render({
@@ -66,6 +102,7 @@ describe("AnalyticsView", () => {
     expect(html).not.toContain("Consistency");
     expect(html).not.toContain("Activity calendar");
     expect(html).not.toContain("Climbing by month");
+    expect(html).not.toContain("How far is that?");
     expect(html).not.toContain("Elevation profiles");
   });
 
