@@ -1,7 +1,8 @@
 """MCP tools over the activity database. The work happens in the sibling
 modules; this file only exposes them, keeps the data fresh, and adds ``as_of``."""
+import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -23,6 +24,10 @@ class ServerContext:
     db: Database
     syncer: Syncer
     places: PlaceFinder
+    # The SDK runs sync tools in worker threads, so parallel calls would share the
+    # SQLite connections; a reopen closing them under a running query crashes the
+    # process. Every tool call (sync, reopen, the work itself) holds this lock.
+    lock: threading.RLock = field(default_factory=threading.RLock)
 
 
 def _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
@@ -37,13 +42,16 @@ def build_server(ctx: ServerContext) -> MCPServer:
     server = MCPServer(name="strava-on-maps", instructions=guide_text(ctx.db))
 
     def run(fn: Callable[[], dict], force_sync: bool = False) -> dict:
-        if ctx.syncer.maybe_sync(force=force_sync):
-            ctx.db.reopen()
-        try:
-            result = fn()
-        except (ValueError, QueryError, PlaceLookupError) as exc:
-            raise ToolError(str(exc)) from exc
-        return {**result, "as_of": as_of(ctx.db, ctx.syncer)}
+        with ctx.lock:
+            # Reopen after our own sync, and also when `npm run sync` or a local
+            # writer replaced the file behind our back.
+            if ctx.syncer.maybe_sync(force=force_sync) or ctx.db.changed_on_disk():
+                ctx.db.reopen()
+            try:
+                result = fn()
+            except (ValueError, QueryError, PlaceLookupError) as exc:
+                raise ToolError(str(exc)) from exc
+            return {**result, "as_of": as_of(ctx.db, ctx.syncer)}
 
     @server.tool(annotations=READ_ONLY)
     def guide() -> dict:
@@ -100,11 +108,12 @@ def build_server(ctx: ServerContext) -> MCPServer:
         return run(lambda: samples.activity_samples(ctx.db, activity_id, channels, every_s, max_points))
 
     @server.tool(annotations=READ_ONLY)
-    def wellness(date_from: str, date_to: str, metrics: list[str] | None = None, period: str = "day") -> dict:
+    def wellness(date_from: str, date_to: str, metrics: list[str] | None = None, period: str = "day",
+                 max_rows: int = daily.DEFAULT_MAX_DAYS) -> dict:
         """Daily wellness numbers (resting_hr, hrv_avg, sleep_s, sleep_score, steps, stress_avg,
-        body_battery_high/low, weight_kg, spo2_avg, respiration columns, ...) per day, or per week/month/
-        year/all as mean, min, max and days_with_value."""
-        return run(lambda: daily.wellness(ctx.db, date_from, date_to, metrics, period))
+        body_battery_high/low, weight_kg, spo2_avg, respiration columns, ...) per day (at most 366 days per
+        call), or per week/month/year/all as mean, min, max and days_with_value."""
+        return run(lambda: daily.wellness(ctx.db, date_from, date_to, metrics, period, max_rows))
 
     @server.tool(annotations=READ_ONLY)
     def wellness_series(date: str, channel: str, every_s: float | None = None,

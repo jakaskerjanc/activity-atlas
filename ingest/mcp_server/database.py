@@ -7,6 +7,7 @@ Two connections to the same file, both opened ``mode=ro``:
   allows only reads, and that returns the raw payload columns as NULL (they are
   large and can hold private notes).
 """
+import os
 import sqlite3
 import time
 
@@ -65,7 +66,21 @@ class Database:
         self._deadline = 0.0
         self._open()
 
+    def _file_id(self) -> tuple | None:
+        try:
+            st = os.stat(self.path)
+        except FileNotFoundError:
+            return None
+        return st.st_ino, st.st_mtime_ns, st.st_size
+
+    def changed_on_disk(self) -> bool:
+        """True when another process replaced the file since it was opened (a rename
+        keeps the old inode readable through open connections, so a check is needed)."""
+        now = self._file_id()
+        return now is not None and now != self._opened_id
+
     def _open(self) -> None:
+        self._opened_id = self._file_id()
         self.conn = _open_ro(self.path)
         self.conn.row_factory = sqlite3.Row
         q = _open_ro(self.path)

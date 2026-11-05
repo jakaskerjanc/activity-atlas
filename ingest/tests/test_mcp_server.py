@@ -84,6 +84,64 @@ def test_server_instructions_are_the_guide(ctx):
     assert build_server(ctx).instructions == guide_text(ctx.db)
 
 
+def test_tool_bodies_and_sync_run_under_one_lock(ctx, monkeypatch):  # review Important 1
+    seen = []
+    real_sync = ctx.syncer.maybe_sync
+
+    def checking_sync(force=False):
+        seen.append(("sync", ctx.lock._is_owned()))
+        return real_sync(force)
+
+    monkeypatch.setattr(ctx.syncer, "maybe_sync", checking_sync)
+    real_list = __import__("ingest.mcp_server.activities", fromlist=["x"]).list_activities
+
+    def checking_list(*a, **k):
+        seen.append(("tool", ctx.lock._is_owned()))
+        return real_list(*a, **k)
+
+    monkeypatch.setattr("ingest.mcp_server.activities.list_activities", checking_list)
+    call(ctx, "list_activities", {})
+    assert seen == [("sync", True), ("tool", True)]
+
+
+def test_file_replaced_by_another_process_is_reread(ctx, tmp_path):  # review Important 2
+    import sqlite3
+
+    from ingest import writer
+    other = str(tmp_path / "other.sqlite")
+    with open(ctx.db.path, "rb") as src, open(other, "wb") as dst:
+        dst.write(src.read())
+    c = sqlite3.connect(other)
+    c.execute("INSERT INTO activities (id, type, start_time, start_local, visible) "
+              "VALUES ('extra', 'Run', '2026-11-04T07:00:00+00:00', '2026-11-04T08:00:00', 1)")
+    c.commit()
+    c.close()
+    server = build_server(ctx)
+    asyncio.run(server.call_tool("list_activities", {}))  # opens and uses the old file
+    writer.install(other, ctx.db.path)  # what `npm run sync` or a local import does
+    r = json.loads(asyncio.run(server.call_tool("list_activities", {})).content[0].text)
+    assert "extra" in [row["id"] for row in r["data"]["rows"]]
+    assert r["as_of"]["newest_activity"] == "2026-11-04T08:00:00"
+
+
+def test_main_does_not_sync_before_serving_when_the_db_exists(tmp_path, monkeypatch):  # review Important 5
+    path = build_fixture_db(str(tmp_path / "f.sqlite"))
+    heads = []
+
+    class Store:
+        def head(self, key):
+            heads.append(key)
+            return None
+
+    served = []
+    monkeypatch.setattr("ingest.mcp_server.__main__.store_from_env", lambda read_only: Store())
+    monkeypatch.setattr("ingest.mcp_server.__main__.build_server",
+                        lambda ctx: type("S", (), {"run": lambda self, t: served.append(t)})())
+    monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path])
+    main()
+    assert served == ["stdio"] and heads == []
+
+
 def test_main_refuses_missing_db_without_r2(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", str(tmp_path / "missing.sqlite")])
     with pytest.raises(SystemExit) as e:

@@ -22,7 +22,9 @@ def main() -> None:
     path = os.path.abspath(args.db)
 
     syncer = Syncer(path, store_from_env(read_only=True))
-    if not args.no_sync:
+    # Only a missing database is fetched before serving: a slow R2 must not hold
+    # up the client's start-up. Otherwise the first tool call checks R2.
+    if not args.no_sync and not os.path.exists(path):
         syncer.maybe_sync(force=True)
         print(f"strava-on-maps MCP: sync {syncer.last_outcome}", file=sys.stderr)
     if not os.path.exists(path):

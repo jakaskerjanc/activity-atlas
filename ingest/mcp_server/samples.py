@@ -44,10 +44,13 @@ def bucket_average(times: list[float], channels: dict[str, list[float | None]],
 
 
 def _every(times: list[float], every_s: float | None, max_points: int) -> float:
-    if every_s:
-        return every_s
+    """The bucket width: the caller's ``every_s``, but never so small that the
+    result would exceed ``max_points`` rows."""
+    if every_s is not None and every_s <= 0:
+        raise ValueError("every_s must be positive")
     span = (times[-1] - times[0]) if times else 0
-    return max(1, math.ceil((span + 1) / max_points))
+    floor = max(1, math.ceil((span + 1) / max_points))
+    return max(every_s or 0, floor)
 
 
 def _round(channel: str, v: float | None):

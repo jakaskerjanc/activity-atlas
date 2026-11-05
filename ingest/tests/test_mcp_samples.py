@@ -66,6 +66,24 @@ def test_series_missing_day_reports_coverage(db):
     assert r["data"]["rows"] == [] and r["data"]["coverage"] == {"first": "2025-03-10", "last": "2025-03-10"}
 
 
+def test_every_s_cannot_exceed_the_point_cap(db):  # review Important 3
+    r = activity_samples(db, "run1", ["hr"], every_s=1, max_points=5)
+    assert len(r["data"]["rows"]) <= 5 and r["data"]["every_s"] == 541
+    r = wellness_series(db, "2025-03-10", "hr", every_s=1e-7, max_points=24)
+    assert len(r["data"]["rows"]) <= 24
+
+
+def test_every_s_must_be_positive(db):
+    with pytest.raises(ValueError):
+        activity_samples(db, "run1", ["hr"], every_s=-5)
+
+
+def test_wellness_days_capped(db):  # review Important 4
+    r = wellness(db, "2025-03-10", "2025-03-16", max_rows=3)
+    assert len(r["data"]["rows"]) == 3 and r["data"]["truncated"] is True
+    assert wellness(db, "2025-03-10", "2025-03-16")["data"]["truncated"] is False
+
+
 def test_wellness_per_day(db):
     rows = wellness(db, "2025-03-10", "2025-03-11", ["resting_hr"])["data"]["rows"]
     assert rows == [{"date": "2025-03-10", "resting_hr": 50}, {"date": "2025-03-11", "resting_hr": 51}]

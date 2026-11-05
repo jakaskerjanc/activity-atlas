@@ -16,8 +16,11 @@ def metric_columns(db: Database) -> list[str]:
     return [r[1] for r in db.conn.execute("PRAGMA table_info(daily_stats)") if r[1] not in _NOT_METRICS]
 
 
+DEFAULT_MAX_DAYS = 366
+
+
 def wellness(db: Database, date_from: str, date_to: str, metrics: list[str] | None = None,
-             period: str = "day") -> dict:
+             period: str = "day", max_rows: int = DEFAULT_MAX_DAYS) -> dict:
     valid = metric_columns(db)
     for m in metrics or []:
         if m not in valid:
@@ -30,10 +33,14 @@ def wellness(db: Database, date_from: str, date_to: str, metrics: list[str] | No
                            (date_from, date_to)).fetchone()[0]
     if period == "day":
         cols = ["date", *chosen] + ([] if metrics else ["hrv_status"])
+        max_rows = max(1, min(max_rows, DEFAULT_MAX_DAYS))
         rows = [dict(r) for r in db.conn.execute(
-            f"SELECT {', '.join(cols)} FROM daily_stats WHERE date BETWEEN ? AND ? ORDER BY date",
-            (date_from, date_to))]
-        return {"data": {"rows": rows}, "counted": counted(rules, days)}
+            f"SELECT {', '.join(cols)} FROM daily_stats WHERE date BETWEEN ? AND ? ORDER BY date LIMIT ?",
+            (date_from, date_to, max_rows + 1))]
+        truncated = len(rows) > max_rows
+        if truncated:
+            rules.append(f"first {max_rows} days only; use a period or a shorter range for more")
+        return {"data": {"rows": rows[:max_rows], "truncated": truncated}, "counted": counted(rules, days)}
     aggs = ", ".join(f"avg({m}), min({m}), max({m}), count({m})" for m in chosen)
     out = []
     for r in db.conn.execute(
