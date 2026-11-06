@@ -1,4 +1,4 @@
-// Grade coloring for the map's Elevation color mode: each route is colored along its
+// Grade coloring for the map's Grade color mode: each route is colored along its
 // length by how steep it is there (climbs warm, descents cool). Pure module, like
 // colors.ts.
 //
@@ -25,20 +25,20 @@ export const GRADE_BUCKET = 1.5;
 export const GRADE_FLAT = 1;
 
 /**
- * The color scale, ascending by grade (%), interpolated between stops. Climbs follow
- * the green -> yellow -> red that Strava's gradient map and most grade tools use (the
- * yellow -> red mix passes through orange), darkening to deep red at the steepest;
- * descents fade from the flat green through blue to dark blue, so a descent never
- * reads as a climb.
+ * The color scale, ascending by grade (%), interpolated between stops: a diverging scale
+ * around a neutral grey for flat ground. Climbs warm through amber and the accent orange
+ * to deep red at the steepest; descents cool through blue to deep blue. Each side is
+ * ordered by lightness as well as hue, so it reads under color-vision deficiency, and
+ * the grey midpoint never competes with the basemap's greens.
  */
 export const GRADE_SCALE: { grade: number; color: string }[] = [
-  { grade: -GRADE_MAX, color: "#1e3a8a" },
-  { grade: -7.5, color: "#3d8bfd" },
-  { grade: -GRADE_FLAT, color: "#3ecf6e" },
-  { grade: GRADE_FLAT, color: "#3ecf6e" },
-  { grade: 5, color: "#ffd23f" },
-  { grade: 10, color: "#ff3b30" },
-  { grade: GRADE_MAX, color: "#8b0a0a" },
+  { grade: -GRADE_MAX, color: "#1d4a9e" },
+  { grade: -7.5, color: "#4f93e8" },
+  { grade: -GRADE_FLAT, color: "#8c919c" },
+  { grade: GRADE_FLAT, color: "#8c919c" },
+  { grade: 5, color: "#ffab45" },
+  { grade: 10, color: "#f4502a" },
+  { grade: GRADE_MAX, color: "#a3150c" },
 ];
 
 /** What a run feature carries: enough for the filter, replay, highlight and color. */

@@ -157,3 +157,21 @@ describe("labels", () => {
     expect(ridgeLabel(base)).toBe("August 2026 · no activities");
   });
 });
+
+describe("smoothing is honest about which days had climbing", () => {
+  test("a lone day's bell is all but gone by the middle of the next day", () => {
+    const curve = smoothDaily([0, 0, 1000, 0, 0]);
+    // Middle of day 4 (index 3.5 days) and day 2 (1.5 days).
+    expect(curve[3.5 * POINTS_PER_DAY]).toBeLessThan(10);
+    expect(curve[1.5 * POINTS_PER_DAY]).toBeLessThan(10);
+  });
+
+  test("each day lists its activities for the tooltip", () => {
+    const { ridges } = climbingRidgeline(
+      [record({ id: "a", name: "Morning hike", ts: at("2024-08-18T07:00:00Z"), elevation_gain: 640 })],
+      month(2024, 8),
+      month(2024, 8),
+    );
+    expect(ridges[0].byDay?.[17]).toEqual([{ id: "a", name: "Morning hike", type: "Run", gainM: 640 }]);
+  });
+});

@@ -123,7 +123,53 @@ export function densestClusterBounds(
   minFraction = 0.15,
 ): Bounds | null {
   if (features.length === 0) return null;
+  const { pts, pool } = densestCluster(features, gridN, minFraction);
+  return (
+    boundsOfPoints(pool.map((i) => pts[i])) ??
+    boundsOf(pool.map((i) => features[i])) ??
+    boundsOf(features)
+  );
+}
 
+/**
+ * Where the opening map view should look: the routes of the densest cluster, so the
+ * home region fills the free area instead of a far-flung trip shrinking it to a dot.
+ * The box is the `trim`..1-`trim` quantile of the cluster's route points on each axis,
+ * so one long excursion out of town doesn't decide the zoom either; the routes that
+ * reach past it simply run off the edge.
+ */
+export function densestClusterRouteBounds(
+  features: ActivityFeature[],
+  gridN = 8,
+  // Keep most activities: the opening view should show the data, and only drop the
+  // far-flung few.
+  minFraction = 0.6,
+  trim = 0.03,
+): Bounds | null {
+  if (features.length === 0) return null;
+  const { pool } = densestCluster(features, gridN, minFraction);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const i of pool) {
+    for (const [x, y] of features[i].geometry.coordinates) {
+      xs.push(x);
+      ys.push(y);
+    }
+  }
+  if (xs.length === 0) return boundsOf(features);
+  xs.sort((a, b) => a - b);
+  ys.sort((a, b) => a - b);
+  const q = (v: number[], f: number) => v[Math.round(f * (v.length - 1))];
+  const box: Bounds = [q(xs, trim), q(ys, trim), q(xs, 1 - trim), q(ys, 1 - trim)];
+  return box[2] > box[0] || box[3] > box[1] ? box : boundsOf(pool.map((i) => features[i]));
+}
+
+/** The refinement loop shared by both framings: the indices of the densest cluster. */
+function densestCluster(
+  features: ActivityFeature[],
+  gridN: number,
+  minFraction: number,
+): { pts: [number, number][]; pool: number[] } {
   const pts = features.map(centroid);
   const floor = Math.max(5, Math.ceil(features.length * minFraction));
 
@@ -137,10 +183,5 @@ export function densestClusterBounds(
     if (local.length < floor) break; // refining further would over-zoom
     pool = local.map((k) => pool[k]);
   }
-
-  return (
-    boundsOfPoints(pool.map((i) => pts[i])) ??
-    boundsOf(pool.map((i) => features[i])) ??
-    boundsOf(features)
-  );
+  return { pts, pool };
 }

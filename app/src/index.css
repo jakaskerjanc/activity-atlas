@@ -1,8 +1,35 @@
-/* Theme tokens. Dark is the default (:root); light overrides under [data-theme="light"].
-   Every panel/text/control color in the UI resolves to one of these, so the whole
-   chrome flips by swapping the data-theme attribute on <html>. */
+/* Design tokens. Dark is the default (:root); light overrides under [data-theme="light"].
+   Every panel, text and control color in the UI resolves to one of these, so the whole
+   chrome flips by swapping the data-theme attribute on <html>. Sizes (type scale,
+   spacing, radii) are theme-independent and mirrored in ui/theme.ts for inline styles. */
 :root {
   --font-ui: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale (px). Mono is for numbers only; labels are sentence-case sans. */
+  --fs-2xs: 10px; /* chart axis ticks */
+  --fs-xs: 11px; /* stat labels, legends */
+  --fs-sm: 12.5px; /* secondary text, controls */
+  --fs-md: 14px; /* body, list rows */
+  --fs-lg: 16px; /* panel titles */
+  --fs-xl: 22px; /* stat values */
+  --fs-2xl: 26px; /* page title */
+
+  /* Spacing on a 4px grid. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* Radii by hierarchy: controls < inner cards < panels < sheets. */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root,
@@ -10,51 +37,56 @@
   color-scheme: dark;
 
   --bg: #0e0f13;
+  --bg-raised: #15171d;
   --text: #e7e8ec;
   --text-strong: #ffffff;
   --text-soft: #b7bac2;
-  --text-muted: #8b8f99;
-  --text-dim: #6f727c;
-  --text-faint: #54575f;
+  --text-muted: #969aa5;
+  --text-dim: #868a95;
+  --text-faint: #5c5f68;
   --border-empty: #4a4d57;
 
   --accent: #ff6b3d;
-  --accent-text: #ff6b3d;
+  --accent-text: #ff7a50;
   --accent-hover: #ff8a63;
   --accent-tint: rgba(255, 107, 61, 0.14);
-  --accent-tint-weak: rgba(255, 107, 61, 0.09);
-  --pill-on-text: #eceef2;
+  --accent-tint-weak: rgba(255, 107, 61, 0.08);
+  --accent-ink: #1a0f0a; /* text on a solid accent fill: charcoal holds 6:1, white only 2.9:1 */
+  --pill-on-text: #ffffff;
+  --focus: #ffb199;
 
-  --panel-bg: linear-gradient(
-    155deg,
-    rgba(26, 28, 36, 0.6),
-    rgba(12, 13, 18, 0.46)
-  );
-  --panel-border: rgba(255, 255, 255, 0.12);
-  --panel-blur: blur(10px) saturate(150%);
+  /* Panel material: a near-opaque charcoal so the map never muddies text. */
+  --panel-bg: rgba(20, 22, 28, 0.86);
+  --panel-solid: #16181e;
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --panel-blur: blur(18px) saturate(115%);
+  --panel-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
 
   --divider: rgba(255, 255, 255, 0.08);
-  --card-bg: rgba(28, 30, 40, 0.5);
-  --card-grid: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(255, 255, 255, 0.035);
+  --card-grid: rgba(255, 255, 255, 0.07);
+  --control-bg: rgba(255, 255, 255, 0.04);
+  --control-hover: rgba(255, 255, 255, 0.08);
   --control-border: rgba(255, 255, 255, 0.12);
   --track: rgba(255, 255, 255, 0.14);
-  --scrollbar: rgba(255, 255, 255, 0.12);
-  --header-fade: rgba(10, 11, 15, 0.9);
+  --scrollbar: rgba(255, 255, 255, 0.14);
+  --header-fade: rgba(10, 11, 15, 0.92);
+  --scrim: rgba(6, 7, 10, 0.45);
 
   /* Activity calendar: empty day, then <1h / 1-2h / 2-4h / 4h+ of moving time. One hue
      (the accent), validated as an ordinal ramp against the card: on dark, more time
-     reads brighter, ending on the accent itself. */
+     reads brighter, in clear lightness steps, ending past the accent on a pale peach. */
   --heat-0: rgba(255, 255, 255, 0.06);
-  --heat-1: #873b24;
-  --heat-2: #b44725;
-  --heat-3: #dc5428;
-  --heat-4: #ff6b3d;
+  --heat-1: #5e2a1a;
+  --heat-2: #9c3f20;
+  --heat-3: #e45a2b;
+  --heat-4: #ffb08a;
 
-  --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.65);
+  --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.6);
   --vignette-bg: radial-gradient(
     120% 90% at 60% 40%,
     transparent 55%,
-    rgba(6, 7, 10, 0.55) 100%
+    rgba(6, 7, 10, 0.5) 100%
   );
 }
 
@@ -62,36 +94,42 @@
   color-scheme: light;
 
   --bg: #eef0f4;
+  --bg-raised: #ffffff;
   --text: #1c1c1e;
   --text-strong: #0a0a0c;
-  --text-soft: rgba(28, 28, 30, 0.78);
-  --text-muted: rgba(60, 60, 67, 0.66);
-  --text-dim: rgba(60, 60, 67, 0.5);
-  --text-faint: rgba(60, 60, 67, 0.32);
-  --border-empty: rgba(60, 60, 67, 0.38);
+  --text-soft: #3d3f46;
+  --text-muted: #5f636d;
+  --text-dim: #6a6e78;
+  --text-faint: #a2a5ad;
+  --border-empty: #9a9ea8;
 
   --accent: #ff6b3d;
-  --accent-text: #d24a1c;
+  --accent-text: #c8441a;
   --accent-hover: #e0521f;
-  --accent-tint: rgba(255, 107, 61, 0.16);
-  --accent-tint-weak: rgba(255, 107, 61, 0.1);
-  --pill-on-text: var(--accent-text);
+  --accent-tint: rgba(255, 107, 61, 0.13);
+  --accent-tint-weak: rgba(255, 107, 61, 0.08);
+  --accent-ink: #1a0f0a;
+  --pill-on-text: #b43d14;
+  --focus: #d2491c;
 
-  --panel-bg: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.4),
-    rgba(255, 255, 255, 0.18)
-  );
-  --panel-border: rgba(255, 255, 255, 0.55);
-  --panel-blur: blur(10px) saturate(190%) brightness(1.05);
+  /* A neutral frosted white, opaque enough that green terrain and orange routes never
+     bleed through as blotches behind text. */
+  --panel-bg: rgba(251, 251, 252, 0.9);
+  --panel-solid: #fbfbfc;
+  --panel-border: rgba(20, 22, 30, 0.08);
+  --panel-blur: blur(18px) saturate(105%);
+  --panel-shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 10px 30px rgba(20, 22, 30, 0.14);
 
-  --divider: rgba(60, 60, 67, 0.16);
-  --card-bg: rgba(255, 255, 255, 0.32);
-  --card-grid: rgba(60, 60, 67, 0.14);
-  --control-border: rgba(60, 60, 67, 0.22);
-  --track: rgba(60, 60, 67, 0.2);
-  --scrollbar: rgba(60, 60, 67, 0.28);
-  --header-fade: rgba(238, 240, 244, 0.85);
+  --divider: rgba(20, 22, 30, 0.09);
+  --card-bg: rgba(20, 22, 30, 0.03);
+  --card-grid: rgba(20, 22, 30, 0.08);
+  --control-bg: rgba(20, 22, 30, 0.03);
+  --control-hover: rgba(20, 22, 30, 0.06);
+  --control-border: rgba(20, 22, 30, 0.14);
+  --track: rgba(20, 22, 30, 0.14);
+  --scrollbar: rgba(20, 22, 30, 0.22);
+  --header-fade: rgba(238, 240, 244, 0.9);
+  --scrim: rgba(20, 22, 30, 0.18);
 
   /* Activity calendar: same steps, flipped so more time reads darker on light. */
   --heat-0: rgba(60, 60, 67, 0.08);
@@ -100,12 +138,31 @@
   --heat-3: #ce4617;
   --heat-4: #a73204;
 
-  --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.12);
+  --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.1);
   --vignette-bg: radial-gradient(
     120% 90% at 60% 40%,
     transparent 60%,
-    rgba(150, 160, 180, 0.14) 100%
+    rgba(150, 160, 180, 0.12) 100%
   );
+}
+
+/* On the map the panels are see-through glass again, so the routes and terrain show
+   through them. Analytics keeps the near-opaque material above. Stat cells follow
+   their panel (--stat-cell-bg), so they never sit as solid blocks on the glass. */
+:root {
+  --stat-cell-bg: var(--panel-solid);
+}
+:root[data-view="map"] {
+  --panel-bg: linear-gradient(155deg, rgba(26, 28, 36, 0.6), rgba(12, 13, 18, 0.46));
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-blur: blur(10px) saturate(150%);
+  --stat-cell-bg: rgba(12, 13, 18, 0.42);
+}
+:root[data-theme="light"][data-view="map"] {
+  --panel-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.18));
+  --panel-border: rgba(255, 255, 255, 0.55);
+  --panel-blur: blur(10px) saturate(190%) brightness(1.05);
+  --stat-cell-bg: rgba(255, 255, 255, 0.34);
 }
 
 html,
@@ -119,8 +176,13 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
+  font-size: var(--fs-md);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+}
+
+button {
+  font-family: inherit;
 }
 
 a {
@@ -129,6 +191,64 @@ a {
 }
 a:hover {
   color: var(--accent-hover);
+}
+
+/* One focus ring for every control: 2px, offset, in the theme's focus color. Mouse
+   clicks don't show it (focus-visible), keyboard focus always does. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* SVG hit targets (ridgeline rows) can't take an outline offset in every engine; a
+   stroke reads the same. */
+.svg-focus:focus-visible {
+  outline: none;
+  stroke: var(--focus);
+  stroke-width: 2px;
+}
+
+/* Hover feedback shared by the plain controls. Inline styles set the resting look, so the
+   hover must be !important to win over them; selected controls don't take the class. */
+.ctl {
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.ctl:not(:disabled):hover {
+  background-color: var(--control-hover) !important;
+  color: var(--text-strong) !important;
+}
+.ctl-accent:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+/* An activity's page on Garmin Connect / Strava: a small letter badge after the title. */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--control-border);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.source-badge:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  background: var(--accent-tint-weak);
 }
 
 /* Panel scrollers sit inside the glass, so the bar is thinner and dimmer than the page
@@ -167,28 +287,59 @@ input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 3px;
+  height: 4px;
   background: var(--track);
-  border-radius: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+input[type="range"]:focus-visible {
   outline: none;
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--accent);
-  cursor: pointer;
-  box-shadow: 0 0 0 4px rgba(255, 107, 61, 0.18);
+  border: 2px solid var(--panel-solid);
+  box-sizing: border-box;
+  cursor: grab;
+  box-shadow: 0 0 0 1px var(--accent);
+  transition: box-shadow 0.15s;
 }
 input[type="range"]::-moz-range-thumb {
-  width: 15px;
-  height: 15px;
-  border: none;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--panel-solid);
   border-radius: 50%;
   background: var(--accent);
-  cursor: pointer;
+  cursor: grab;
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 5px var(--accent-tint);
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--focus);
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px var(--focus);
+}
+
+/* The replay scrubber: a thicker rail whose played part is filled (set via --played). */
+input[type="range"].range-scrub {
+  height: 6px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0 var(--played, 0%),
+    var(--track) var(--played, 0%) 100%
+  );
+}
+input[type="range"].range-scrub::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
 }
 
 /* Dual-thumb range (see FilterSection's DualRange): two stacked inputs share one rail,
@@ -210,28 +361,142 @@ input[type="range"].range-dual::-moz-range-thumb {
   pointer-events: auto;
 }
 
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+/* Overlay panels (GlassPanel). Placement is inline; material, motion and the collapse
+   states live here. */
+.panel {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-radius: var(--r-lg);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+  transition:
+    transform 0.32s var(--ease-out),
+    opacity 0.2s ease,
+    visibility 0s linear 0s;
+}
+/* A side panel that slides fully off its edge (no sliver), then leaves the tab order. */
+.panel[data-hidden="true"] {
+  transform: translateX(calc(-100% - 32px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 0.32s var(--ease-out),
+    opacity 0.2s ease 0.1s,
+    visibility 0s linear 0.32s;
+}
+.panel__body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* The mobile bottom sheet: full width, flush to the bottom edge. */
+.panel--sheet {
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-bottom: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sheet-handle {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+/* Analytics page layout. The content column sits right of the filters panel. */
+.analytics {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--bg);
+  padding: 86px 24px 48px var(--analytics-left, 24px);
+  transition: padding-left 0.32s var(--ease-out);
+}
+.analytics__column {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.analytics__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+.analytics__grid > .span-2 {
+  grid-column: 1 / -1;
+}
+.analytics__grid > section {
+  scroll-margin-top: 80px;
+}
+@media (max-width: 1100px) {
+  .analytics__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  to {
-    opacity: 1;
-    transform: none;
+}
+@media (max-width: 760px) {
+  .analytics {
+    padding: 72px 12px 32px;
+  }
+  .analytics__grid {
+    gap: var(--sp-3);
   }
 }
 
-/* On a phone the Map / Analytics switch shows icons only (its buttons keep their
-   aria-labels), so it fits beside the wordmark. */
-@media (max-width: 480px) {
-  .view-switch-label {
+/* Header: the wordmark shortens and control labels drop on a phone; the aria-labels
+   carry the names. */
+@media (max-width: 760px) {
+  .view-switch-label,
+  .header-btn-label {
     display: none;
+  }
+  .wordmark {
+    font-size: 13px !important;
+    letter-spacing: 0.1em !important;
+  }
+}
+
+/* The loading chip's pulse. */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.pulse-dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot {
+    animation: none;
+  }
+  .panel,
+  .panel[data-hidden="true"] {
+    transition: none;
   }
 }
 
 /* A city route's ends on the map (MapView's cityMarker): a dot on the point, its name in
-   a small glass label centered above it. Click-through, so they never steal a map click. */
+   a small label beside it, on the side away from the route so the line never runs
+   through it. Click-through, so they never steal a map click. */
 .city-marker {
+  position: relative;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -248,18 +513,69 @@ input[type="range"].range-dual::-moz-range-thumb {
 }
 .city-marker__label {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
   padding: 3px 8px;
   border-radius: 6px;
   white-space: nowrap;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-family: var(--font-ui);
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-strong);
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  backdrop-filter: var(--panel-blur);
-  -webkit-backdrop-filter: var(--panel-blur);
+  box-shadow: var(--panel-shadow);
+}
+.city-marker__label--left {
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+.city-marker__label--right {
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+
+/* The map's hover label: which activity is under the pointer. Positioned by MapView. */
+.route-tip {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  font-family: var(--font-ui);
+}
+.route-tip[data-on="true"] {
+  opacity: 1;
+}
+.route-tip__name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.route-tip__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.route-tip__meta {
+  margin-top: 3px;
+  padding-left: 15px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

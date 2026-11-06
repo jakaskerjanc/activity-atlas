@@ -75,9 +75,9 @@ function crowFliesM(a: { lat: number; lon: number }, b: { lat: number; lon: numb
 export function cityCards(c: CityComparison, origin: CityOrigin): StatCard[] {
   const { city, route, ratio } = c.pick;
   return [
-    { value: formatTripKm(route.m), label: "Route km", accent: true },
-    { value: formatTripKm(c.totalM), label: `${PROFILE_TEXT[c.profile].group} km` },
+    { value: formatTripKm(route.m), unit: "km", label: "Route", accent: true },
+    { value: formatTripKm(c.totalM), unit: "km", label: `${PROFILE_TEXT[c.profile].group} total` },
     { value: formatShare(ratio), label: "Of the way" },
-    { value: formatTripKm(crowFliesM(origin, city)), label: "Straight km" },
+    { value: formatTripKm(crowFliesM(origin, city)), unit: "km", label: "As the crow flies" },
   ];
 }

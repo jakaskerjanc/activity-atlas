@@ -1,8 +1,8 @@
 // The climbing ridgeline on the Analytics page (#20): one ridge per month of the date
 // range, oldest first. Along each ridge x is the day of the month (UTC, like the
 // activity calendar) and the height is the elevation gain of that day's visible
-// activities, smoothed a little so a ridge reads as a shape rather than spikes: a big
-// weekend is a tall peak, steady climbing a long low hump. Ridges share one height
+// activities, drawn as a narrow bell inside the day so a ridge reads as a shape rather
+// than bars, but never suggests climbing on a day without any. Ridges share one height
 // scale, so months compare fairly. Each month also carries its summed gain. Pure
 // module, no React; reads only activities.json.
 
@@ -15,8 +15,21 @@ const DAY_SEC = 86400;
 export const AXIS_DAYS = 31;
 /** Curve points per day. */
 export const POINTS_PER_DAY = 4;
-/** Smoothing: each day's gain spreads as a bell this many days wide (standard deviation). */
-const SPREAD_DAYS = 0.6;
+/**
+ * Smoothing: each day's gain is a bell this many days wide (standard deviation). Narrow
+ * enough that a day's bell has all but vanished at the next day's middle, so a ridge
+ * never shows climbing on a day without any.
+ */
+export const SPREAD_DAYS = 0.28;
+
+/** One activity's share of a day, for the ridgeline's day tooltip. */
+export interface DayActivity {
+  id: string;
+  name: string;
+  type: string;
+  /** Elevation gain, metres; undefined when unknown. */
+  gainM: number | undefined;
+}
 
 export interface MonthRidge {
   /** Month index (see format.ts: monthIndex). */
@@ -29,6 +42,8 @@ export interface MonthRidge {
   gainM: number | undefined;
   /** Known gain per day of the month (index 0 = the 1st); 0 for days without. */
   daily: number[];
+  /** The visible activities per day of the month (index 0 = the 1st). */
+  byDay?: DayActivity[][];
   /** Days (1-based) with at least one visible activity, gain known or not. */
   activeDays: number[];
   /** The day with the most gain, or undefined when no day has any. */
@@ -94,11 +109,13 @@ export function climbingRidgeline(
     const days = daysInMonth(month);
     const start = monthStart(month);
     const daily = new Array<number>(days).fill(0);
+    const byDay: DayActivity[][] = Array.from({ length: days }, () => []);
     const active = new Set<number>();
     for (const a of list) {
       const d = Math.floor((a.ts - start) / DAY_SEC);
       active.add(d + 1);
       if (a.elevation_gain != null) daily[d] += a.elevation_gain;
+      byDay[d].push({ id: a.id, name: a.name, type: a.type, gainM: a.elevation_gain });
     }
     const { elevation } = aggregate(list);
     const top = Math.max(0, ...daily);
@@ -110,6 +127,7 @@ export function climbingRidgeline(
       count: list.length,
       gainM: elevation.n === 0 ? undefined : elevation.sum,
       daily,
+      byDay,
       activeDays: [...active].sort((a, b) => a - b),
       biggestDay: top > 0 ? { day: daily.indexOf(top) + 1, gainM: top } : undefined,
       curve,

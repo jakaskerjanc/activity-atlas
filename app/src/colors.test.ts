@@ -94,7 +94,7 @@ describe("unknown values", () => {
   });
 
   test("elevation colors a run's grade and falls back to NEUTRAL without one", () => {
-    const e = lineColorExpression("elevation", domain()) as unknown[];
+    const e = lineColorExpression("grade", domain()) as unknown[];
     expect(e[0]).toBe("case");
     expect(e[1]).toEqual(["has", "grade"]);
     expect((e[2] as unknown[]).slice(0, 3)).toEqual(["interpolate", ["linear"], ["get", "grade"]]);
@@ -102,10 +102,10 @@ describe("unknown values", () => {
   });
 
   test("the elevation scale is fixed, whatever the visible set", () => {
-    const wide = lineColorExpression("elevation", domain({ tsMin: 0, speedMax: 90 }));
-    const narrow = lineColorExpression("elevation", domain({ tsMin: 50, speedMax: 6 }));
+    const wide = lineColorExpression("grade", domain({ tsMin: 0, speedMax: 90 }));
+    const narrow = lineColorExpression("grade", domain({ tsMin: 50, speedMax: 6 }));
     expect(wide).toEqual(narrow);
-    expect(legendFor("elevation", domain({ speedMax: 90 }))).toEqual(legendFor("elevation", domain()));
+    expect(legendFor("grade", domain({ speedMax: 90 }))).toEqual(legendFor("grade", domain()));
   });
 
   test("speed expression falls back to NEUTRAL when distance or time is absent", () => {
@@ -117,9 +117,17 @@ describe("unknown values", () => {
 });
 
 describe("lineColorExpression", () => {
-  test("uniform and heat are the plain accent color", () => {
+  test("uniform is the plain accent color", () => {
     expect(lineColorExpression("uniform", domain())).toBe(ACCENT);
+  });
+
+  test("heat draws in the accent and lets overlaps build brightness, from rare to frequent", () => {
     expect(lineColorExpression("heat", domain())).toBe(ACCENT);
+    for (const theme of ["dark", "light"] as const) {
+      const legend = legendFor("heat", domain(), theme);
+      expect(legend).toMatchObject({ kind: "gradient", minLabel: "Rare", maxLabel: "Frequent" });
+      expect(legend.kind === "gradient" && legend.stops.at(-1)).toBe(ACCENT);
+    }
   });
 
   test("recency is an ascending interpolate over the ts domain", () => {
@@ -157,11 +165,23 @@ describe("lineColorExpression", () => {
 });
 
 describe("typeColor", () => {
-  test("is deterministic and distinct across the first types", () => {
-    const types = ["Hike", "Ride", "Run"];
-    const colors = types.map((t) => typeColor(t, types));
-    expect(new Set(colors).size).toBe(3);
-    expect(typeColor("Ride", types)).toBe(typeColor("Ride", types));
+  test("is distinct across the main types", () => {
+    const colors = ["Run", "Ride", "Hike", "Walk"].map((t) => typeColor(t));
+    expect(new Set(colors).size).toBe(4);
+  });
+
+  test("is fixed per type, whatever other types exist or how they are ordered", () => {
+    // The map sorted types alphabetically and the analytics chart by frequency; with a
+    // positional palette Run and Hike swapped colors between the two views.
+    expect(typeColor("Run")).toBe("#2ec4b6");
+    // No type wears the accent: it means the app and the selection.
+    for (const t of ["Run", "Ride", "Hike", "Walk"]) expect(typeColor(t)).not.toBe(ACCENT);
+    expect(typeColor("Hike")).toBe(typeColor("Hike", "dark"));
+    expect(typeColor("Swim")).toBe(typeColor("Swim"));
+  });
+
+  test("has a deeper step for the light theme", () => {
+    expect(typeColor("Hike", "light")).not.toBe(typeColor("Hike", "dark"));
   });
 });
 
@@ -171,16 +191,16 @@ describe("legendFor", () => {
   });
 
   test("elevation legend is descent / flat / climb with the % bounds", () => {
-    expect(legendFor("elevation", domain())).toEqual({
+    expect(legendFor("grade", domain())).toEqual({
       kind: "gradient",
       stops: [
-        "#1e3a8a 0%",
-        "#3d8bfd 25%",
-        "#3ecf6e 46.67%",
-        "#3ecf6e 53.33%",
-        "#ffd23f 66.67%",
-        "#ff3b30 83.33%",
-        "#8b0a0a 100%",
+        "#1d4a9e 0%",
+        "#4f93e8 25%",
+        "#8c919c 46.67%",
+        "#8c919c 53.33%",
+        "#ffab45 66.67%",
+        "#f4502a 83.33%",
+        "#a3150c 100%",
       ],
       minLabel: "−15% descent",
       midLabel: "flat",
@@ -190,7 +210,7 @@ describe("legendFor", () => {
 
   test("speed legend labels carry the km/h unit and rounded bounds", () => {
     const leg = legendFor("speed", domain({ speedMin: 4.6, speedMax: 19.2 }));
-    expect(leg).toMatchObject({ kind: "gradient", minLabel: "5", maxLabel: "19 km/h" });
+    expect(leg).toMatchObject({ kind: "gradient", minLabel: "5 km/h", maxLabel: "19 km/h" });
   });
 
   test("type legend has one colored entry per type", () => {
@@ -198,7 +218,7 @@ describe("legendFor", () => {
     expect(leg).toMatchObject({ kind: "categorical" });
     if (leg.kind === "categorical") {
       expect(leg.entries.map((e) => e.label)).toEqual(["Hike", "Ride"]);
-      expect(leg.entries[0].color).toBe(typeColor("Hike", ["Hike", "Ride"]));
+      expect(leg.entries[0].color).toBe(typeColor("Hike"));
     }
   });
 });

@@ -6,10 +6,10 @@
 
 import { quantile } from "./stats";
 
-/** The longest profiles run off the right edge past this quantile, so one century ride
- * doesn't squeeze everything else into the left corner. Elevation is never cut: the y
+/** The longest profiles run off the right edge past this quantile, so the long rides
+ * (mostly flat after their climbs) don't squeeze every run and hike into the left third. Elevation is never cut: the y
  * axis always reaches the highest and lowest point drawn. */
-const X_QUANTILE = 0.95;
+const X_QUANTILE = 0.85;
 
 /** One activity's line. */
 export interface ProfileLine {
@@ -89,4 +89,43 @@ export function nearestLine(
     }
   });
   return best;
+}
+
+/**
+ * The y axis for an elevation extent: the domain rounded out to whole ticks, so the top
+ * and bottom gridlines sit on the plot's edges and no line ever runs past a labelled
+ * tick. Of the nice steps (1, 2, 2.5 or 5 × 10ⁿ m) giving 4 to `maxTicks` ticks, the one
+ * wasting the least room wins: an 840 m top ends the axis at 900, not 1000.
+ */
+export function elevationAxis(
+  yMin: number,
+  yMax: number,
+  maxTicks = 8,
+): { lo: number; hi: number; ticks: number[] } {
+  const span = Math.max(yMax - yMin, 1);
+  let best: { lo: number; hi: number; step: number } | null = null;
+  for (let e = Math.floor(Math.log10(span)) - 2; e <= Math.ceil(Math.log10(span)); e++) {
+    for (const k of [1, 2, 2.5, 5]) {
+      const step = k * 10 ** e;
+      const lo = Math.floor(yMin / step) * step;
+      const hi = Math.max(lo + step, Math.ceil(yMax / step) * step);
+      const n = Math.round((hi - lo) / step) + 1;
+      if (n < 4 || n > Math.max(4, maxTicks)) continue;
+      if (!best || hi - lo < best.hi - best.lo || (hi - lo === best.hi - best.lo && step > best.step)) {
+        best = { lo, hi, step };
+      }
+    }
+  }
+  const { lo, hi, step } = best ?? { lo: Math.floor(yMin), hi: Math.ceil(yMax) + 1, step: span };
+  const ticks: number[] = [];
+  for (let v = lo; v <= hi + step / 1000; v += step) ticks.push(Math.round(v));
+  return { lo, hi, ticks };
+}
+
+/**
+ * Line opacity for `n` overlaid profiles: dense enough that one or a handful read as
+ * solid lines, light enough that hundreds still show where they stack.
+ */
+export function lineAlpha(n: number): number {
+  return Math.min(0.85, Math.max(0.12, 2.6 / Math.sqrt(Math.max(1, n))));
 }

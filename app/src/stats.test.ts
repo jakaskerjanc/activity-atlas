@@ -66,33 +66,33 @@ describe("coverage", () => {
       rec({ elevation_gain: undefined }),
       rec({ elevation_gain: 50 }),
     ]);
-    expect(cards[2]).toEqual({ value: "150", label: "Elevation m" });
+    expect(cards[2]).toEqual({ value: "150", unit: "m", label: "Elevation gain" });
   });
 
   test("totalCards dashes a value nobody has", () => {
     const cards = totalCards([rec({ distance: undefined }), rec({ distance: undefined })]);
-    expect(cards[1]).toEqual({ value: "—", label: "Total km", accent: true });
+    expect(cards[1]).toEqual({ value: "—", unit: "km", label: "Distance", accent: true });
   });
 
   test("activityCards dashes missing values", () => {
     const cards = activityCards(feature({ distance: undefined, elevation_gain: undefined }));
     expect(cards[0].value).toBe("—");
     expect(cards[2].value).toBe("—");
-    expect(cards[3]).toEqual({ value: "—", label: "Pace /km" });
+    expect(cards[3]).toEqual({ value: "—", unit: "/km", label: "Pace" });
   });
 });
 
 describe("totalCards", () => {
-  test("produces Activities / Total km / Elevation / Moving cards", () => {
+  test("produces Activities / Distance / Elevation gain / Moving time cards", () => {
     const cards = totalCards([
       rec({ distance: 10000, elevation_gain: 100, moving_time: 3000 }),
       rec({ distance: 5000, elevation_gain: 50, moving_time: 1800 }),
     ]);
     expect(cards).toEqual([
       { value: "2", label: "Activities" },
-      { value: "15", label: "Total km", accent: true },
-      { value: "150", label: "Elevation m" },
-      { value: "1h 20m", label: "Moving" },
+      { value: "15", unit: "km", label: "Distance", accent: true },
+      { value: "150", unit: "m", label: "Elevation gain" },
+      { value: "1h 20m", label: "Moving time" },
     ]);
   });
 });
@@ -103,10 +103,10 @@ describe("activityCards", () => {
       feature({ type: "Run", distance: 10000, moving_time: 3000, elevation_gain: 76 }),
     );
     expect(cards).toEqual([
-      { value: "10.0", label: "Distance km", accent: true },
-      { value: "50m", label: "Moving" },
-      { value: "76", label: "Elevation m" },
-      { value: "5:00", label: "Pace /km" },
+      { value: "10.0", unit: "km", label: "Distance", accent: true },
+      { value: "50m", label: "Moving time" },
+      { value: "76", unit: "m", label: "Elevation gain" },
+      { value: "5:00", unit: "/km", label: "Pace" },
     ]);
   });
 
@@ -114,6 +114,6 @@ describe("activityCards", () => {
     const cards = activityCards(
       feature({ type: "Ride", distance: 30000, moving_time: 3600, elevation_gain: 400 }),
     );
-    expect(cards[3]).toEqual({ value: "30.0", label: "Speed km/h" });
+    expect(cards[3]).toEqual({ value: "30.0", unit: "km/h", label: "Speed" });
   });
 });

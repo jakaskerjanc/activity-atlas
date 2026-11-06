@@ -78,7 +78,7 @@ describe("Ridgeline", () => {
   });
 
   test("states the scale, or that there is nothing to draw", () => {
-    expect(render(ridges)).toContain("the tallest peak is 900 m");
+    expect(render(ridges)).toContain("the tallest day is 900 m");
     expect(render([ridge(month(2026, 1))], null, 0)).toContain(
       "No activity in this range has a known elevation gain.",
     );

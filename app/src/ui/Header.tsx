@@ -1,23 +1,30 @@
-// Top bar: the Activity Atlas wordmark, the Map / Analytics page switch, and the
-// light/dark theme toggle. Overlays both pages.
+// Top bar: the Activity Atlas wordmark, the Filters toggle, the Map / Analytics page
+// switch, and the light/dark theme toggle. Overlays both pages: over the map it fades
+// into the map; over the scrolling analytics page it is opaque, so content never runs
+// under the wordmark.
 
 import type { ComponentType, CSSProperties } from "react";
-import { glass } from "./theme";
+import { FS, R } from "./theme";
+import { ChartIcon, FiltersIcon, MapIcon, MoonIcon, SunIcon } from "./icons";
+import { HEADER_HEIGHT } from "./layout";
 import type { Theme } from "../types";
 import type { View } from "./useView";
 
-const BTN = 38;
-const HEADER_HEIGHT = 62;
+const BTN = 36;
 
 interface Props {
   theme: Theme;
   onToggleTheme: () => void;
   view: View;
   onViewChange: (view: View) => void;
+  /** The filters panel's state, for the Filters toggle; omitted before data loads. */
+  filtersOpen?: boolean;
+  onToggleFilters?: () => void;
 }
 
-export function Header({ theme, onToggleTheme, view, onViewChange }: Props) {
+export function Header({ theme, onToggleTheme, view, onViewChange, filtersOpen, onToggleFilters }: Props) {
   const next = theme === "dark" ? "light" : "dark";
+  const solid = view === "analytics";
   return (
     <header
       style={{
@@ -26,55 +33,73 @@ export function Header({ theme, onToggleTheme, view, onViewChange }: Props) {
         left: 0,
         right: 0,
         height: HEADER_HEIGHT,
+        boxSizing: "border-box",
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 22px",
+        gap: 12,
+        padding: "0 16px 0 20px",
         zIndex: 30,
-        background:
-          "linear-gradient(180deg, var(--header-fade), transparent)",
-        pointerEvents: "none",
+        background: solid ? "var(--bg)" : "linear-gradient(180deg, var(--header-fade), transparent)",
+        // A hairline under the opaque bar only; over the map the fade has no edge.
+        boxShadow: solid ? "0 1px 0 var(--divider)" : "none",
+        pointerEvents: solid ? "auto" : "none",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, pointerEvents: "auto" }}>
-        <div
+      <div style={{ display: "flex", alignItems: "center", gap: 10, pointerEvents: "auto", minWidth: 0 }}>
+        <span
+          aria-hidden="true"
           style={{
-            width: 13,
-            height: 13,
+            width: 12,
+            height: 12,
+            flex: "0 0 auto",
             borderRadius: 3,
             background: "var(--accent)",
-            boxShadow: "0 0 14px var(--accent)",
+            boxShadow: "0 0 12px var(--accent)",
           }}
         />
         <span
+          className="wordmark"
           style={{
             fontSize: 15,
             fontWeight: 700,
             letterSpacing: ".14em",
             textTransform: "uppercase",
             lineHeight: 1.15,
+            whiteSpace: "nowrap",
+            color: "var(--text-strong)",
           }}
         >
           Activity Atlas
         </span>
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          top: (HEADER_HEIGHT - BTN) / 2,
-          right: 22,
-          display: "flex",
-          gap: 8,
-          pointerEvents: "auto",
-        }}
-      >
+      <div style={{ flex: 1 }} />
+
+      <div style={{ display: "flex", gap: 8, pointerEvents: "auto" }}>
+        {onToggleFilters && (
+          <button
+            type="button"
+            className="ctl"
+            id="filters-toggle"
+            onClick={onToggleFilters}
+            aria-expanded={filtersOpen}
+            aria-controls="filters-panel"
+            aria-label="Filters"
+            title={filtersOpen ? "Hide filters" : "Show filters"}
+            style={{ ...chromeBtn, padding: "0 12px" }}
+          >
+            <FiltersIcon size={15} />
+            <span className="header-btn-label">Filters</span>
+          </button>
+        )}
         <ViewSwitch view={view} onChange={onViewChange} />
         <button
+          type="button"
+          className="ctl"
           onClick={onToggleTheme}
           aria-label={`Switch to ${next} theme`}
           title={`Switch to ${next} theme`}
-          style={toggleBtn}
+          style={{ ...chromeBtn, width: BTN, padding: 0 }}
         >
           {theme === "dark" ? <SunIcon /> : <MoonIcon />}
         </button>
@@ -83,22 +108,26 @@ export function Header({ theme, onToggleTheme, view, onViewChange }: Props) {
   );
 }
 
-const toggleBtn: CSSProperties = {
+const chromeBtn: CSSProperties = {
   appearance: "none",
   cursor: "pointer",
-  width: BTN,
   height: BTN,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  borderRadius: 12,
+  gap: 7,
+  boxSizing: "border-box",
+  borderRadius: R.md,
   border: "1px solid var(--panel-border)",
   background: "var(--panel-bg)",
+  boxShadow: "var(--panel-shadow)",
   backdropFilter: "var(--panel-blur)",
   WebkitBackdropFilter: "var(--panel-blur)",
   color: "var(--text)",
-  transition: "color .35s ease",
+  fontSize: FS.sm + 0.5,
+  fontWeight: 600,
 };
+
 
 const VIEWS: { view: View; label: string; Icon: ComponentType }[] = [
   { view: "map", label: "Map", Icon: MapIcon },
@@ -116,6 +145,7 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => 
           <button
             key={v}
             type="button"
+            className={on ? undefined : "ctl"}
             aria-pressed={on}
             aria-label={label}
             title={label}
@@ -132,13 +162,17 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => 
 }
 
 const switchBox: CSSProperties = {
-  ...glass,
   display: "flex",
   gap: 2,
   height: BTN,
   boxSizing: "border-box",
   padding: 3,
-  borderRadius: 12,
+  borderRadius: R.md,
+  background: "var(--panel-bg)",
+  border: "1px solid var(--panel-border)",
+  boxShadow: "var(--panel-shadow)",
+  backdropFilter: "var(--panel-blur)",
+  WebkitBackdropFilter: "var(--panel-blur)",
 };
 
 function switchBtn(on: boolean): CSSProperties {
@@ -151,84 +185,10 @@ function switchBtn(on: boolean): CSSProperties {
     padding: "0 11px",
     border: 0,
     borderRadius: 9,
-    background: on ? "var(--accent-tint)" : "transparent",
-    boxShadow: on ? "inset 0 0 0 1px var(--accent)" : "none",
-    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
+    background: on ? "var(--accent)" : "transparent",
+    color: on ? "var(--accent-ink)" : "var(--text-muted)",
     fontFamily: "inherit",
-    fontSize: 12.5,
+    fontSize: FS.sm + 0.5,
     fontWeight: 600,
-    letterSpacing: ".02em",
-    transition: "color .2s ease, background .2s ease",
   };
-}
-
-function MapIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4zM9 4v13.5M15 6.5V20" />
-    </svg>
-  );
-}
-
-function ChartIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <path d="M4 20h16M7 16v-5M12 16V6M17 16v-8" />
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-    </svg>
-  );
 }

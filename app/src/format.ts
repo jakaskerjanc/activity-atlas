@@ -4,10 +4,13 @@ import type { ActivitySource } from "./types";
 
 const DASH = "—";
 
-/** meters -> km string, `digits` decimals (default 1). Dash when unknown. */
+/** meters -> km string, `digits` decimals (default 1), thousands separated: "2,540". Dash when unknown. */
 export function formatKm(meters: number | undefined, digits = 1): string {
   if (meters == null) return DASH;
-  return (meters / 1000).toFixed(digits);
+  return (meters / 1000).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 /** meters -> rounded whole meters with thousands separators, e.g. "1,204". */
@@ -99,25 +102,44 @@ export function formatMonth(index: number): string {
   });
 }
 
+/** month index -> "Aug 2024" (UTC, deterministic). */
+export function formatMonthShort(index: number): string {
+  const year = Math.floor(index / 12);
+  const month = index - year * 12;
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
 /** Whether a Strava sport_type is measured by pace (foot) vs speed (wheel/water). */
 export function isFootBased(type: string): boolean {
   return /run|walk|hike/i.test(type);
 }
 
+/** An activity's page on a provider: `short` is the letter its badge shows. */
+export interface ActivityLink {
+  url: string;
+  label: string;
+  short: string;
+}
+
 /**
- * Resolve an activity's live sources to their provider pages, in source order.
- * A provider this build doesn't know is skipped, so the UI just shows fewer links.
+ * Resolve an activity's live sources to their provider pages, Garmin before Strava so the
+ * badges always read "G S". A provider this build doesn't know is skipped, so the UI just
+ * shows fewer links.
  */
-export function activityLinks(sources: ActivitySource[]): { url: string; label: string }[] {
-  const links: { url: string; label: string }[] = [];
-  for (const { provider, id } of sources) {
-    if (provider === "strava") {
-      links.push({ url: `https://www.strava.com/activities/${id}`, label: "View on Strava" });
-    } else if (provider === "garmin") {
-      links.push({
-        url: `https://connect.garmin.com/modern/activity/${id}`,
-        label: "View on Garmin Connect",
-      });
+export function activityLinks(sources: ActivitySource[]): ActivityLink[] {
+  const links: ActivityLink[] = [];
+  for (const provider of ["garmin", "strava"] as const) {
+    for (const s of sources) {
+      if (s.provider !== provider) continue;
+      links.push(
+        provider === "garmin"
+          ? { url: `https://connect.garmin.com/modern/activity/${s.id}`, label: "View on Garmin Connect", short: "G" }
+          : { url: `https://www.strava.com/activities/${s.id}`, label: "View on Strava", short: "S" },
+      );
     }
   }
   return links;

@@ -6,6 +6,7 @@ import { createActivityFilter, toggleType, visibleActivities } from "../activity
 import { record } from "../testFixtures";
 import { cityComparisons } from "../cityMatch";
 import type { CityData } from "../cities";
+import { SIDE_PANEL_CLEARANCE } from "./layout";
 
 const filter = createActivityFilter([record({ type: "Run" })]);
 
@@ -32,7 +33,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain("Consistency");
     expect(html).toContain("Active days");
     expect(html).toContain("Activity calendar");
-    expect(html).toContain("August 2024 — August 2024");
+    expect(html).toContain("1 activity from Aug 2024 to Aug 2024");
   });
 
   test("shows the climbing ridgeline from the activities alone", () => {
@@ -41,7 +42,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain(
       'aria-label="August 2024 · 1 activity · 100 m gain · biggest day Aug 18, 2024: 100 m"',
     );
-    expect(html).toContain("click a month to show only it");
+    expect(html).toContain("Select a month to show only it.");
   });
 
   test("shows the elevation profiles once the route profiles load", () => {
@@ -91,7 +92,7 @@ describe("AnalyticsView", () => {
     const html = render({
       isolation: { month, fromMonth: month - 5, toMonth: month },
     });
-    expect(html).toContain("Click August 2024 again for March 2024 — August 2024");
+    expect(html).toContain("Showing August 2024 only. Click it again for March 2024 — August 2024.");
     expect(html).toContain('aria-pressed="true"');
   });
 
@@ -112,10 +113,16 @@ describe("AnalyticsView", () => {
     expect(html).not.toContain("Consistency");
   });
 
-  test("centers a calendar-wide column, kept clear of the side panel's edge tab", () => {
-    expect(render()).toContain(
-      "grid-template-columns:minmax(402px, 1fr) minmax(0, 753px) minmax(24px, 1fr)",
-    );
-    expect(render({ sidePanelExpanded: false })).toContain("minmax(70px, 1fr)");
+  test("starts the column right of the docked filters panel, and uses the page when it's hidden", () => {
+    expect(render()).toContain(`--analytics-left:${SIDE_PANEL_CLEARANCE + 24}px`);
+    expect(render({ sidePanelExpanded: false })).toContain("--analytics-left:24px");
+    // On a phone the filters overlay the page instead of pushing it.
+    expect(render({ mobile: true })).toContain("--analytics-left:24px");
+  });
+
+  test("offers to reset an empty filter", () => {
+    const empty = toggleType(filter, "Run");
+    const html = render({ filter: empty, visible: visibleActivities(empty), onResetFilter: () => {} });
+    expect(html).toContain("Reset filters");
   });
 });

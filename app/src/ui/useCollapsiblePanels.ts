@@ -1,37 +1,41 @@
 // Collapse state for the two overlay panels. Both share one rule: a resize that crosses
-// the narrow breakpoint wins, collapsing on the way down and expanding on the way up.
-// Between crossings the user's edge-tab toggles are respected.
+// a layout boundary wins (collapsing on the way down, expanding on the way up); between
+// crossings the user's own toggles are respected.
 
 import { useEffect, useState } from "react";
-import { BOTH_PANELS_QUERY, COLLAPSE_QUERY } from "./layout";
+import { BOTH_PANELS_QUERY, MOBILE_QUERY } from "./layout";
 import { useMediaQuery } from "./useMediaQuery";
 
 export interface CollapsiblePanels {
+  /** The phone layout: filters as an overlay, details as a bottom sheet. */
+  mobile: boolean;
+  /** Filters panel hidden (slid off on desktop, closed overlay on a phone). */
   sideCollapsed: boolean;
+  /** Detail panel showing only its header strip (the phone sheet's peek). */
   bottomCollapsed: boolean;
   toggleSide: () => void;
+  closeSide: () => void;
   toggleBottom: () => void;
-  /** Force the bottom panel open (e.g. when replay mounts its transport there). */
+  /** Force the detail panel open (e.g. when a city route is asked for). */
   expandBottom: () => void;
 }
 
 /**
- * Which panels the width rules force collapsed. Narrow: both give the map room. Too
- * narrow for both: the centered bottom panel keeps its slot and the side panel gives way.
+ * Which panels the width rules force collapsed. Phone: both give the map room (the
+ * filters overlay closed, the sheet at its peek). Too narrow for both docked panels: the
+ * detail panel keeps its slot and the filters give way.
  */
 export function forcedCollapse(
-  narrow: boolean,
+  mobile: boolean,
   bothFit: boolean,
 ): { side: boolean; bottom: boolean } {
-  return { side: narrow || !bothFit, bottom: narrow };
+  return { side: mobile || !bothFit, bottom: mobile };
 }
 
 export function useCollapsiblePanels(): CollapsiblePanels {
-  // A resize across either boundary re-applies `forced`, overriding a manual toggle
-  // until the next crossing.
-  const narrow = useMediaQuery(COLLAPSE_QUERY);
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const bothFit = useMediaQuery(BOTH_PANELS_QUERY);
-  const forced = forcedCollapse(narrow, bothFit);
+  const forced = forcedCollapse(mobile, bothFit);
 
   const [sideCollapsed, setSideCollapsed] = useState(forced.side);
   const [bottomCollapsed, setBottomCollapsed] = useState(forced.bottom);
@@ -42,9 +46,11 @@ export function useCollapsiblePanels(): CollapsiblePanels {
   }, [forced.side, forced.bottom]);
 
   return {
+    mobile,
     sideCollapsed,
     bottomCollapsed,
     toggleSide: () => setSideCollapsed((v) => !v),
+    closeSide: () => setSideCollapsed(true),
     toggleBottom: () => setBottomCollapsed((v) => !v),
     expandBottom: () => setBottomCollapsed(false),
   };

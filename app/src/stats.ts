@@ -12,6 +12,8 @@ import {
 
 export interface StatCard {
   value: string;
+  /** Shown small after the value ("km"); omitted for counts and durations. */
+  unit?: string;
   label: string;
   /** true = render in accent color */
   accent?: boolean;
@@ -65,10 +67,10 @@ function totalCard(c: Coverage, format: (v: number) => string, card: Omit<StatCa
 export function totalCards(activities: readonly ActivityRecord[]): StatCard[] {
   const t = aggregate(activities);
   return [
-    { value: String(t.count), label: "Activities" },
-    totalCard(t.distance, (m) => formatKm(m, 0), { label: "Total km", accent: true }),
-    totalCard(t.elevation, formatMeters, { label: "Elevation m" }),
-    totalCard(t.moving, formatDuration, { label: "Moving" }),
+    { value: t.count.toLocaleString("en-US"), label: "Activities" },
+    totalCard(t.distance, (m) => formatKm(m, 0), { unit: "km", label: "Distance", accent: true }),
+    totalCard(t.elevation, formatMeters, { unit: "m", label: "Elevation gain" }),
+    totalCard(t.moving, formatDuration, { label: "Moving time" }),
   ];
 }
 
@@ -77,12 +79,12 @@ export function activityCards(feature: ActivityFeature): StatCard[] {
   const p = feature.properties;
   const foot = isFootBased(p.type);
   return [
-    { value: formatKm(p.distance), label: "Distance km", accent: true },
-    { value: formatDuration(p.moving_time), label: "Moving" },
-    { value: formatMeters(p.elevation_gain), label: "Elevation m" },
+    { value: formatKm(p.distance), unit: "km", label: "Distance", accent: true },
+    { value: formatDuration(p.moving_time), label: "Moving time" },
+    { value: formatMeters(p.elevation_gain), unit: "m", label: "Elevation gain" },
     foot
-      ? { value: pacePerKm(p.distance, p.moving_time), label: "Pace /km" }
-      : { value: speedKmh(p.distance, p.moving_time), label: "Speed km/h" },
+      ? { value: pacePerKm(p.distance, p.moving_time), unit: "/km", label: "Pace" }
+      : { value: speedKmh(p.distance, p.moving_time), unit: "km/h", label: "Speed" },
   ];
 }
 

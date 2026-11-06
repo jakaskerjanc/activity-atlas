@@ -1,7 +1,7 @@
 // Owns the Mapbox GL map. Renders activity routes as a glow + core line pair in the
 // Activity Atlas style, drives hover/selection highlighting, and plays a fade-in reveal
 // (re-triggered by REPLAY). Which activities show is decided upstream (activityFilter.ts);
-// this module only applies the expression it is handed. In the Elevation color mode the
+// this module only applies the expression it is handed. In the Grade color mode the
 // routes are drawn as grade runs (grade.ts) instead of whole lines. A distance
 // comparison's city route, when shown, is drawn dashed on top with its two ends labelled.
 
@@ -17,9 +17,11 @@ import {
 } from "./colors";
 import { lineGradient, type GradeRoutes } from "./grade";
 import type { ReplayFrame } from "./replay";
-import { densestClusterBounds } from "./cluster";
-import { fitOffset, fitPadding } from "./ui/layout";
+import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./cluster";
+import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
+import { formatDate, formatKm } from "./format";
+import { typeColor } from "./colors";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -63,9 +65,10 @@ const CITY_INK: Record<Theme, { line: string; casing: string }> = {
   dark: { line: "#ffffff", casing: "rgba(14, 15, 19, 0.75)" },
   light: { line: "#1c1c1e", casing: "rgba(255, 255, 255, 0.9)" },
 };
-// Fit margin for the end labels, which sit centered above their dots: about half a long
-// name's width, and more than a label's height.
-const CITY_LABEL_ROOM = 70;
+// Fit margin for the end labels, which sit beside their dots: about a long name's width.
+const CITY_LABEL_ROOM = 90;
+/** Non-selected routes while one is selected: a quiet grey, so the selection is unmistakable. */
+const MUTED_ROUTE: Record<Theme, string> = { dark: "#6b6f7a", light: "#8b909b" };
 const FADE_MS = 1200;
 
 const NO_POINTS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -78,12 +81,15 @@ const ACTIVE_STATE: ExpressionSpecification = ["boolean", ["feature-state", "act
 /** Matches nothing — parks the active layers when no route is drawing. */
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
 
-/** A city route end: a dot with the place's name beside it (styled in index.css). */
-function cityMarker(name: string, end: "origin" | "city"): HTMLElement {
+/**
+ * A city route end: a dot with the place's name beside it (styled in index.css), on the
+ * side away from where the route leaves the dot, so the line never runs through it.
+ */
+function cityMarker(name: string, end: "origin" | "city", side: "left" | "right"): HTMLElement {
   const el = document.createElement("div");
   el.className = `city-marker city-marker--${end}`;
   const label = document.createElement("span");
-  label.className = "city-marker__label";
+  label.className = `city-marker__label city-marker__label--${side}`;
   label.textContent = name;
   el.append(label);
   return el;
@@ -107,7 +113,7 @@ interface Props {
   visible: ActivityFeature[];
   colorMode: ColorMode;
   colorDomain: ColorDomain;
-  /** The routes as grade runs, once the route profiles load; drawn in Elevation mode. */
+  /** The routes as grade runs, once the route profiles load; drawn in Grade mode. */
   grade: GradeRoutes | null;
   hoverId: string | null;
   selectedId: string | null;
@@ -122,8 +128,8 @@ interface Props {
   replayEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
   onReplayReady: () => void;
-  /** Reserves room for the left panel when fitting a track; false when it is collapsed. */
-  sidePanelExpanded: boolean;
+  /** Screen space the panels cover at each edge; fitted routes stay clear of it. */
+  insets: Insets;
   /** [lng, lat] of the cursor sample, or null (no cursor, or no position there). */
   cursorPoint: [number, number] | null;
   /** The selected activity's samples, once loaded; enables route hover -> cursor. */
@@ -146,9 +152,15 @@ export interface CityRouteLine {
   cityName: string;
 }
 
-/** Home view on initial load: Slovenia, centered on Ljubljana. */
+/** Where the map starts before the activities arrive: Slovenia, centered on Ljubljana. */
 const SLOVENIA_CENTER: [number, number] = [14.5058, 46.0569];
 const SLOVENIA_ZOOM = 7.6;
+
+/** What the route layers draw: grade runs or whole routes. */
+function routesFor(p: Props): GeoJSON.FeatureCollection | null {
+  if (p.colorMode === "grade" && p.grade) return p.grade.collection;
+  return p.data;
+}
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -157,8 +169,7 @@ const prefersReducedMotion = () =>
 export function MapView(props: Props) {
   const { data, mapFilter, colorMode, colorDomain, hoverId, selectedId } = props;
   const { replaying, replayFrame, replayEpoch } = props;
-  // What the route layers draw: grade runs in Elevation mode (once loaded), else whole routes.
-  const routeData = colorMode === "elevation" && props.grade ? props.grade.collection : data;
+  const routeData = routesFor(props);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -183,6 +194,13 @@ export function MapView(props: Props) {
   const mapOwnsCursorRef = useRef(false);
   // The city route's end markers (DOM overlays, so they survive a style swap).
   const cityMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  // The hover label (a DOM overlay positioned by hand, so a pointer move never re-renders).
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const tipIdRef = useRef<string | null>(null);
+  // The opening view has been framed on the activities (once per data load).
+  const framedRef = useRef(false);
+  // Whether the base layers currently wear the muted selection color.
+  const mutedRef = useRef<boolean | null>(null);
 
   /** Single source of truth for the highlighted track: hover beats selection, and
    * replay suspends highlighting. Both the base-layer dimming and the feature-state
@@ -193,11 +211,39 @@ export function MapView(props: Props) {
   }
 
   /** Fit padding for the current canvas + panel state. Recomputed at fit time so a
-   * collapsed side panel stops reserving room, and a narrow canvas clamps to fit. */
+   * collapsed panel stops reserving room, and a narrow canvas clamps to fit. */
   function currentFitPadding(margin = 0) {
     const el = mapRef.current?.getContainer();
     if (!el) return { top: 0, bottom: 0, left: 0, right: 0 };
-    return fitPadding(el.clientWidth, el.clientHeight, propsRef.current.sidePanelExpanded, margin);
+    return fitPadding(el.clientWidth, el.clientHeight, propsRef.current.insets, margin);
+  }
+
+  /**
+   * The camera that fits `bounds` into the area the panels leave free. Mapbox spreads
+   * padding evenly when it picks the center, so the offset moves the center into the
+   * free area too (a route would otherwise sit half under the wider panel).
+   */
+  function cameraFor(bounds: mapboxgl.LngLatBounds, maxZoom: number, margin = 0) {
+    const map = mapRef.current;
+    if (!map || bounds.isEmpty()) return undefined;
+    const padding = currentFitPadding(margin);
+    // `offset` is read by cameraForBounds at runtime but missing from its CameraOptions type.
+    const options = { padding, offset: fitOffset(padding), maxZoom } as Parameters<typeof map.cameraForBounds>[1];
+    return map.cameraForBounds(bounds, options);
+  }
+
+  /** Frame the opening view on where the activities are: the home cluster's routes. */
+  function frameHome() {
+    const map = mapRef.current;
+    const p = propsRef.current;
+    if (!map || !loadedRef.current || framedRef.current || !p.data) return;
+    framedRef.current = true;
+    const box: Bounds | null = densestClusterRouteBounds(
+      p.visible.length ? p.visible : p.data.features,
+    );
+    if (!box) return;
+    const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), 13);
+    if (camera) map.jumpTo(camera);
   }
 
   /** Repaint the base layers for the current active presence + fade factor. The
@@ -209,24 +255,36 @@ export function MapView(props: Props) {
     const f = fadeRef.current;
     // In replay the base layers carry the accumulated (completed) routes at their
     // resting look — hover/select highlighting and the fade are both suspended.
-    const active = currentActiveId() != null;
+    const p = propsRef.current;
+    const active = currentActiveId() != null || (!p.replaying && p.cityRoute != null);
+    // A selection (or a shown city route) mutes the routes to grey, so the one that
+    // matters stands apart; a mere hover only dims them.
+    const selected = !p.replaying && (p.selectedId != null || p.cityRoute != null);
     // Heat mode drops the per-line opacity so overlapping corridors accumulate
-    // toward full accent — density, not hue, carries the signal.
-    const heat = propsRef.current.colorMode === "heat";
-    const glowW = heat ? 5 : 6;
-    const coreW = heat ? 1.8 : 2.6;
+    // toward full accent: how often you've been somewhere shows as brightness, not hue.
+    const heat = p.colorMode === "heat";
+    applyBaseColor(selected);
+    map.setPaintProperty(GLOW_ID, "line-width", heat ? 5 : 6);
+    map.setPaintProperty(CORE_ID, "line-width", heat ? 1.8 : 2.6);
 
     if (!active) {
       map.setPaintProperty(GLOW_ID, "line-opacity", (heat ? 0.14 : 0.2) * f);
-      map.setPaintProperty(GLOW_ID, "line-width", glowW);
-      map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.34 : 0.82) * f);
-      map.setPaintProperty(CORE_ID, "line-width", coreW);
+      map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.34 : 0.85) * f);
       return;
     }
-    map.setPaintProperty(GLOW_ID, "line-opacity", (heat ? 0.04 : 0.05) * f);
-    map.setPaintProperty(GLOW_ID, "line-width", glowW);
-    map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.1 : 0.16) * f);
-    map.setPaintProperty(CORE_ID, "line-width", coreW);
+    map.setPaintProperty(GLOW_ID, "line-opacity", 0);
+    map.setPaintProperty(CORE_ID, "line-opacity", (selected ? 0.4 : 0.22) * f);
+  }
+
+  /** Base routes in their scale's colors, or all one muted grey behind a selection. */
+  function applyBaseColor(muted: boolean) {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(GLOW_ID) || mutedRef.current === muted) return;
+    mutedRef.current = muted;
+    const p = propsRef.current;
+    const color = muted ? MUTED_ROUTE[p.theme] : lineColorExpression(p.colorMode, p.colorDomain, p.theme);
+    map.setPaintProperty(GLOW_ID, "line-color", color);
+    map.setPaintProperty(CORE_ID, "line-color", color);
   }
 
   /** Move the `active` feature-state to the hovered/selected track. This is the
@@ -246,13 +304,14 @@ export function MapView(props: Props) {
     syncedActiveRef.current = next;
   }
 
-  /** Set the data-driven line color for a mode; core gains blur in heat mode. */
+  /** Set the data-driven line color for a mode; the core gains blur in heat mode. */
   function applyColor(mode: ColorMode, domain: ColorDomain) {
     const map = mapRef.current;
     if (!map || !map.getLayer(GLOW_ID)) return;
-    const color = lineColorExpression(mode, domain);
-    map.setPaintProperty(GLOW_ID, "line-color", color);
-    map.setPaintProperty(CORE_ID, "line-color", color);
+    const color = lineColorExpression(mode, domain, propsRef.current.theme);
+    // The base layers' color follows the selection too (applyBaseColor); force a rewrite.
+    mutedRef.current = null;
+    applyBaseColor(!propsRef.current.replaying && (propsRef.current.selectedId != null || propsRef.current.cityRoute != null));
     map.setPaintProperty(CORE_ID, "line-blur", mode === "heat" ? 2 : 0);
     map.setPaintProperty(HOVER_GLOW_ID, "line-color", color);
     map.setPaintProperty(HOVER_CORE_ID, "line-color", color);
@@ -262,19 +321,19 @@ export function MapView(props: Props) {
     // Grade runs meet end to end: round caps would overlap at every seam and bead the
     // translucent layers, so they butt instead (joins inside a run stay round). The
     // opaque hover core hides any overlap, so it keeps round caps.
-    const cap = mode === "elevation" ? "butt" : "round";
+    const cap = mode === "grade" ? "butt" : "round";
     for (const id of [GLOW_ID, CORE_ID, HOVER_GLOW_ID]) map.setLayoutProperty(id, "line-cap", cap);
     applyActiveGradient(propsRef.current.replayFrame);
   }
 
-  /** In Elevation mode, paint the drawing route with its runs' colors as a line-gradient
+  /** In Grade mode, paint the drawing route with its runs' colors as a line-gradient
    * (it is one whole feature, so it has no per-run `grade` to read); otherwise clear it
    * so line-color applies. */
   function applyActiveGradient(frame: ReplayFrame | null) {
     const map = mapRef.current;
     if (!map || !map.getLayer(ACTIVE_GLOW_ID)) return;
     const p = propsRef.current;
-    const stops = frame && p.colorMode === "elevation" ? p.grade?.stops.get(frame.id) : undefined;
+    const stops = frame && p.colorMode === "grade" ? p.grade?.stops.get(frame.id) : undefined;
     const key = stops && frame ? frame.id : null;
     if (key === gradientKeyRef.current) return;
     gradientKeyRef.current = key;
@@ -283,10 +342,9 @@ export function MapView(props: Props) {
     map.setPaintProperty(ACTIVE_CORE_ID, "line-gradient", gradient);
   }
 
-  /** Point the route source at the current routes: grade runs or whole lines. */
+  /** Point the route source at the current routes: grade or density runs, or whole lines. */
   function applyRoutes() {
-    const p = propsRef.current;
-    const routes = p.colorMode === "elevation" && p.grade ? p.grade.collection : p.data;
+    const routes = routesFor(propsRef.current);
     const src = mapRef.current?.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
     src?.setData(routes ?? NO_LINES);
   }
@@ -375,16 +433,22 @@ export function MapView(props: Props) {
         : NO_LINES,
     );
     for (const m of cityMarkersRef.current) m.remove();
-    cityMarkersRef.current = route
-      ? [
-          new mapboxgl.Marker({ element: cityMarker(route.originName, "origin") })
-            .setLngLat(route.coords[0])
-            .addTo(map),
-          new mapboxgl.Marker({ element: cityMarker(route.cityName, "city") })
-            .setLngLat(route.coords[route.coords.length - 1])
-            .addTo(map),
-        ]
-      : [];
+    if (!route) {
+      cityMarkersRef.current = [];
+      return;
+    }
+    const first = route.coords[0];
+    const last = route.coords[route.coords.length - 1];
+    // Each label goes on the side facing away from the other end.
+    const eastward = last[0] >= first[0];
+    cityMarkersRef.current = [
+      new mapboxgl.Marker({ element: cityMarker(route.originName, "origin", eastward ? "left" : "right") })
+        .setLngLat(first)
+        .addTo(map),
+      new mapboxgl.Marker({ element: cityMarker(route.cityName, "city", eastward ? "right" : "left") })
+        .setLngLat(last)
+        .addTo(map),
+    ];
   }
 
   /** Fly to the whole city route, clear of the panels. */
@@ -394,19 +458,67 @@ export function MapView(props: Props) {
     if (!map || !route) return;
     const bounds = new mapboxgl.LngLatBounds();
     for (const c of route.coords) bounds.extend(c);
-    const padding = currentFitPadding(CITY_LABEL_ROOM);
-    const camera = map.cameraForBounds(bounds, { padding, maxZoom: 10 });
+    const camera = cameraFor(bounds, 10, CITY_LABEL_ROOM);
     if (!camera) return;
     map.flyTo({
       ...camera,
-      // A long route is wide enough that centering it on the canvas would tuck its
-      // start under the side panel.
-      offset: fitOffset(padding),
       duration: 1600,
       curve: 1.2,
       easing: (t) => 1 - Math.pow(1 - t, 3),
       essential: true,
     });
+  }
+
+  /**
+   * Name the activity under the pointer: type dot, name, then type, date and distance.
+   * Grade runs carry only the id, so the details come from `data`.
+   */
+  function showTip(id: string, x: number, y: number) {
+    const map = mapRef.current;
+    if (!map) return;
+    let tip = tipRef.current;
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.className = "route-tip";
+      tip.setAttribute("role", "tooltip");
+      map.getContainer().append(tip);
+      tipRef.current = tip;
+    }
+    if (tipIdRef.current !== id) {
+      tipIdRef.current = id;
+      const f = propsRef.current.data?.features.find((g) => g.properties.id === id);
+      if (!f) return hideTip();
+      const p = f.properties;
+      const dist = p.distance != null ? ` · ${formatKm(p.distance)} km` : "";
+      tip.replaceChildren();
+      const name = document.createElement("div");
+      name.className = "route-tip__name";
+      const dot = document.createElement("span");
+      dot.className = "route-tip__dot";
+      dot.style.background = typeColor(p.type, propsRef.current.theme);
+      const label = document.createElement("span");
+      label.textContent = p.name;
+      label.style.overflow = "hidden";
+      label.style.textOverflow = "ellipsis";
+      name.append(dot, label);
+      const meta = document.createElement("div");
+      meta.className = "route-tip__meta";
+      meta.textContent = `${p.type} · ${formatDate(p.ts)}${dist}`;
+      tip.append(name, meta);
+    }
+    // Beside the pointer, flipped to stay inside the map.
+    const { clientWidth: w, clientHeight: h } = map.getContainer();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    const left = x + 16 + tw > w ? x - 16 - tw : x + 16;
+    const top = y + 16 + th > h ? y - 12 - th : y + 16;
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    tip.dataset.on = "true";
+  }
+
+  function hideTip() {
+    tipIdRef.current = null;
+    if (tipRef.current) tipRef.current.dataset.on = "false";
   }
 
   /** Clear the cursor if the map set it (pointer left the selected route). */
@@ -580,7 +692,7 @@ export function MapView(props: Props) {
         id: CURSOR_RING_ID,
         type: "circle",
         source: CURSOR_SOURCE_ID,
-        paint: { "circle-radius": 7, "circle-color": "#ffffff", "circle-opacity": 0.95 },
+        paint: { "circle-radius": 7.5, "circle-color": "#ffffff", "circle-opacity": 0.95, "circle-stroke-width": 1, "circle-stroke-color": "rgba(0,0,0,0.35)" },
       });
     }
     if (!map.getLayer(CURSOR_DOT_ID)) {
@@ -618,15 +730,17 @@ export function MapView(props: Props) {
     map.keyboard.disableRotation();
     mapRef.current = map;
     appliedStyleRef.current = STYLE_URL[propsRef.current.theme];
+    // Dev only: lets screenshot scripts wait for the map to settle instead of sleeping.
+    if (import.meta.env.DEV) (window as unknown as { __map?: mapboxgl.Map }).__map = map;
 
     map.on("load", () => {
       installLayers();
       loadedRef.current = true;
 
       if (propsRef.current.data) {
-        // Map is already constructed at the home view; no jumpTo needed here.
         applyRoutes();
         applyActiveRoutes();
+        frameHome();
         startFade();
       }
       // A city route asked for before the map was ready.
@@ -640,7 +754,10 @@ export function MapView(props: Props) {
       if (p.replaying) return;
       const id = e.features?.[0]?.properties?.id as string | undefined;
       map.getCanvas().style.cursor = "pointer";
-      if (id != null) p.onHover(id);
+      if (id != null) {
+        p.onHover(id);
+        showTip(id, e.point.x, e.point.y);
+      }
       const onSelected = e.features?.some((f) => f.properties?.id === p.selectedId) ?? false;
       const i = onSelected && p.selectedDetail ? nearestSample(p.selectedDetail, e.lngLat.lng, e.lngLat.lat) : null;
       if (i != null) {
@@ -652,14 +769,21 @@ export function MapView(props: Props) {
     });
     map.on("mouseleave", GLOW_ID, () => {
       map.getCanvas().style.cursor = "";
+      hideTip();
       propsRef.current.onHover(null);
       releaseCursor();
     });
-    map.on("mouseout", releaseCursor);
+    map.on("mouseout", () => {
+      releaseCursor();
+      hideTip();
+    });
+    // A drag or zoom moves the map under a still pointer; don't leave a stale label.
+    map.on("movestart", hideTip);
 
     // Click a track selects it; click on empty map deselects. Inert during replay.
     map.on("click", (e) => {
       if (propsRef.current.replaying) return;
+      hideTip();
       const hits = map.queryRenderedFeatures(e.point, { layers: [GLOW_ID] });
       const id = hits[0]?.properties?.id as string | undefined;
       if (id != null) propsRef.current.onSelect(id);
@@ -667,6 +791,8 @@ export function MapView(props: Props) {
     });
 
     return () => {
+      tipRef.current?.remove();
+      tipRef.current = null;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       for (const m of cityMarkersRef.current) m.remove();
       cityMarkersRef.current = [];
@@ -690,6 +816,7 @@ export function MapView(props: Props) {
       installLayers();
       applyRoutes();
       applyActiveRoutes();
+      mutedRef.current = null;
       syncedActiveRef.current = null;
       syncFeatureState(true);
       fadeRef.current = 1;
@@ -706,7 +833,8 @@ export function MapView(props: Props) {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !data) return;
     applyActiveRoutes();
-    map.jumpTo({ center: SLOVENIA_CENTER, zoom: SLOVENIA_ZOOM });
+    framedRef.current = false;
+    frameHome();
     startFade();
   }, [data]);
 
@@ -739,7 +867,15 @@ export function MapView(props: Props) {
   // Repaint base layers when the active presence changes.
   useEffect(() => {
     applyPaint();
+    if (replaying) hideTip();
   }, [hoverId, selectedId, replaying]);
+
+  // The muted selection grey and the type colors differ per theme.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
+    applyPaint();
+  }, [props.theme]);
 
   // Hand the active track to feature-state so the highlight layers follow it.
   useEffect(() => {
@@ -759,6 +895,7 @@ export function MapView(props: Props) {
     if (!loadedRef.current) return;
     applyCityRoute();
     fitCityRoute();
+    applyPaint();
   }, [props.cityRoute?.key, props.cityRouteEpoch]);
 
   // A new selection starts with no map-owned cursor.
@@ -792,12 +929,7 @@ export function MapView(props: Props) {
     const bounds = box && new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]);
     // Refinement centres tightly on the density peak; the cap keeps it a comfortable
     // regional view rather than zooming to street level.
-    const camera = bounds
-      ? map.cameraForBounds(bounds, {
-          padding: currentFitPadding(),
-          maxZoom: 11,
-        })
-      : null;
+    const camera = bounds ? cameraFor(bounds, 11) : null;
     if (!camera) {
       ready();
       return;
@@ -815,7 +947,10 @@ export function MapView(props: Props) {
     };
   }, [replaying, replayEpoch]);
 
-  // Smoothly fly to + fit the whole selected track into the strip between the panels.
+  // Smoothly fly to + fit the whole selected track into the area the panels leave free.
+  // Refits when that area changes (the phone's sheet grows once the charts load, or is
+  // opened), so the route never ends up under a panel.
+  const fitKey = insetsKey(props.insets);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current || selectedId == null || !data) return;
@@ -825,12 +960,7 @@ export function MapView(props: Props) {
     for (const c of feature.geometry.coordinates) {
       bounds.extend(c as [number, number]);
     }
-    if (bounds.isEmpty()) return;
-
-    const camera = map.cameraForBounds(bounds, {
-      padding: currentFitPadding(),
-      maxZoom: 15,
-    });
+    const camera = cameraFor(bounds, 15);
     if (!camera) return;
     // Always animate (user-requested), even under prefers-reduced-motion, via essential.
     // curve < 1.42 keeps the zoom-out arc gentle; easeOutCubic for a soft landing.
@@ -841,7 +971,7 @@ export function MapView(props: Props) {
       easing: (t) => 1 - Math.pow(1 - t, 3),
       essential: true,
     });
-  }, [selectedId, data]);
+  }, [selectedId, data, fitKey]);
 
   if (!HAS_TOKEN) {
     return (

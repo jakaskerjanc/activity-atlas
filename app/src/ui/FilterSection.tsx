@@ -1,10 +1,13 @@
 // Filter controls: activity-type toggles (most activities first, with live counts; rare
-// types left out) + date-range sliders.
-// Rendered as a section inside the merged SidePanel.
+// types left out) + date-range sliders. Rendered as a section inside the SidePanel.
+// In the map's Type color mode each toggle's swatch takes its type's route color, so the
+// list doubles as the map's legend.
 
 import { useMemo, type CSSProperties } from "react";
-import { MONO, eyebrow } from "./theme";
-import { formatMonth } from "../format";
+import { FS, MONO, R, sectionLabel } from "./theme";
+import { formatMonth, formatMonthShort } from "../format";
+import { typeColor, type ColorMode } from "../colors";
+import type { Theme } from "../types";
 import {
   setFromMonth,
   setToMonth,
@@ -17,21 +20,33 @@ import {
 interface Props {
   filter: ActivityFilter;
   onChange: (filter: ActivityFilter) => void;
+  /** In Type mode the swatches show each type's route color. */
+  colorMode?: ColorMode;
+  theme?: Theme;
 }
 
-export function FilterSection({ filter, onChange }: Props) {
+export function FilterSection({ filter, onChange, colorMode, theme = "dark" }: Props) {
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
   const types = useMemo(() => listedTypes(filter), [filter]);
+  const byType = colorMode === "type";
   return (
     <>
-      <div style={{ ...eyebrow, marginBottom: 8 }}>Activity Types</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <h3 style={{ ...sectionLabel, marginBottom: 8 }}>Activity types</h3>
+      <div role="group" aria-label="Activity types" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {types.map((t) => {
           const on = filter.types.has(t);
+          const color = byType ? typeColor(t, theme) : "var(--accent)";
           return (
-            <button key={t} onClick={() => onChange(toggleType(filter, t))} style={rowStyle(on)}>
-              <span style={dotStyle(on)} />
+            <button
+              key={t}
+              type="button"
+              className="ctl"
+              aria-pressed={on}
+              onClick={() => onChange(toggleType(filter, t))}
+              style={rowStyle(on)}
+            >
+              <span style={dotStyle(on, color)}>{on && <Check />}</span>
               <span style={{ flex: 1, textAlign: "left" }}>{t}</span>
               <span style={countStyle(on)}>{counts[t] ?? 0}</span>
             </button>
@@ -39,11 +54,13 @@ export function FilterSection({ filter, onChange }: Props) {
         })}
       </div>
 
-      <div style={{ height: 1, background: "var(--divider)", margin: "13px 0" }} />
+      <hr style={divider} />
 
-      <div style={{ ...eyebrow, marginBottom: 6 }}>Date Range</div>
-      <div style={{ fontFamily: MONO, fontSize: 12, color: "var(--accent-text)", marginBottom: 10 }}>
-        {formatMonth(filter.fromMonth)}  →  {formatMonth(filter.toMonth)}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
+        <h3 style={sectionLabel}>Date range</h3>
+        <span style={{ fontSize: FS.sm, fontWeight: 600, color: "var(--text)" }} aria-live="polite">
+          {formatMonthShort(filter.fromMonth)} – {formatMonthShort(filter.toMonth)}
+        </span>
       </div>
       <DualRange
         min={filter.minMonth}
@@ -98,6 +115,7 @@ function DualRange({
           value={from}
           onChange={(e) => onFromChange(+e.target.value)}
           aria-label="Earliest month"
+          aria-valuetext={formatMonth(from)}
         />
         <input
           type="range"
@@ -108,11 +126,12 @@ function DualRange({
           value={to}
           onChange={(e) => onToChange(+e.target.value)}
           aria-label="Latest month"
+          aria-valuetext={formatMonth(to)}
         />
       </div>
       <div style={rangeEnds}>
-        <span>{formatMonth(min)}</span>
-        <span>{formatMonth(max)}</span>
+        <span>{formatMonthShort(min)}</span>
+        <span>{formatMonthShort(max)}</span>
       </div>
     </>
   );
@@ -125,51 +144,70 @@ const btnReset: CSSProperties = {
   cursor: "pointer",
 };
 
+/** A checkmark drawn in the swatch, so on/off never rests on color alone. */
+function Check() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+const divider: CSSProperties = {
+  border: 0,
+  height: 1,
+  background: "var(--divider)",
+  margin: "16px 0",
+};
+
 function rowStyle(on: boolean): CSSProperties {
   return {
     ...btnReset,
     display: "flex",
     alignItems: "center",
-    gap: 11,
+    gap: 10,
     width: "100%",
-    padding: "6px 9px",
-    borderRadius: 8,
-    background: on ? "var(--accent-tint-weak)" : "transparent",
+    height: 34,
+    padding: "0 10px",
+    borderRadius: R.sm,
+    backgroundColor: "transparent",
     color: on ? "var(--text)" : "var(--text-dim)",
-    fontSize: 13,
+    fontSize: FS.md - 0.5,
     fontWeight: 500,
-    transition: "background .15s",
   };
 }
 
-function dotStyle(on: boolean): CSSProperties {
+function dotStyle(on: boolean, color: string): CSSProperties {
   return {
-    width: 14,
-    height: 14,
-    borderRadius: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 5,
     flex: "0 0 auto",
-    background: on ? "var(--accent)" : "transparent",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    background: on ? color : "transparent",
     border: on ? "none" : "1.5px solid var(--border-empty)",
-    boxShadow: on ? "0 0 10px var(--accent)" : "none",
   };
 }
 
 function countStyle(on: boolean): CSSProperties {
   return {
     fontFamily: MONO,
-    fontSize: 11,
+    fontSize: FS.xs + 0.5,
     color: on ? "var(--text-muted)" : "var(--text-faint)",
   };
 }
 
 // Matches the thumb size in index.css; the rail is inset by half of it so the accent
 // span's percentages map to thumb-centre positions rather than the raw input box.
-const THUMB = 15;
+const THUMB = 16;
 
 const rangeWrap: CSSProperties = {
   position: "relative",
-  height: 16,
-  margin: "2px 0 4px",
+  height: 20,
+  margin: "0 0 6px",
 };
 
 const rail: CSSProperties = {
@@ -178,8 +216,8 @@ const rail: CSSProperties = {
   right: THUMB / 2,
   top: "50%",
   transform: "translateY(-50%)",
-  height: 3,
-  borderRadius: 3,
+  height: 4,
+  borderRadius: 4,
   background: "var(--track)",
 };
 
@@ -194,7 +232,6 @@ const windowFill: CSSProperties = {
 const rangeEnds: CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  fontFamily: MONO,
-  fontSize: 10,
+  fontSize: FS.xs,
   color: "var(--text-muted)",
 };

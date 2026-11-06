@@ -82,7 +82,7 @@ describe("consistency", () => {
   test("distance per week is unknown when no activity has a distance", () => {
     const c = consistency([record({ ts: aug(1), distance: undefined })], FROM, TO);
     expect(c.distancePerWeekM).toBeUndefined();
-    expect(consistencyCards(c)[1]).toEqual({ value: "—", label: "Km / week", accent: true });
+    expect(consistencyCards(c)[1]).toEqual({ value: "—", unit: "km", label: "Distance per week", accent: true });
   });
 });
 
@@ -95,8 +95,8 @@ describe("consistencyCards", () => {
       distancePerWeekM: 39420,
     });
     expect(cards).toEqual([
-      { value: "2.9", label: "Activities / week" },
-      { value: "39.4", label: "Km / week", accent: true },
+      { value: "2.9", label: "Activities per week" },
+      { value: "39.4", unit: "km", label: "Distance per week", accent: true },
       { value: "143", label: "Active days" },
       { value: "12 days", label: "Longest streak" },
     ]);

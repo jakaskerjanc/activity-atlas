@@ -7,6 +7,7 @@ import {
   niceTicks,
   paceTicks,
   readout,
+  summaryReadout,
   smoothSpeed,
 } from "./profile";
 import type { DetailFile } from "./types";
@@ -27,10 +28,12 @@ const full = detail({
 
 describe("buildProfile", () => {
   test("charts follow the channels", () => {
-    expect(buildProfile(full, "Run")!.charts.map((c) => c.kind)).toEqual(["elevation", "hr", "pace"]);
-    expect(buildProfile(full, "Ride")!.charts.map((c) => c.kind)).toEqual(["elevation", "hr", "speed"]);
+    expect(buildProfile(full, "Run")!.charts.map((c) => c.kind)).toEqual(["elevation", "hr", "pace", "cadence"]);
+    expect(buildProfile(full, "Ride")!.charts.map((c) => c.kind)).toEqual(["elevation", "hr", "speed", "cadence"]);
     expect(buildProfile(detail({ hr: [1, 2, 3, 4] }), "Run")!.charts.map((c) => c.kind)).toEqual(["hr"]);
-    expect(buildProfile(detail({ cad: [1, 2, 3, 4] }), "Run")).toBeNull();
+    expect(buildProfile(detail({ cad: [1, 2, 3, 4] }), "Run")!.charts.map((c) => c.kind)).toEqual(["cadence"]);
+    // All-zero cadence (a coasting sensor) has nothing to chart.
+    expect(buildProfile(detail({ cad: [0, 0, 0, 0] }), "Run")).toBeNull();
   });
 
   test("x is distance when d exists, else time", () => {
@@ -201,5 +204,21 @@ describe("readout", () => {
     const r = readout(full, buildProfile(full, "Ride")!, 2, "Ride");
     expect(r.map((e) => e.label)).toEqual(["km", "time", "m", "bpm", "km/h", "rpm"]);
     expect(r[4].value).toBe("10.8");
+  });
+});
+
+describe("cadence", () => {
+  test("is charted when recorded, so the readout's spm/rpm has a chart to point at", () => {
+    expect(buildProfile(full, "Run")!.charts.map((c) => c.kind)).toContain("cadence");
+  });
+});
+
+describe("summaryReadout", () => {
+  test("the whole activity, in the same chips and order as the cursor readout", () => {
+    const p = buildProfile(full, "Run")!;
+    const s = summaryReadout(full, p, "Run");
+    expect(s.map((e) => e.label)).toEqual(["km", "time", "m high", "bpm avg", "/km avg", "spm avg"]);
+    expect(s).toHaveLength(readout(full, p, 2, "Run").length);
+    expect(s[0].value).toBe(readout(full, p, full.t.length - 1, "Run")[0].value);
   });
 });

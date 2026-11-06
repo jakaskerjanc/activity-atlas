@@ -6,45 +6,66 @@
 // Extents and hit testing live in elevationProfiles.ts.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { MONO } from "./theme";
+import { FS, MONO } from "./theme";
 import { useElementWidth } from "./useElementWidth";
-import { lengthM, nearestLine, type ProfileChart } from "../elevationProfiles";
+import { elevationAxis, lengthM, lineAlpha, nearestLine, type ProfileChart } from "../elevationProfiles";
+import { useMediaQuery } from "./useMediaQuery";
 import { typeColor } from "../colors";
 import { formatDate, formatKm, formatMeters } from "../format";
 import { niceTicks } from "../profile";
+import type { Theme } from "../types";
 
-const Y_AXIS_W = 48;
-const X_AXIS_H = 22;
-const PLOT_H = 420;
+const Y_AXIS_W = 52;
+const X_AXIS_H = 24;
 const FALLBACK_WIDTH = 700;
-const LINE_ALPHA = 0.3;
 /** How close (in pixels, vertically) the pointer must be to pick a line. */
 const PICK_PX = 8;
 const TIP_WIDTH = 260;
 
+interface Plot {
+  w: number;
+  h: number;
+  /** The y domain: rounded out to whole ticks (elevationAxis). */
+  lo: number;
+  hi: number;
+}
+
 /** Pixel points of a profile on the plot, stopping one point past the right edge. */
-function points(profile: readonly number[], chart: ProfileChart, plotW: number): [number, number][] {
-  const { step, xMaxM, yMin, yMax } = chart;
+function points(profile: readonly number[], chart: ProfileChart, plot: Plot): [number, number][] {
+  const { step, xMaxM } = chart;
   const last = Math.min(profile.length - 1, Math.ceil(xMaxM / step));
   const pts: [number, number][] = [];
   for (let i = 0; i <= last; i++) {
-    pts.push([((i * step) / xMaxM) * plotW, ((yMax - profile[i]) / (yMax - yMin)) * PLOT_H]);
+    pts.push([((i * step) / xMaxM) * plot.w, ((plot.hi - profile[i]) / (plot.hi - plot.lo)) * plot.h]);
   }
   return pts;
 }
 
 interface Props {
   chart: ProfileChart;
-  /** Every activity type, most common first: a type's color is its place in this list. */
-  types: readonly string[];
+  /** Every activity type in the filter's order (most activities first, over all data), so
+   * the legend keeps one order whatever the filter shows. */
+  order?: readonly string[];
+  theme?: Theme;
+  /** A phone: a shorter plot. */
+  compact?: boolean;
 }
 
-export function ElevationProfiles({ chart, types }: Props) {
+export function ElevationProfiles({ chart, order = [], theme = "dark", compact = false }: Props) {
+  const canHover = useMediaQuery("(hover: hover)");
   const [boxRef, width] = useElementWidth<HTMLDivElement>(FALLBACK_WIDTH);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null);
   const plotW = Math.max(60, width - Y_AXIS_W);
-  const { lines, step, xMaxM, yMin, yMax } = chart;
+  const PLOT_H = compact ? 280 : 380;
+  const { lines, step, xMaxM } = chart;
+  const axis = useMemo(
+    () => elevationAxis(chart.yMin, chart.yMax, Math.floor(PLOT_H / 30)),
+    [chart.yMin, chart.yMax, PLOT_H],
+  );
+  const yMin = axis.lo;
+  const yMax = axis.hi;
+  const plot: Plot = { w: plotW, h: PLOT_H, lo: yMin, hi: yMax };
 
   // The hover is an index into `lines`: a new chart (the filter changed) drops it, so the
   // tooltip can't name a different activity than the one under the pointer.
@@ -62,25 +83,30 @@ export function ElevationProfiles({ chart, types }: Props) {
     canvas.height = Math.round(PLOT_H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, plotW, PLOT_H);
-    ctx.lineWidth = 1.2;
+    // Fewer lines draw bolder, so one isolated month still reads (lineAlpha).
+    ctx.lineWidth = lines.length < 20 ? 1.8 : 1.2;
     ctx.lineJoin = "round";
-    ctx.globalAlpha = LINE_ALPHA;
-    const order = [...types];
+    ctx.globalAlpha = lineAlpha(lines.length);
     for (const line of lines) {
-      ctx.strokeStyle = typeColor(line.type, order);
+      ctx.strokeStyle = typeColor(line.type, theme);
       ctx.beginPath();
-      points(line.profile, chart, plotW).forEach(([x, y], i) =>
+      points(line.profile, chart, { w: plotW, h: PLOT_H, lo: yMin, hi: yMax }).forEach(([x, y], i) =>
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y),
       );
       ctx.stroke();
     }
-  }, [chart, lines, types, plotW]);
+  }, [chart, lines, theme, plotW, PLOT_H, yMin, yMax]);
 
   const legend = useMemo(() => {
     const counts = new Map<string, number>();
     for (const l of lines) counts.set(l.type, (counts.get(l.type) ?? 0) + 1);
-    return [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  }, [lines]);
+    // The filter's type order, not this set's counts, so the legend never reshuffles.
+    const rank = (t: string) => {
+      const i = order.indexOf(t);
+      return i < 0 ? order.length : i;
+    };
+    return [...counts].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  }, [lines, order]);
 
   const track = (e: PointerEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -94,7 +120,7 @@ export function ElevationProfiles({ chart, types }: Props) {
   const hovered = hover ? lines[hover.index] : null;
   const xKm = xMaxM / 1000;
   const xTicks = niceTicks(0, xKm, Math.max(2, Math.floor(plotW / 80)));
-  const yTicks = niceTicks(yMin, yMax, Math.round(PLOT_H / 60));
+  const yTicks = axis.ticks;
 
   return (
     <div ref={boxRef}>
@@ -137,26 +163,32 @@ export function ElevationProfiles({ chart, types }: Props) {
                   y2={yOf(m)}
                   style={m === 0 ? startLine : gridLine}
                 />
-                <text x={-6} y={yOf(m) + 3} textAnchor="end" style={axisText}>
+                <text x={-8} y={yOf(m) + 3.5} textAnchor="end" style={axisText}>
                   {m > 0 ? `+${m}` : m < 0 ? `−${-m}` : "0"} m
                 </text>
               </g>
             ))}
             <line x1={0} x2={plotW} y1={PLOT_H + 0.5} y2={PLOT_H + 0.5} style={gridLine} />
-            {xTicks.map((km) => (
-              <text key={km} x={xOf(km * 1000)} y={PLOT_H + 15} textAnchor="middle" style={axisText}>
+            {xTicks.map((km, i) => (
+              <text
+                key={km}
+                x={xOf(km * 1000)}
+                y={PLOT_H + 16}
+                textAnchor={i === 0 ? "start" : km * 1000 >= xMaxM ? "end" : "middle"}
+                style={axisText}
+              >
                 {km} km
               </text>
             ))}
             {hovered && (
               <polyline
                 clipPath="url(#profiles-plot)"
-                points={points(hovered.profile, chart, plotW)
+                points={points(hovered.profile, chart, plot)
                   .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
                   .join(" ")}
                 style={{
                   fill: "none",
-                  stroke: typeColor(hovered.type, [...types]),
+                  stroke: typeColor(hovered.type, theme),
                   strokeWidth: 2.5,
                   strokeLinejoin: "round",
                 }}
@@ -170,25 +202,27 @@ export function ElevationProfiles({ chart, types }: Props) {
           >
             <div style={tipName}>{hovered.name}</div>
             <div style={muted}>
-              {hovered.type} · {formatDate(hovered.ts)} · {formatKm(lengthM(hovered, step))} km ·{" "}
-              {elevationLabel(hovered.profile)}
+              {hovered.type} on {formatDate(hovered.ts)}
+            </div>
+            <div style={{ ...muted, fontFamily: MONO, marginTop: 2 }}>
+              {formatKm(lengthM(hovered, step))} km, {elevationLabel(hovered.profile)}
             </div>
           </div>
         )}
       </div>
       <div style={legendRow}>
         {legend.map(([type, n]) => (
-          <span key={type} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ ...swatch, background: typeColor(type, [...types]) }} />
-            {type} {n}
+          <span key={type} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ ...swatch, background: typeColor(type, theme) }} />
+            {type}
+            <span style={{ fontFamily: MONO, color: "var(--text-muted)" }}>{n}</span>
           </span>
         ))}
       </div>
       <p style={note}>
-        Each line is one activity's elevation from its start. Lines are see-through, so climbs
-        you repeat darken where they stack up; hover a line to see which activity it is.
+        Climbs you repeat stand out where lines stack up. {canHover ? "Hover" : "Tap"} a line to name it.
         {chart.cut > 0 &&
-          ` ${chart.cut} longer than ${xKm} km run past the right edge and are cut there.`}
+          ` ${chart.cut} ${chart.cut === 1 ? "activity runs" : "activities run"} past ${xKm} km and ${chart.cut === 1 ? "is" : "are"} cut at the right edge.`}
       </p>
     </div>
   );
@@ -209,7 +243,7 @@ function elevationLabel(profile: readonly number[]): string {
     : `−${formatMeters(-low)} m low point`;
 }
 
-const gridLine: CSSProperties = { stroke: "var(--divider)", strokeWidth: 1 };
+const gridLine: CSSProperties = { stroke: "var(--card-grid)", strokeWidth: 1 };
 
 const startLine: CSSProperties = {
   stroke: "var(--text-muted)",
@@ -219,27 +253,27 @@ const startLine: CSSProperties = {
 
 const axisText: CSSProperties = {
   fontFamily: MONO,
-  fontSize: 9.5,
+  fontSize: FS["2xs"],
   fill: "var(--text-muted)",
 };
 
 const muted: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 10.5,
+  fontSize: FS.xs + 0.5,
   color: "var(--text-muted)",
 };
 
 const note: CSSProperties = { ...muted, margin: "10px 0 0" };
 
 const legendRow: CSSProperties = {
-  ...muted,
   display: "flex",
   flexWrap: "wrap",
-  gap: 12,
-  marginTop: 10,
+  gap: 16,
+  marginTop: 12,
+  fontSize: FS.sm,
+  color: "var(--text-soft)",
 };
 
-const swatch: CSSProperties = { width: 10, height: 3, borderRadius: 2 };
+const swatch: CSSProperties = { width: 14, height: 3, borderRadius: 2 };
 
 const tooltip: CSSProperties = {
   position: "absolute",

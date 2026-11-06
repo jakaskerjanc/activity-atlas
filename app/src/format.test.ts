@@ -24,6 +24,7 @@ describe("formatKm", () => {
   });
   test("zero meters", () => {
     expect(formatKm(0)).toBe("0.0");
+    expect(formatKm(2_540_123, 0)).toBe("2,540");
   });
 });
 
@@ -130,18 +131,19 @@ describe("isFootBased", () => {
 });
 
 describe("activityLinks", () => {
-  test("strava + garmin -> two links in source order", () => {
+  test("strava + garmin -> two links, Garmin first whatever the source order", () => {
     expect(
       activityLinks([
         { provider: "strava", id: "10089952322" },
         { provider: "garmin", id: "12345678" },
       ]),
     ).toEqual([
-      { url: "https://www.strava.com/activities/10089952322", label: "View on Strava" },
       {
         url: "https://connect.garmin.com/modern/activity/12345678",
         label: "View on Garmin Connect",
+        short: "G",
       },
+      { url: "https://www.strava.com/activities/10089952322", label: "View on Strava", short: "S" },
     ]);
   });
   test("no sources -> no links", () => {
@@ -154,7 +156,14 @@ describe("activityLinks", () => {
         { provider: "garmin", id: "2" },
       ]),
     ).toEqual([
-      { url: "https://connect.garmin.com/modern/activity/2", label: "View on Garmin Connect" },
+      { url: "https://connect.garmin.com/modern/activity/2", label: "View on Garmin Connect", short: "G" },
     ]);
+  });
+});
+
+describe("formatMonthShort", () => {
+  test("abbreviates the month for tight labels", async () => {
+    const { formatMonthShort, monthIndex } = await import("./format");
+    expect(formatMonthShort(monthIndex(Date.UTC(2025, 7, 15) / 1000))).toBe("Aug 2025");
   });
 });
