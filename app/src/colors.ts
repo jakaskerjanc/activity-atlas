@@ -5,7 +5,7 @@
 // type, which is erased at build time.
 
 import type { ExpressionSpecification } from "mapbox-gl";
-import type { ActivityFeature } from "./types";
+import type { ActivityFeature, Theme } from "./types";
 import { formatDate } from "./format";
 import { GRADE_MAX, gradeLegendStops, gradeRamp } from "./grade";
 
@@ -17,38 +17,57 @@ export type ColorMode =
   | "uniform"
   | "recency"
   | "type"
-  | "elevation"
+  | "grade"
   | "speed"
   | "heat";
 
-export const COLOR_MODES: { mode: ColorMode; label: string }[] = [
-  { mode: "uniform", label: "Uniform" },
-  { mode: "recency", label: "Recency" },
-  { mode: "type", label: "Type" },
-  { mode: "elevation", label: "Elevation" },
-  { mode: "speed", label: "Speed" },
-  { mode: "heat", label: "Heat" },
+export const COLOR_MODES: { mode: ColorMode; label: string; hint: string }[] = [
+  { mode: "uniform", label: "Plain", hint: "Every route in the accent color" },
+  { mode: "type", label: "Type", hint: "By activity type" },
+  { mode: "recency", label: "Recency", hint: "Older routes cool, recent ones warm" },
+  { mode: "grade", label: "Grade", hint: "How steep each stretch is" },
+  { mode: "speed", label: "Speed", hint: "Average speed of each activity" },
+  { mode: "heat", label: "Heat", hint: "Brighter where routes overlap" },
 ];
 
 // --- Palettes -------------------------------------------------------------
 // Sequential ramps ordered low -> high. Recency uses a cool->warm temperature
 // so old routes stay visible on the dark base; speed uses a viridis-like ramp
-// (colorblind-safe). Elevation colors by grade along the route (grade.ts).
+// (colorblind-safe). Grade colors each stretch along the route (grade.ts).
 
 const RECENCY_STOPS = ["#3aa6c2", "#f0a35e", "#ff5230"];
-const SPEED_STOPS = ["#3b528b", "#21918c", "#fde725"];
+/** Viridis on dark; on the light map its pale yellow end vanishes, so it stops at a deep gold. */
+const SPEED_STOPS: Record<Theme, string[]> = {
+  dark: ["#3b528b", "#21918c", "#fde725"],
+  light: ["#3b528b", "#21918c", "#b89a00"],
+};
 
-/** Qualitative palette for per-type coloring, assigned by sorted type order. */
-const TYPE_PALETTE = [
-  "#ff6b3d",
-  "#4cc9f0",
-  "#8ac926",
-  "#ffca3a",
-  "#c77dff",
-  "#ff5da2",
-  "#00bbf9",
-  "#f15bb5",
-];
+/**
+ * Heat's legend: lone routes read dim, corridors you repeat glow toward the full accent.
+ * The map itself draws Heat in the accent at low opacity and lets overlaps add up.
+ */
+const HEAT_LEGEND_STOPS: Record<Theme, string[]> = {
+  dark: ["#3a1a0e", ACCENT],
+  light: ["#f6d3c5", ACCENT],
+};
+
+/**
+ * One fixed color per activity type, used everywhere a type is colored: the map's Type
+ * mode, the filter list's swatches and the analytics charts. None is the accent orange,
+ * which keeps meaning "the app / the selection". Checked with the dataviz palette
+ * validator (all pairs, protan/deutan) on each theme's panel surface: dark steps are
+ * light enough to read on the dark map (Walk is a pale pink, not a dark magenta), light
+ * steps deep enough to hold contrast on the light map and white cards.
+ */
+const TYPE_COLORS: Record<Theme, Record<string, string>> = {
+  dark: { Run: "#2ec4b6", Ride: "#5b8cff", Hike: "#f2c230", Walk: "#f7a1e0" },
+  light: { Run: "#14b3a1", Ride: "#3d6fe0", Hike: "#c99400", Walk: "#b14aa0" },
+};
+/** Types outside the main four, keyed by a hash of the name so they never shift. */
+const EXTRA_TYPE_COLORS: Record<Theme, string[]> = {
+  dark: ["#9085e9", "#a8d84a", "#e98a6b", "#a0a4ae", "#6fd3f7"],
+  light: ["#6250d6", "#6e9a14", "#c4643f", "#7d828c", "#1f8fb8"],
+};
 
 // --- Domain ---------------------------------------------------------------
 
@@ -151,29 +170,34 @@ function whenKnown(test: unknown[], color: ExpressionSpecification): ExpressionS
   return ["case", test, color, NEUTRAL] as unknown as ExpressionSpecification;
 }
 
-/** Deterministic categorical color per activity type (wraps the palette). */
-export function typeColor(type: string, types: string[]): string {
-  const i = types.indexOf(type);
-  return TYPE_PALETTE[(i < 0 ? 0 : i) % TYPE_PALETTE.length];
+/** The fixed color of an activity type, the same in every view. */
+export function typeColor(type: string, theme: Theme = "dark"): string {
+  const fixed = TYPE_COLORS[theme][type];
+  if (fixed) return fixed;
+  let h = 0;
+  for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) >>> 0;
+  const extra = EXTRA_TYPE_COLORS[theme];
+  return extra[h % extra.length];
 }
 
-function typeMatch(types: string[]): string | ExpressionSpecification {
+function typeMatch(types: string[], theme: Theme): string | ExpressionSpecification {
   if (types.length === 0) return ACCENT;
   const expr: unknown[] = ["match", ["get", "type"]];
-  for (const t of types) expr.push(t, typeColor(t, types));
+  for (const t of types) expr.push(t, typeColor(t, theme));
   expr.push(ACCENT); // fallback for any unexpected type
   return expr as unknown as ExpressionSpecification;
 }
 
 /**
- * The Mapbox `line-color` paint value for a mode. `uniform` and `heat` render
- * a single accent color (heat conveys frequency through overlap density, not
- * hue); the rest map a feature property onto a color ramp. Elevation reads the
- * `grade` of grade-run features (grade.ts), so the map must be drawing those.
+ * The Mapbox `line-color` paint value for a mode. `uniform` and `heat` render the
+ * single accent color (heat shows how often you've been somewhere through overlapping
+ * see-through lines, not hue); the rest map a feature property onto a color ramp. Grade
+ * reads the `grade` of grade-run features (grade.ts), so the map must be drawing those.
  */
 export function lineColorExpression(
   mode: ColorMode,
   domain: ColorDomain,
+  theme: Theme = "dark",
 ): string | ExpressionSpecification {
   switch (mode) {
     case "uniform":
@@ -181,15 +205,15 @@ export function lineColorExpression(
       return ACCENT;
     case "recency":
       return ramp(get("ts"), domain.tsMin, domain.tsMax, RECENCY_STOPS);
-    case "elevation":
+    case "grade":
       return whenKnown(["has", "grade"], gradeRamp());
     case "speed":
       return whenKnown(
         ["all", ["has", "distance"], ["has", "moving_time"]],
-        ramp(speedExpr(), domain.speedMin, domain.speedMax, SPEED_STOPS),
+        ramp(speedExpr(), domain.speedMin, domain.speedMax, SPEED_STOPS[theme]),
       );
     case "type":
-      return typeMatch(domain.types);
+      return typeMatch(domain.types, theme);
   }
 }
 
@@ -201,13 +225,12 @@ export type Legend =
   | { kind: "categorical"; entries: { label: string; color: string }[] };
 
 /** Legend view-model describing the active color mode's scale. */
-export function legendFor(mode: ColorMode, domain: ColorDomain): Legend {
+export function legendFor(mode: ColorMode, domain: ColorDomain, theme: Theme = "dark"): Legend {
   switch (mode) {
     case "uniform":
       return { kind: "none" };
     case "heat":
-      // Overlap density: lone routes read dim, repeated corridors saturate.
-      return { kind: "gradient", stops: ["#3a1a0e", ACCENT], minLabel: "rare", maxLabel: "frequent" };
+      return { kind: "gradient", stops: HEAT_LEGEND_STOPS[theme], minLabel: "Rare", maxLabel: "Frequent" };
     case "recency":
       return {
         kind: "gradient",
@@ -215,7 +238,7 @@ export function legendFor(mode: ColorMode, domain: ColorDomain): Legend {
         minLabel: formatDate(domain.tsMin),
         maxLabel: formatDate(domain.tsMax),
       };
-    case "elevation":
+    case "grade":
       return {
         kind: "gradient",
         stops: gradeLegendStops(),
@@ -226,14 +249,14 @@ export function legendFor(mode: ColorMode, domain: ColorDomain): Legend {
     case "speed":
       return {
         kind: "gradient",
-        stops: SPEED_STOPS,
-        minLabel: `${Math.round(domain.speedMin)}`,
+        stops: SPEED_STOPS[theme],
+        minLabel: `${Math.round(domain.speedMin)} km/h`,
         maxLabel: `${Math.round(domain.speedMax)} km/h`,
       };
     case "type":
       return {
         kind: "categorical",
-        entries: domain.types.map((t) => ({ label: t, color: typeColor(t, domain.types) })),
+        entries: domain.types.map((t) => ({ label: t, color: typeColor(t, theme) })),
       };
   }
 }

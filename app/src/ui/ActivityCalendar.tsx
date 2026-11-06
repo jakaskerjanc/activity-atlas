@@ -4,7 +4,7 @@
 // its numbers and lists its activities by name and moving time.
 
 import { useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { MONO, pillStyle } from "./theme";
+import { FS, MONO, pillStyle } from "./theme";
 import { formatDate, formatDuration } from "../format";
 import type { CalendarDay, CalendarYear } from "../analytics";
 
@@ -53,7 +53,7 @@ export function shownYear(years: CalendarYear[], picked: number | null): Calenda
   return years.find((y) => y.year === picked) ?? years[0];
 }
 
-export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
+export function ActivityCalendar({ years, compact = false }: { years: CalendarYear[]; compact?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -87,6 +87,7 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
   };
 
   const hovered = hover && shown.days[hover.day];
+  const outside = outsideCells(shown);
 
   return (
     <div ref={boxRef} style={{ position: "relative" }} onPointerLeave={() => setHover(null)}>
@@ -96,6 +97,7 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
             <button
               key={y.year}
               type="button"
+              className={y === shown ? undefined : "ctl"}
               aria-pressed={y === shown}
               onClick={() => pick(y.year)}
               style={{ ...pillStyle(y === shown), fontFamily: MONO }}
@@ -109,8 +111,11 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
         </span>
       </div>
 
-      {/* Keyed by year, so a newly picked year remounts and scrolls to its end. */}
-      <div key={shown.year} ref={scrollToEnd} style={scroller}>
+      {compact ? (
+        <MonthGrids year={shown} hovered={hovered || null} onTrack={track} />
+      ) : (
+      /* Keyed by year, so a newly picked year remounts and scrolls to its latest day. */
+      <div key={shown.year} ref={scrollToLatest(shown, width)} style={scroller}>
         <svg
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
@@ -129,6 +134,19 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
             <text key={row} x={0} y={TOP + row * PITCH + CELL - 2} style={axisText}>
               {WEEKDAYS[row]}
             </text>
+          ))}
+          {/* The rest of the year, outside the date range (or still to come): faint
+              outlines, so every year reads as a whole year at the same scale. */}
+          {outside.map(([week, weekday]) => (
+            <rect
+              key={`o${week}-${weekday}`}
+              x={GUTTER + week * PITCH + 0.5}
+              y={TOP + weekday * PITCH + 0.5}
+              width={CELL - 1}
+              height={CELL - 1}
+              rx={2}
+              style={outsideCell}
+            />
           ))}
           {shown.days.map((d, i) => (
             <rect
@@ -154,6 +172,7 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
           )}
         </svg>
       </div>
+      )}
 
       <div style={legendRow}>
         {LEVELS.map((label, level) => (
@@ -169,6 +188,66 @@ export function ActivityCalendar({ years }: { years: CalendarYear[] }) {
           <DayTip day={hovered} />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The phone's calendar: the year wrapped into twelve small month grids (Monday-first
+ * weeks as rows), three to a row, so every day stays a legible tap target with no
+ * sideways scrolling.
+ */
+function MonthGrids({
+  year,
+  hovered,
+  onTrack,
+}: {
+  year: CalendarYear;
+  hovered: CalendarDay | null;
+  onTrack: (e: PointerEvent<SVGSVGElement>) => void;
+}) {
+  const P = 13; // cell pitch in viewBox units
+  const C = 11;
+  const byMonth: { d: CalendarDay; i: number }[][] = Array.from({ length: 12 }, () => []);
+  year.days.forEach((d, i) => byMonth[new Date(d.ts * 1000).getUTCMonth()].push({ d, i }));
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px 14px" }}>
+      {byMonth.map((list, m) => {
+        const first = Date.UTC(year.year, m, 1);
+        const offset = (new Date(first).getUTCDay() + 6) % 7;
+        const days = (Date.UTC(year.year, m + 1, 1) - first) / 86_400_000;
+        const pos = (dom: number) => ({ x: ((dom - 1 + offset) % 7) * P, y: Math.floor((dom - 1 + offset) / 7) * P });
+        const taken = new Set(list.map(({ d }) => new Date(d.ts * 1000).getUTCDate()));
+        return (
+          <div key={m}>
+            <div style={{ ...muted, marginBottom: 4, fontWeight: 600, color: "var(--text-soft)" }}>{MONTHS[m]}</div>
+            <svg
+              viewBox={`-1 -1 ${7 * P + 1} ${6 * P + 1}`}
+              width="100%"
+              role="img"
+              aria-label={`${MONTHS[m]} ${year.year}: ${list.filter(({ d }) => d.count > 0).length} active days`}
+              onPointerMove={onTrack}
+              onPointerDown={onTrack}
+              style={{ display: "block" }}
+            >
+              {Array.from({ length: days }, (_, k) => k + 1)
+                .filter((dom) => !taken.has(dom))
+                .map((dom) => {
+                  const { x, y } = pos(dom);
+                  return <rect key={`o${dom}`} x={x + 0.5} y={y + 0.5} width={C - 1} height={C - 1} rx={2} style={outsideCell} />;
+                })}
+              {list.map(({ d, i }) => {
+                const { x, y } = pos(new Date(d.ts * 1000).getUTCDate());
+                return <rect key={d.ts} data-i={i} x={x} y={y} width={C} height={C} rx={2} style={{ fill: `var(--heat-${d.level})` }} />;
+              })}
+              {hovered && list.some(({ d }) => d === hovered) && (() => {
+                const { x, y } = pos(new Date(hovered.ts * 1000).getUTCDate());
+                return <rect x={x - 1} y={y - 1} width={C + 2} height={C + 2} rx={3} style={outline} />;
+              })()}
+            </svg>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -202,10 +281,37 @@ export function DayTip({ day }: { day: CalendarDay }) {
   );
 }
 
-// When the year scrolls, start at its latest days. Module-level so React calls it once
-// per mount rather than on every hover re-render.
-function scrollToEnd(el: HTMLDivElement | null) {
-  if (el) el.scrollLeft = el.scrollWidth;
+/** [week, weekday] of every day of the shown year that has no cell (outside the range). */
+function outsideCells(y: CalendarYear): [number, number][] {
+  const jan1 = Date.UTC(y.year, 0, 1);
+  const offset = (new Date(jan1).getUTCDay() + 6) % 7; // Monday first
+  const days = (Date.UTC(y.year + 1, 0, 1) - jan1) / 86_400_000;
+  const taken = new Set(y.days.map((d) => d.week * 7 + d.weekday));
+  const out: [number, number][] = [];
+  for (let n = 0; n < days; n++) {
+    const week = Math.floor((n + offset) / 7);
+    const weekday = (n + offset) % 7;
+    if (!taken.has(week * 7 + weekday)) out.push([week, weekday]);
+  }
+  return out;
+}
+
+// When the year scrolls (a phone), open on its latest recorded day rather than on the
+// empty weeks still to come. Cached per year, so React calls it once per mount rather
+// than on every hover re-render.
+const scrollers = new Map<string, (el: HTMLDivElement | null) => void>();
+function scrollToLatest(y: CalendarYear, width: number) {
+  const key = `${y.year}:${y.days.length}:${width}`;
+  let fn = scrollers.get(key);
+  if (!fn) {
+    const lastWeek = y.days.at(-1)?.week ?? 0;
+    const frac = Math.min(1, (GUTTER + (lastWeek + 2) * PITCH) / width);
+    fn = (el) => {
+      if (el) el.scrollLeft = frac * el.scrollWidth - el.clientWidth;
+    };
+    scrollers.set(key, fn);
+  }
+  return fn;
 }
 
 function activeDays(n: number): string {
@@ -222,8 +328,7 @@ const yearRow: CSSProperties = {
 };
 
 const muted: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 10.5,
+  fontSize: FS.xs + 0.5,
   color: "var(--text-muted)",
 };
 
@@ -234,9 +339,15 @@ const scroller: CSSProperties = {
 };
 
 const axisText: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 9,
+  fontSize: 8.5,
   fill: "var(--text-muted)",
+};
+
+const outsideCell: CSSProperties = {
+  fill: "none",
+  stroke: "var(--card-grid)",
+  strokeWidth: 1,
+  pointerEvents: "none",
 };
 
 const outline: CSSProperties = {

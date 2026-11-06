@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { densestClusterBounds } from "./cluster";
+import { densestClusterBounds, densestClusterRouteBounds } from "./cluster";
 import type { ActivityFeature } from "./types";
 
 function route(coords: [number, number][]): ActivityFeature {
@@ -76,5 +76,41 @@ describe("densestClusterBounds", () => {
     // The knot centres sit below ~10.03 / 46.03; the loose spread reaches far past that.
     expect(box[2]).toBeLessThan(10.1);
     expect(box[3]).toBeLessThan(46.1);
+  });
+});
+
+describe("densestClusterRouteBounds", () => {
+  test("frames the home cluster's whole routes and leaves a far-off trip out", () => {
+    // Ten loops around one town, each reaching 0.05° out from its centre, plus one trip
+    // far away.
+    const home = Array.from({ length: 10 }, (_, i) =>
+      route([
+        [14 + i * 0.001, 46],
+        [14.05 + i * 0.001, 46.05],
+        [14 + i * 0.001, 46],
+      ]),
+    );
+    const away = route([
+      [2, 41],
+      [2.01, 41.01],
+    ]);
+    const b = densestClusterRouteBounds([...home, away], 8, 0.6, 0)!;
+    expect(b[0]).toBeCloseTo(14, 5);
+    expect(b[2]).toBeCloseTo(14.059, 5);
+    expect(b[3]).toBeCloseTo(46.05, 5);
+  });
+
+  test("one long excursion out of town doesn't decide the zoom", () => {
+    const loops = Array.from({ length: 30 }, (_, i) =>
+      route(Array.from({ length: 20 }, (_, k) => [14 + (k % 5) * 0.01 + i * 1e-4, 46 + Math.floor(k / 5) * 0.01] as [number, number])),
+    );
+    const long = route(Array.from({ length: 10 }, (_, k) => [14 + k * 0.1, 46] as [number, number]));
+    const b = densestClusterRouteBounds([...loops, long])!;
+    // The loops span 14.00..14.04; the excursion reaches 14.9.
+    expect(b[2]).toBeLessThan(14.1);
+  });
+
+  test("empty set → null", () => {
+    expect(densestClusterRouteBounds([])).toBeNull();
   });
 });

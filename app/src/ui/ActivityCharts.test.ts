@@ -40,15 +40,19 @@ describe("ActivityCharts", () => {
     expect(render(null, "Ride")).toContain("Speed");
   });
 
-  test("shows the hint without a cursor", () => {
-    expect(render(null)).toContain("Hover the chart or the route");
+  test("at rest the readout summarises the whole activity", () => {
+    const html = render(null);
+    expect(html).toContain("Whole activity");
+    expect(html).toContain("bpm avg");
+    expect(html).not.toContain(">–<");
   });
 
-  test("shows values at the cursor", () => {
+  test("under the cursor it reads that point, in the same chips", () => {
     const html = render(1);
-    expect(html).not.toContain("Hover the chart or the route");
+    expect(html).toMatch(/At [\d.]+ km/);
     expect(html).toContain("123");
     expect(html).toContain("/km");
+    expect(html).not.toContain("Whole activity");
   });
 
   test("draws a cursor line only with a cursor", () => {

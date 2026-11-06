@@ -32,6 +32,9 @@ _Avoid_: date window, time window
 The activities that pass the activity filter.
 _Avoid_: filtered features, shown set
 
+**Type color**:
+The one fixed color an activity type has everywhere it is colored: the map's Type color mode, the swatches in the type selection list (which double as the map's legend in that mode), and the analytics charts. It never depends on which other types exist or are switched on, and no type uses the accent orange (that means the app and the selected activity).
+
 **Type count**:
 How many activities of a type fall inside the date range, regardless of whether that type is switched on.
 
@@ -48,6 +51,13 @@ _Avoid_: streams (the full-resolution database data), track
 **Cursor**:
 The one point along the selected activity that the charts and the map marker share; set by hovering either.
 _Avoid_: hover (that is route-level, see hoverId), playhead
+
+**Color mode**:
+How the map colors routes: Plain (the accent), Type (type color), Recency, Grade, Speed, or Heat.
+
+**Heat** (color mode):
+Every route drawn thin and see-through in the accent, so roads you've been along many times glow brighter where the lines overlap (rare … frequent).
+_Avoid_: heatmap (that suggests blurred density blobs)
 
 ### Pages
 
@@ -66,7 +76,7 @@ An activity's elevation every 100 m of distance, measured from its start (profil
 _Avoid_: elevation profile (that is the selected activity's chart)
 
 **Grade**:
-How steep a route is at a point: rise over run in %, read from its route profile. The map's Elevation color mode colors each route along its length by grade, on a fixed scale: green within ±1%, climbs through yellow and red to dark red, descents through blue to dark blue, saturating at ±15%.
+How steep a route is at a point: rise over run in %, read from its route profile. The map's Grade color mode colors each route along its length by grade, on a fixed diverging scale: neutral grey within ±1%, climbs through amber and orange to deep red, descents through blue to deep blue, saturating at ±15%.
 _Avoid_: gradient (that is the color ramp), slope
 
 **Distance comparison**:
@@ -81,5 +91,5 @@ The Analytics chart that draws every visible activity's route profile as a see-t
 _Avoid_: heatmap
 
 **Ridgeline**:
-The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each row is labelled with the month's summed elevation gain.
+The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each day's gain is a narrow peak inside that day, so a ridge never shows climbing on a day without any. Each row is labelled with the month's summed elevation gain.
 _Avoid_: joyplot

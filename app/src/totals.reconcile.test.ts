@@ -40,12 +40,15 @@ const activities: ActivitiesFile = {
 };
 const routes: RoutesFile = { v: ROUTES_VERSION, routes: { run: route, hike: route } };
 
-const LABELS = ["Activities", "Total km", "Elevation m", "Moving"];
+const LABELS = ["Activities", "Distance", "Elevation gain", "Moving time"];
 
 /** The value shown above each total card's label, in LABELS order. */
 function totalsIn(html: string): string[] {
   return LABELS.map((label) => {
-    const m = html.match(new RegExp(`>([^<>]*)</div><div style="[^"]*">${label}</div>`));
+    // The value, then an optional small unit, then the label.
+    const m = html.match(
+      new RegExp(`>([^<>]*)(?:<span[^>]*>[^<]*</span>)?</div><div style="[^"]*">${label}</div>`),
+    );
     expect(m, `${label} card`).not.toBeNull();
     return m![1];
   });

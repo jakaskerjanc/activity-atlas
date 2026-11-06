@@ -4,23 +4,15 @@
 // totals cover the same visible set, so the two pages' totals are the same numbers.
 
 import { useMemo, type CSSProperties } from "react";
-import { SectionHeading, StatsSection } from "./StatsSection";
-import { ActivityCalendar, CALENDAR_WIDTH } from "./ActivityCalendar";
+import { SectionHeading, StatGrid } from "./StatsSection";
+import { ActivityCalendar } from "./ActivityCalendar";
 import { Ridgeline } from "./Ridgeline";
 import { ElevationProfiles } from "./ElevationProfiles";
 import { CityComparisons } from "./CityComparisons";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import type { CitiesState } from "./useCities";
-import { eyebrow, glass, MONO } from "./theme";
-import { useMediaQuery } from "./useMediaQuery";
-import {
-  COLLAPSE_QUERY,
-  PANEL_TAB_SIZE,
-  SIDE_PANEL_CLEARANCE,
-  SIDE_PANEL_GAP,
-  SIDE_PANEL_LEFT,
-  SIDE_PANEL_TOP,
-} from "./layout";
+import { card, FS, primaryButton } from "./theme";
+import { SIDE_PANEL_CLEARANCE } from "./layout";
 import {
   rangeTs,
   typesByCount,
@@ -31,9 +23,9 @@ import { activityCalendar, consistency, consistencyCards } from "../analytics";
 import { climbingRidgeline } from "../ridgeline";
 import { profileChart } from "../elevationProfiles";
 import { totalCards } from "../stats";
-import { formatMonth } from "../format";
+import { formatMonth, formatMonthShort } from "../format";
 import type { CityComparison } from "../cityMatch";
-import type { ActivityRecord, Profile } from "../types";
+import type { ActivityRecord, Profile, Theme } from "../types";
 
 interface Props {
   /** null until the data loads. */
@@ -53,18 +45,25 @@ interface Props {
   comparisons: CityComparison[];
   /** A comparison's "Show on map": switch to the map, showing that group's route. */
   onShowCity: (profile: Profile) => void;
+  /** The phone layout: the filters overlay the page instead of docking beside it. */
+  mobile?: boolean;
+  /** Put the filter back to its defaults (offered when nothing matches). */
+  onResetFilter?: () => void;
+  theme?: Theme;
 }
 
-const EDGE = 24;
-// Leftmost the content may sit: a gap past the side panel's edge tab, which protrudes
-// beyond the panel when open and is all that's left of it when collapsed.
-const EXPANDED_LEFT = SIDE_PANEL_CLEARANCE + PANEL_TAB_SIZE;
-const COLLAPSED_LEFT = SIDE_PANEL_LEFT + PANEL_TAB_SIZE + SIDE_PANEL_GAP;
-const CARD_PADDING = 18;
-// The content column fits a year of the activity calendar at its natural cell size.
-const COLUMN_WIDTH = CALENDAR_WIDTH + 2 * CARD_PADDING;
-// Below this the stat cards fall back from one row of four to the 2x2 grid.
-const STATS_ROW_QUERY = "(max-width: 640px)";
+/** The page's sections, for the filters panel's "On this page" list. */
+export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
+  { id: "totals", label: "Totals" },
+  { id: "consistency", label: "Consistency" },
+  { id: "distance", label: "How far is that?" },
+  { id: "calendar", label: "Activity calendar" },
+  { id: "climbing", label: "Climbing by month" },
+  { id: "profiles", label: "Elevation profiles" },
+];
+
+/** Gap between the docked filters panel and the content column. */
+const GUTTER = 24;
 
 export function AnalyticsView({
   filter,
@@ -76,14 +75,15 @@ export function AnalyticsView({
   cities,
   comparisons,
   onShowCity,
+  mobile = false,
+  onResetFilter,
+  theme = "dark",
 }: Props) {
   const fetched = useRouteProfiles();
   const profiles = given ?? fetched;
-  // On a narrow screen an opened side panel overlays the page, as it does the map,
-  // instead of squeezing the content off-screen.
-  const narrow = useMediaQuery(COLLAPSE_QUERY);
-  const left = sidePanelExpanded && !narrow ? EXPANDED_LEFT : COLLAPSED_LEFT;
-  const statColumns = useMediaQuery(STATS_ROW_QUERY) ? 2 : 4;
+  // The column starts right of the docked filters panel and fills the rest of the page;
+  // on a phone the filters overlay the page instead.
+  const left = sidePanelExpanded && !mobile ? SIDE_PANEL_CLEARANCE + GUTTER : GUTTER;
 
   const { totals, cards, calendar } = useMemo(() => {
     if (!filter) return { totals: [], cards: [], calendar: [] };
@@ -103,10 +103,8 @@ export function AnalyticsView({
     [filter, visible],
   );
 
-  // Colors by how common a type is overall, so the few types with profiles get distinct
-  // colors (the map's alphabetical palette wraps past 8 types) and keep them while the
-  // filter changes.
-  const typeOrder = useMemo(() => (filter ? typesByCount(filter) : []), [filter]);
+  // The legend's fixed type order: the filter's own (most activities first, over all data).
+  const typeOrder = useMemo(() => (filter ? typesByCount(filter) : []), [filter?.activities]);
 
   const chart = useMemo(() => {
     if (profiles.status !== "ready") return null;
@@ -121,37 +119,41 @@ export function AnalyticsView({
   return (
     <main
       aria-label="Analytics"
-      style={{
-        ...page,
-        // Equal 1fr side tracks center the column on the page, like the map's bottom
-        // panel. When the page is too narrow for that, the left track holds its minimum
-        // and the column shifts right, clear of the side panel.
-        gridTemplateColumns: `minmax(${left}px, 1fr) minmax(0, ${COLUMN_WIDTH}px) minmax(${EDGE}px, 1fr)`,
-      }}
+      className="analytics"
+      style={{ ["--analytics-left" as string]: `${left}px` }}
     >
-      <div style={{ gridColumn: 2 }}>
+      <div className="analytics__column">
         <h1 style={heading}>Analytics</h1>
         {filter && (
           <>
-            <div style={{ ...eyebrow, marginTop: 6 }}>
-              {formatMonth(filter.fromMonth)} — {formatMonth(filter.toMonth)}
-            </div>
+            <p style={lede}>
+              {visible.length.toLocaleString("en-US")} {visible.length === 1 ? "activity" : "activities"}
+              {" from "}
+              {formatMonthShort(filter.fromMonth)} to {formatMonthShort(filter.toMonth)}
+            </p>
             {visible.length === 0 ? (
-              <p style={emptyText}>
-                No activities match the filter. Switch on an activity type or widen the date
-                range.
-              </p>
+              <section style={{ ...card, marginTop: 16 }}>
+                <SectionHeading
+                  title="No activities match the filter"
+                  subtitle="Switch on an activity type or widen the date range."
+                />
+                {onResetFilter && (
+                  <button type="button" className="ctl-accent" style={primaryButton} onClick={onResetFilter}>
+                    Reset filters
+                  </button>
+                )}
+              </section>
             ) : (
-              <>
-                <section style={card}>
-                  <StatsSection
-                    title="Totals"
-                    subtitle="Distance, climbing and time"
-                    cards={totals}
-                    columns={statColumns}
-                  />
+              <div className="analytics__grid">
+                <section id="totals" style={card}>
+                  <SectionHeading title="Totals" subtitle="Distance, climbing and time" />
+                  <StatGrid cards={totals} columns={2} />
                 </section>
-                <section style={card}>
+                <section id="consistency" style={card}>
+                  <SectionHeading title="Consistency" subtitle="How often you get out" />
+                  <StatGrid cards={cards} columns={2} />
+                </section>
+                <section id="distance" style={card} className="span-2">
                   <SectionHeading
                     title="How far is that?"
                     subtitle={
@@ -166,25 +168,17 @@ export function AnalyticsView({
                     onShowOnMap={onShowCity}
                   />
                 </section>
-                <section style={card}>
-                  <StatsSection
-                    title="Consistency"
-                    subtitle="Streaks and weekly averages"
-                    cards={cards}
-                    columns={statColumns}
-                  />
+                <section id="calendar" style={card} className="span-2">
+                  <SectionHeading title="Activity calendar" subtitle="Moving time per day" />
+                  <ActivityCalendar years={calendar} compact={mobile} />
                 </section>
-                <section style={card}>
-                  <SectionHeading title="Activity calendar" subtitle="Moving time per day (UTC)" />
-                  <ActivityCalendar years={calendar} />
-                </section>
-                <section style={card}>
+                <section id="climbing" style={card} className="span-2">
                   <SectionHeading
                     title="Climbing by month"
                     subtitle={
                       isolation
-                        ? `Click ${formatMonth(isolation.month)} again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}`
-                        : "Elevation gain per day, and total · click a month to show only it"
+                        ? `Showing ${formatMonth(isolation.month)} only. Click it again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}.`
+                        : "Elevation gain per day. Select a month to show only it."
                     }
                   />
                   {ridgeline && (
@@ -192,13 +186,15 @@ export function AnalyticsView({
                       ridgeline={ridgeline}
                       isolatedMonth={isolation?.month ?? null}
                       onPickMonth={onPickMonth}
+                      compact={mobile}
+                      theme={theme}
                     />
                   )}
                 </section>
-                <section style={card}>
+                <section id="profiles" style={card} className="span-2">
                   <SectionHeading
                     title="Elevation profiles"
-                    subtitle="Every activity's climb against distance, overlaid"
+                    subtitle="Every activity's climb from its start, against distance"
                   />
                   {profiles.status !== "ready" ? (
                     <p style={statusText}>
@@ -207,12 +203,12 @@ export function AnalyticsView({
                         : "Couldn't load elevation profiles."}
                     </p>
                   ) : chart && filter ? (
-                    <ElevationProfiles chart={chart} types={typeOrder} />
+                    <ElevationProfiles chart={chart} order={typeOrder} theme={theme} compact={mobile} />
                   ) : (
                     <p style={statusText}>No visible activity has an elevation profile.</p>
                   )}
                 </section>
-              </>
+              </div>
             )}
           </>
         )}
@@ -221,46 +217,22 @@ export function AnalyticsView({
   );
 }
 
-const page: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  // Over the map and its vignette, under the panels (20) and the header (30).
-  zIndex: 15,
-  overflowY: "auto",
-  boxSizing: "border-box",
-  background: "var(--bg)",
-  display: "grid",
-  alignContent: "start",
-  paddingTop: SIDE_PANEL_TOP,
-  paddingBottom: EDGE,
-  // Tracks the side panel's slide.
-  transition: "grid-template-columns .28s ease",
-};
-
 const heading: CSSProperties = {
   margin: 0,
-  fontSize: 22,
+  fontSize: FS["2xl"],
   fontWeight: 700,
-  letterSpacing: ".02em",
+  letterSpacing: "-.01em",
   color: "var(--text-strong)",
 };
 
-const card: CSSProperties = {
-  ...glass,
-  borderRadius: 16,
-  padding: CARD_PADDING,
-  marginTop: 18,
+const lede: CSSProperties = {
+  margin: "4px 0 0",
+  fontSize: FS.md,
+  color: "var(--text-muted)",
 };
 
 const statusText: CSSProperties = {
   margin: 0,
-  fontFamily: MONO,
-  fontSize: 11,
-  color: "var(--text-muted)",
-};
-
-const emptyText: CSSProperties = {
-  marginTop: 18,
-  fontSize: 13,
+  fontSize: FS.sm,
   color: "var(--text-muted)",
 };

@@ -1,5 +1,5 @@
 // The route profiles, as a load state: for the elevation profiles chart, and for the
-// map's Elevation color mode (grade along each route). Fetched once per session the
+// map's Grade color mode (grade along each route). Fetched once per session the
 // first time a component asks (the analytics page, or picking Elevation), so the map's
 // first load doesn't grow by them.
 

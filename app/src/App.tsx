@@ -9,7 +9,7 @@ import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
-import { AnalyticsView } from "./ui/AnalyticsView";
+import { AnalyticsView, ANALYTICS_SECTIONS } from "./ui/AnalyticsView";
 import { useView } from "./ui/useView";
 import {
   createActivityFilter,
@@ -29,7 +29,7 @@ import type {
   Theme,
 } from "./types";
 import { joinActivities } from "./tracks";
-import { formatDate, formatMonth, activityLinks } from "./format";
+import { formatDate, formatMonthShort, activityLinks, type ActivityLink } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
@@ -39,6 +39,9 @@ import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
 import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
+import { chromeInsets } from "./ui/layout";
+import { FS, primaryButton } from "./ui/theme";
+import { ArrowRightIcon } from "./ui/icons";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
 import { cityComparisons } from "./cityMatch";
@@ -78,6 +81,11 @@ export default function App() {
   // Map or analytics page. The map stays mounted underneath analytics, so switching back
   // keeps its camera and selection.
   const [view, setView] = useView();
+
+  // index.css keys the panel material off the page: see-through glass on the map only.
+  useEffect(() => {
+    document.documentElement.dataset.view = view;
+  }, [view]);
 
   // Panel collapse state. A resize across the narrow breakpoint overrides manual toggles.
   const panels = useCollapsiblePanels();
@@ -130,17 +138,20 @@ export default function App() {
   );
   const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
-  // Color scale domain from the visible set, so recency/speed ramps
-  // span what's actually shown. Type→color stays keyed to the full type list
-  // (availableTypes) so a type doesn't change color as others are toggled off.
+  // Color scale domain from the visible set, so the recency and speed ramps span what's
+  // actually shown. Type colors are fixed per type (colors.ts), so a type never changes
+  // color as others are toggled off.
   const colorDomain = useMemo(
-    () => ({ ...computeDomain(visibleOnMap), types: [...(filter?.availableTypes ?? [])] }),
+    () => ({
+      ...computeDomain(visibleOnMap),
+      types: [...(filter?.availableTypes ?? [])],
+    }),
     [visibleOnMap, filter?.availableTypes],
   );
 
-  // The Elevation color mode colors routes by grade, from the route profiles: fetched the
+  // The Grade color mode colors routes by grade, from the route profiles: fetched the
   // first time it is picked, then split into grade runs once per data load.
-  const profiles = useRouteProfiles(colorMode === "elevation");
+  const profiles = useRouteProfiles(colorMode === "grade");
   const grade = useMemo(
     () => (data && profiles.status === "ready" ? gradeRoutes(data, profiles.file) : null),
     [data, profiles],
@@ -189,6 +200,10 @@ export default function App() {
   const selectActivity = (id: string) => {
     setSelectedId(id);
     setCityProfile(null);
+    // On desktop show the activity's stats; the phone's sheet stays at its peek, so the
+    // route keeps the screen until the user pulls the sheet up.
+    if (!panels.mobile) panels.expandBottom();
+    else panels.closeSide();
   };
   // A click on empty map clears both.
   const deselect = () => {
@@ -245,7 +260,6 @@ export default function App() {
     setProgress(0);
     setReplaying(true);
     setReplayEpoch((n) => n + 1);
-    panels.expandBottom(); // reveal the transport if the user had it collapsed
     // Playback starts from onReplayReady once MapView's fit-to-cluster fly-to lands, so
     // routes don't draw during the camera pan. (It always plays — an explicitly-requested
     // animation runs even under prefers-reduced-motion, like the selected-track fly-to.)
@@ -287,6 +301,47 @@ export default function App() {
     if (replaying && timeline.length === 0) exitReplay();
   }, [replaying, timeline.length]);
 
+  // Esc backs out one step: the phone's filters overlay, then replay, then a selection
+  // or a shown city route.
+  const escRef = useRef<() => void>(() => {});
+  escRef.current = () => {
+    if (panels.mobile && !panels.sideCollapsed) panels.closeSide();
+    else if (replaying) exitReplay();
+    else if (selectedId != null || cityProfile != null) deselect();
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      escRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // The screen edges the panels cover, so the map frames routes in the free area: the
+  // filters panel on the left and the detail panel on the right (desktop), and whatever
+  // sits on the bottom edge, measured (the phone's sheet, or the replay bar).
+  const [bottomPanelH, setBottomPanelH] = useState(0);
+  const insets = useMemo(
+    () =>
+      chromeInsets({
+        mobile: panels.mobile,
+        sideOpen: !panels.sideCollapsed,
+        detailOpen: !replaying && !panels.bottomCollapsed,
+        bottomPanel: bottomPanelH,
+      }),
+    [panels.mobile, panels.sideCollapsed, panels.bottomCollapsed, replaying, bottomPanelH],
+  );
+
+  // The drawing activity, for the replay transport's readout.
+  const namesById = useMemo(
+    () => new Map((data?.features ?? []).map((f) => [f.properties.id, f.properties.name])),
+    [data],
+  );
+  const replayCurrent = replayFrame
+    ? { ts: replayFrame.ts, index: replayFrame.index, name: namesById.get(replayFrame.id) ?? "" }
+    : null;
+
   const selectedFeature = useMemo(
     () =>
       selectedId == null || !data
@@ -317,11 +372,7 @@ export default function App() {
 
   const panelBody = useMemo(() => {
     if (!selectedFeature) {
-      return shownCity ? (
-        <button type="button" style={hideRouteButton} onClick={() => setCityProfile(null)}>
-          Hide route
-        </button>
-      ) : undefined;
+      return undefined;
     }
     if (selectedDetail && profile) {
       return (
@@ -342,13 +393,13 @@ export default function App() {
     title: string;
     subtitle: string;
     cards: StatCard[];
-    links: { url: string; label: string }[];
+    links: ActivityLink[];
   }>(() => {
     if (selectedFeature) {
       const p = selectedFeature.properties;
       return {
         title: p.name,
-        subtitle: `${p.type} · ${formatDate(p.ts)}`,
+        subtitle: `${p.type} on ${formatDate(p.ts)}`,
         cards: activityCards(selectedFeature),
         links: activityLinks(p.sources),
       };
@@ -363,17 +414,144 @@ export default function App() {
       };
     }
     return {
-      title: "All Activities",
-      subtitle: filter ? `${formatMonth(filter.fromMonth)} — ${formatMonth(filter.toMonth)}` : "",
+      title: "All activities",
+      subtitle: filter ? `${formatMonthShort(filter.fromMonth)} – ${formatMonthShort(filter.toMonth)}` : "",
       cards: totalCards(visible),
       links: [],
     };
   }, [selectedFeature, shownCity, cities, visible, filter?.fromMonth, filter?.toMonth]);
 
+  // Nothing passes the filter: say so, and offer the way back.
+  const resetFilter = () => {
+    if (!filter) return;
+    setFilter(createActivityFilter(filter.activities));
+    setIsolation(null);
+  };
+  const emptyNotice =
+    filter && visible.length === 0 && !selectedFeature && !shownCity ? (
+      <div style={{ padding: "4px 0 2px" }}>
+        <p style={{ margin: "0 0 12px", fontSize: FS.sm + 0.5, lineHeight: 1.5, color: "var(--text-soft)" }}>
+          No activities match these filters. Switch on an activity type or widen the date range.
+        </p>
+        <button type="button" className="ctl-accent" style={primaryButton} onClick={resetFilter}>
+          Reset filters
+        </button>
+      </div>
+    ) : undefined;
+
   return (
     <div style={{ position: "absolute", inset: 0, background: "var(--bg)" }}>
+      {/* DOM order is the tab order: header, filters, page content, then the map. */}
+      <Header
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        view={view}
+        onViewChange={setView}
+        filtersOpen={filter ? !panels.sideCollapsed : undefined}
+        onToggleFilters={filter ? panels.toggleSide : undefined}
+      />
+
+      {filter && panels.mobile && !panels.sideCollapsed && (
+        // Tapping outside the phone's filters overlay closes it.
+        <div
+          aria-hidden="true"
+          onClick={panels.closeSide}
+          style={{ position: "absolute", inset: 0, zIndex: 24, background: "var(--scrim)" }}
+        />
+      )}
+
+      {filter && (
+        <SidePanel
+          filter={filter}
+          onFilterChange={setFilter}
+          shownCount={visible.length}
+          colorMode={colorMode}
+          colorDomain={colorDomain}
+          onColorModeChange={setColorMode}
+          theme={theme}
+          onStartReplay={() => {
+            if (panels.mobile) panels.closeSide();
+            startReplay();
+          }}
+          canReplay={timeline.length > 0}
+          showMapControls={view === "map"}
+          sections={view === "analytics" && visible.length > 0 ? ANALYTICS_SECTIONS : undefined}
+          collapsed={panels.sideCollapsed}
+          onToggle={panels.toggleSide}
+          mobile={panels.mobile}
+        />
+      )}
+
+      {view === "analytics" && (
+        <AnalyticsView
+          filter={filter}
+          visible={visible}
+          sidePanelExpanded={!panels.sideCollapsed}
+          mobile={panels.mobile}
+          isolation={filter && activeIsolation(filter, isolation)}
+          onPickMonth={pickMonth}
+          cities={cities}
+          comparisons={comparisons}
+          onShowCity={showCity}
+          onResetFilter={resetFilter}
+          theme={theme}
+        />
+      )}
+
+      {filter &&
+        view === "map" &&
+        (replaying ? (
+          <ReplayBar
+            playing={playing}
+            progress={progress}
+            current={replayCurrent}
+            total={timeline.length}
+            speed={speed}
+            atEnd={atEnd}
+            onPlayPause={togglePlay}
+            onSeek={seek}
+            onSpeed={setSpeed}
+            onExit={exitReplay}
+            mobile={panels.mobile}
+            onHeight={setBottomPanelH}
+          />
+        ) : (
+          <InfoPanel
+            title={emptyNotice ? "Nothing to show" : title}
+            titleNode={
+              !selectedFeature && shownCity && cities.status === "ready" ? (
+                <RouteTitle from={cities.data.origin.name} to={shownCity.pick.city.name} />
+              ) : undefined
+            }
+            onClose={selectedFeature || shownCity ? deselect : undefined}
+            closeLabel={selectedFeature ? "Back to all activities" : "Hide route"}
+            subtitle={subtitle}
+            cards={cards}
+            links={links}
+            body={panelBody}
+            notice={emptyNotice}
+            collapsed={panels.bottomCollapsed}
+            onToggle={panels.toggleBottom}
+            mobile={panels.mobile}
+            onHeight={panels.mobile ? setBottomPanelH : undefined}
+          />
+        ))}
+
+      {!filter && !error && (
+        <div role="status" style={{ ...chip, top: "50%", transform: "translate(-50%, -50%)" }}>
+          <span className="pulse-dot" style={pulseDot} />
+          Loading activities…
+        </div>
+      )}
+
+      {error && (
+        <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
+          Couldn't load activities: {error}
+        </div>
+      )}
+
       {/* inert while covered, so keyboard focus can't land on the hidden map. */}
-      <div inert={view !== "map"} style={{ position: "absolute", inset: 0 }}>
+      <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <MapView
           theme={theme}
           data={data}
@@ -391,7 +569,7 @@ export default function App() {
           replayFrame={replayFrame}
           replayEpoch={replayEpoch}
           onReplayReady={onReplayReady}
-          sidePanelExpanded={!panels.sideCollapsed}
+          insets={insets}
           cursorPoint={cursorPoint}
           selectedDetail={selectedDetail}
           onCursor={setCursor}
@@ -412,111 +590,54 @@ export default function App() {
           transition: "box-shadow .35s ease, background .35s ease",
         }}
       />
-
-      {view === "analytics" && (
-        <AnalyticsView
-          filter={filter}
-          visible={visible}
-          sidePanelExpanded={!panels.sideCollapsed}
-          isolation={filter && activeIsolation(filter, isolation)}
-          onPickMonth={pickMonth}
-          cities={cities}
-          comparisons={comparisons}
-          onShowCity={showCity}
-        />
-      )}
-
-      <Header theme={theme} onToggleTheme={toggleTheme} view={view} onViewChange={setView} />
-
-      {filter && (
-        <>
-          <SidePanel
-            filter={filter}
-            onFilterChange={setFilter}
-            colorMode={colorMode}
-            colorDomain={colorDomain}
-            onColorModeChange={setColorMode}
-            onStartReplay={startReplay}
-            canReplay={timeline.length > 0}
-            showMapControls={view === "map"}
-            collapsed={panels.sideCollapsed}
-            onToggle={panels.toggleSide}
-          />
-          {view === "map" &&
-            (replaying ? (
-              <ReplayBar
-                playing={playing}
-                progress={progress}
-                dateTs={replayFrame?.ts ?? null}
-                speed={speed}
-                atEnd={atEnd}
-                onPlayPause={togglePlay}
-                onSeek={seek}
-                onSpeed={setSpeed}
-                onExit={exitReplay}
-                collapsed={panels.bottomCollapsed}
-                onToggle={panels.toggleBottom}
-              />
-            ) : (
-              <InfoPanel
-                title={title}
-                subtitle={subtitle}
-                cards={cards}
-                links={links}
-                body={panelBody}
-                compactCards={profile != null}
-                collapsed={panels.bottomCollapsed}
-                onToggle={panels.toggleBottom}
-              />
-            ))}
-        </>
-      )}
-
-      {error && (
-        <div
-          style={{
-            position: "absolute",
-            top: 70,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 50,
-            color: "var(--accent-text)",
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 12,
-            background: "var(--panel-bg)",
-            border: "1px solid var(--panel-border)",
-            backdropFilter: "var(--panel-blur)",
-            WebkitBackdropFilter: "var(--panel-blur)",
-            padding: "8px 14px",
-            borderRadius: 10,
-          }}
-        >
-          Failed to load activities: {error}
-        </div>
-      )}
     </div>
   );
 }
 
-// The muted line in place of charts (loading, failed, or no samples).
-const statusLine: CSSProperties = {
-  margin: "12px 0 0",
-  fontFamily: "'JetBrains Mono', monospace",
-  fontSize: 11,
-  color: "var(--text-muted)",
+/** "Ljubljana → Dnipro", with the same arrow the analytics page uses. */
+function RouteTitle({ from, to }: { from: string; to: string }) {
+  return (
+    <>
+      {from}{" "}
+      <span style={{ color: "var(--accent-text)", display: "inline-flex", verticalAlign: "-2px" }} aria-label="to">
+        <ArrowRightIcon size={15} />
+      </span>{" "}
+      {to}
+    </>
+  );
+}
+
+// A small floating status chip (loading, load error).
+const chip: CSSProperties = {
+  position: "absolute",
+  left: "50%",
+  transform: "translateX(-50%)",
+  zIndex: 50,
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "10px 16px",
+  borderRadius: 999,
+  fontSize: FS.sm + 0.5,
+  fontWeight: 500,
+  color: "var(--text)",
+  background: "var(--panel-bg)",
+  border: "1px solid var(--panel-border)",
+  boxShadow: "var(--panel-shadow)",
+  backdropFilter: "var(--panel-blur)",
+  WebkitBackdropFilter: "var(--panel-blur)",
 };
 
-// Takes the city route off the map, back to the totals.
-const hideRouteButton: CSSProperties = {
-  appearance: "none",
-  cursor: "pointer",
-  marginTop: 12,
-  padding: "7px 12px",
-  borderRadius: 8,
-  border: "1px solid var(--control-border)",
-  background: "transparent",
-  color: "var(--text-soft)",
-  fontSize: 12,
-  fontWeight: 600,
-  letterSpacing: ".02em",
+const pulseDot: CSSProperties = {
+  width: 8,
+  height: 8,
+  borderRadius: "50%",
+  background: "var(--accent)",
+};
+
+// The muted line in place of charts (loading, failed, or no samples).
+const statusLine: CSSProperties = {
+  margin: "14px 0 0",
+  fontSize: FS.sm,
+  color: "var(--text-muted)",
 };

@@ -2,14 +2,14 @@
 
 import { describe, expect, test } from "vitest";
 import { forcedCollapse } from "./useCollapsiblePanels";
-import { BOTH_PANELS_MIN_WIDTH } from "./layout";
+import { BOTH_PANELS_MIN_WIDTH, DETAIL_PANEL_CLEARANCE, MIN_MAP_WIDTH, SIDE_PANEL_CLEARANCE } from "./layout";
 
 describe("forcedCollapse", () => {
-  test("narrow collapses both panels", () => {
+  test("a phone closes the filters overlay and leaves the sheet at its peek", () => {
     expect(forcedCollapse(true, false)).toEqual({ side: true, bottom: true });
   });
 
-  test("too narrow for both collapses only the side panel", () => {
+  test("too narrow for both docked panels hides only the filters", () => {
     expect(forcedCollapse(false, false)).toEqual({ side: true, bottom: false });
   });
 
@@ -19,7 +19,8 @@ describe("forcedCollapse", () => {
 });
 
 describe("BOTH_PANELS_MIN_WIDTH", () => {
-  test("is the smallest width where the centered bottom panel clears the side panel", () => {
-    expect(BOTH_PANELS_MIN_WIDTH).toBe(1216);
+  test("leaves a usable map column between the two docked panels", () => {
+    expect(BOTH_PANELS_MIN_WIDTH).toBe(SIDE_PANEL_CLEARANCE + DETAIL_PANEL_CLEARANCE + MIN_MAP_WIDTH);
+    expect(BOTH_PANELS_MIN_WIDTH).toBeLessThanOrEqual(1280);
   });
 });

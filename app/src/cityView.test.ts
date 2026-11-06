@@ -74,11 +74,11 @@ describe("comparison text", () => {
   test("the map panel's cards", () => {
     const cards = cityCards(comparison(), origin);
     expect(cards.map((c) => [c.label, c.value])).toEqual([
-      ["Route km", "2,818"],
-      ["Rides km", "2,704"],
+      ["Route", "2,818"],
+      ["Rides total", "2,704"],
       ["Of the way", "96%"],
       // Ljubljana → Lisbon is ~2,010 km as the crow flies.
-      ["Straight km", expect.stringMatching(/^2,0\d\d$/)],
+      ["As the crow flies", expect.stringMatching(/^2,0\d\d$/)],
     ]);
     expect(cards[0].accent).toBe(true);
   });

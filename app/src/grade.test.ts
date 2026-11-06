@@ -14,9 +14,9 @@ import { lineColorExpression } from "./colors";
 import { activity } from "./testFixtures";
 import type { ActivityFeature, ActivityRecord } from "./types";
 
-const DARK_BLUE = "#1e3a8a";
-const GREEN = "#3ecf6e";
-const DARK_RED = "#8b0a0a";
+const DARK_BLUE = "#1d4a9e";
+const FLAT = "#8c919c"; // the neutral flat grey
+const DARK_RED = "#a3150c";
 
 /** Degrees of latitude per metre on the sphere grade.ts measures on. */
 const DEG_PER_M = 180 / (Math.PI * 6371008.8);
@@ -121,13 +121,13 @@ describe("gradeColor", () => {
     expect(gradeColor(99)).toBe(DARK_RED);
   });
 
-  test("only near-flat is pure green; climbs pass through orange", () => {
-    expect(gradeColor(-1)).toBe(GREEN);
-    expect(gradeColor(0)).toBe(GREEN);
-    expect(gradeColor(1)).toBe(GREEN);
-    expect(gradeColor(1.5)).not.toBe(GREEN);
-    expect(gradeColor(-1.5)).not.toBe(GREEN);
-    expect(gradeColor(7.5)).toBe("#ff8738"); // halfway yellow -> red
+  test("only near-flat is the neutral grey; climbs pass through orange", () => {
+    expect(gradeColor(-1)).toBe(FLAT);
+    expect(gradeColor(0)).toBe(FLAT);
+    expect(gradeColor(1)).toBe(FLAT);
+    expect(gradeColor(1.5)).not.toBe(FLAT);
+    expect(gradeColor(-1.5)).not.toBe(FLAT);
+    expect(gradeColor(7.5)).toBe("#fa7e38"); // halfway amber -> red-orange
   });
 });
 
@@ -138,7 +138,7 @@ describe("lineGradient", () => {
       { from: 0.4, grade: 0 },
       { from: 0.7, grade: -15 },
     ]) as unknown[];
-    expect(expr).toEqual(["step", ["line-progress"], DARK_RED, 0.4, GREEN, 0.7, DARK_BLUE]);
+    expect(expr).toEqual(["step", ["line-progress"], DARK_RED, 0.4, FLAT, 0.7, DARK_BLUE]);
   });
 
   test("a one-run route is a single color over the whole line", () => {
@@ -147,9 +147,9 @@ describe("lineGradient", () => {
       ["linear"],
       ["line-progress"],
       0,
-      GREEN,
+      FLAT,
       1,
-      GREEN,
+      FLAT,
     ]);
   });
 });
@@ -167,7 +167,7 @@ describe("as Mapbox reads them", () => {
 
   test("the line-gradients and the grade line-color are valid paint values", () => {
     const domain = { tsMin: 0, tsMax: 1, speedMin: 0, speedMax: 1, types: [] };
-    expect(errors({ "line-color": lineColorExpression("elevation", domain) })).toEqual([]);
+    expect(errors({ "line-color": lineColorExpression("grade", domain) })).toEqual([]);
     expect(errors({ "line-gradient": lineGradient([{ from: 0, grade: 3 }, { from: 0.3, grade: -6 }]) })).toEqual([]);
     expect(errors({ "line-gradient": lineGradient([{ from: 0, grade: 3 }]) })).toEqual([]);
   });

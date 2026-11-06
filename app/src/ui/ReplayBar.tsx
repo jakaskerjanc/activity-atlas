@@ -1,133 +1,117 @@
-// Bottom-center transport for chronological replay: play/pause, a scrubbable
-// progress track, the running date readout, and speed. Takes InfoPanel's slot
-// while replay is active.
+// The replay transport: play/pause, a scrubbable progress track, which activity is
+// drawing (its date, name, and place in the run), and speed. Bottom-center on desktop,
+// a bottom sheet on a phone. Takes the detail panel's place while replay is active.
 
 import type { CSSProperties } from "react";
-import { MONO, eyebrow } from "./theme";
 import { GlassPanel } from "./GlassPanel";
-import { BOTTOM_PANEL_INSET_X, BOTTOM_PANEL_WIDTH } from "./layout";
-import { formatMonth, monthIndex } from "../format";
+import { FS, MONO, pillStyle, secondaryButton } from "./theme";
+import { CloseIcon, PauseIcon, PlayIcon, RestartIcon } from "./icons";
+import { PANEL_BOTTOM, REPLAY_BAR_WIDTH, SHEET_MAX_WIDTH } from "./layout";
+import { formatDate } from "../format";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
 interface Props {
   playing: boolean;
   progress: number; // 0..1
-  /** epoch seconds of the drawing route, or null before the first frame. */
-  dateTs: number | null;
+  /** The activity drawing now, or null before the first frame. */
+  current: { ts: number; name: string; index: number } | null;
+  /** How many activities the replay draws. */
+  total: number;
   speed: number;
   atEnd: boolean;
   onPlayPause: () => void;
   onSeek: (progress: number) => void;
   onSpeed: (speed: number) => void;
   onExit: () => void;
-  /** Collapsed off the bottom edge, leaving its title strip visible to click. */
-  collapsed: boolean;
-  onToggle: () => void;
+  /** The phone layout: a bottom sheet. */
+  mobile?: boolean;
+  /** Reports the bar's height, so a fitted map stays clear of it. */
+  onHeight?: (height: number) => void;
 }
 
 export function ReplayBar(p: Props) {
+  const placement: CSSProperties = p.mobile
+    ? { left: 0, right: 0, bottom: 0, margin: "0 auto", maxWidth: SHEET_MAX_WIDTH }
+    : {
+        bottom: PANEL_BOTTOM,
+        left: "50%",
+        width: REPLAY_BAR_WIDTH,
+        maxWidth: "calc(100% - 40px)",
+        transform: "translateX(-50%)",
+      };
+  const n = p.current ? p.current.index + 1 : 0;
+  const pct = `${(p.progress * 100).toFixed(2)}%`;
   return (
     <GlassPanel
-      anchor={{ bottom: 24, centerX: true }}
-      width={BOTTOM_PANEL_WIDTH}
-      maxWidth="calc(100vw - 84px)"
-      // >= the play button's 16px accent glow, which the glass would otherwise clip.
-      insetX={BOTTOM_PANEL_INSET_X}
-      insetY={18}
-      gap={12}
-      collapsed={p.collapsed}
-      onToggleCollapse={p.onToggle}
-      collapseEdge="bottom"
-      collapseLabel="replay controls"
+      label="Replay"
+      placement={placement}
+      className={p.mobile ? "panel--sheet" : undefined}
+      onHeight={p.onHeight}
+      padding="16px 18px 16px"
     >
       <div style={topRow}>
-        <span style={eyebrow}>Replay</span>
-        <span style={dateStyle}>
-          {p.dateTs == null ? "—" : formatMonth(monthIndex(p.dateTs))}
-        </span>
-      </div>
-
-      <div style={controlRow}>
         <button
+          type="button"
+          className="ctl-accent"
           onClick={p.onPlayPause}
-          aria-label={p.playing ? "Pause" : p.atEnd ? "Restart" : "Play"}
+          aria-label={p.playing ? "Pause" : p.atEnd ? "Replay again" : "Play"}
+          title={p.playing ? "Pause" : p.atEnd ? "Replay again" : "Play"}
           style={playBtn}
         >
-          <TransportIcon playing={p.playing} atEnd={p.atEnd} />
+          {p.playing ? <PauseIcon size={16} /> : p.atEnd ? <RestartIcon size={16} /> : <PlayIcon size={16} />}
         </button>
-        <input
-          type="range"
-          min={0}
-          max={1000}
-          step={1}
-          value={Math.round(p.progress * 1000)}
-          onChange={(e) => p.onSeek(+e.target.value / 1000)}
-          style={{ flex: 1 }}
-          aria-label="Replay progress"
-        />
+        <div style={{ flex: 1, minWidth: 0 }} aria-live="off">
+          <div style={dateStyle}>{p.current ? formatDate(p.current.ts) : "Starting…"}</div>
+          <div style={nameStyle}>{p.current?.name ?? "Framing your activities"}</div>
+        </div>
+        <div style={countStyle} aria-label={`${n} of ${p.total} activities drawn`}>
+          <span style={{ color: "var(--text-strong)" }}>{n.toLocaleString("en-US")}</span>
+          <span style={{ color: "var(--text-muted)" }}> / {p.total.toLocaleString("en-US")}</span>
+        </div>
       </div>
 
+      <input
+        type="range"
+        className="range-scrub"
+        min={0}
+        max={1000}
+        step={1}
+        value={Math.round(p.progress * 1000)}
+        onChange={(e) => p.onSeek(+e.target.value / 1000)}
+        aria-label="Replay progress"
+        aria-valuetext={p.current ? `${formatDate(p.current.ts)}, ${n} of ${p.total}` : undefined}
+        style={{ display: "block", margin: "16px 0", ["--played" as string]: pct }}
+      />
+
       <div style={footRow}>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div role="group" aria-label="Replay speed" style={{ display: "flex", gap: 6 }}>
           {SPEEDS.map((s) => (
-            <button key={s} onClick={() => p.onSpeed(s)} style={pillStyle(s === p.speed)}>
+            <button
+              key={s}
+              type="button"
+              className={s === p.speed ? undefined : "ctl"}
+              aria-pressed={s === p.speed}
+              onClick={() => p.onSpeed(s)}
+              style={pillStyle(s === p.speed)}
+            >
               {s}×
             </button>
           ))}
         </div>
-        <button onClick={p.onExit} style={exitBtn}>
-          Exit
+        <button type="button" className="ctl" onClick={p.onExit} style={secondaryButton}>
+          <CloseIcon size={14} />
+          Exit replay
         </button>
       </div>
     </GlassPanel>
   );
 }
 
-// Transport glyphs as paths on a 24px grid. Text glyphs (▶/❚❚/↻) carried the font's
-// own side bearings and baseline, so they never sat centered in the circle; these are
-// optically centered and inherit the button's color via currentColor.
-function TransportIcon({ playing, atEnd }: { playing: boolean; atEnd: boolean }) {
-  if (playing) {
-    return (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z" />
-      </svg>
-    );
-  }
-  if (atEnd) {
-    return (
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-      </svg>
-    );
-  }
-  // The triangle's mass sits right of its box center, which reads as centered in a circle.
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M8 5v14l11-7z" />
-    </svg>
-  );
-}
-
 const topRow: CSSProperties = {
   display: "flex",
-  alignItems: "baseline",
-  justifyContent: "space-between",
-};
-
-const dateStyle: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 15,
-  fontWeight: 600,
-  color: "var(--accent-text)",
-  letterSpacing: ".02em",
-};
-
-const controlRow: CSSProperties = {
-  display: "flex",
   alignItems: "center",
-  gap: 14,
+  gap: 12,
 };
 
 const playBtn: CSSProperties = {
@@ -135,49 +119,43 @@ const playBtn: CSSProperties = {
   border: "none",
   cursor: "pointer",
   flex: "0 0 auto",
-  width: 38,
-  height: 38,
+  width: 42,
+  height: 42,
   borderRadius: "50%",
   background: "var(--accent)",
-  color: "#fff",
-  fontSize: 13,
-  lineHeight: 1,
+  color: "var(--accent-ink)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  boxShadow: "0 0 16px var(--accent)",
+  boxShadow: "0 0 18px rgba(255, 107, 61, 0.45)",
+};
+
+const dateStyle: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: FS.md + 1,
+  fontWeight: 600,
+  color: "var(--text-strong)",
+  whiteSpace: "nowrap",
+};
+
+const nameStyle: CSSProperties = {
+  marginTop: 2,
+  fontSize: FS.sm,
+  color: "var(--text-muted)",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const countStyle: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: FS.sm,
+  whiteSpace: "nowrap",
 };
 
 const footRow: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-};
-
-function pillStyle(on: boolean): CSSProperties {
-  return {
-    appearance: "none",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--control-border)",
-    cursor: "pointer",
-    padding: "4px 9px",
-    borderRadius: 8,
-    background: on ? "var(--accent-tint)" : "transparent",
-    color: on ? "var(--pill-on-text)" : "var(--text-muted)",
-    fontFamily: MONO,
-    fontSize: 11,
-    fontWeight: 500,
-    transition: "background .15s, border-color .15s",
-  };
-}
-
-const exitBtn: CSSProperties = {
-  appearance: "none",
-  border: "1px solid var(--control-border)",
-  cursor: "pointer",
-  padding: "4px 12px",
-  borderRadius: 8,
-  background: "transparent",
-  color: "var(--text-soft)",
-  fontSize: 12,
-  fontWeight: 500,
+  gap: 8,
 };

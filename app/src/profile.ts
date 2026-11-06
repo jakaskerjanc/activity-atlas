@@ -6,7 +6,7 @@
 import type { DetailFile } from "./types";
 import { formatClock, formatKm, formatMeters, formatPace, isFootBased } from "./format";
 
-export type ChartKind = "elevation" | "hr" | "pace" | "speed";
+export type ChartKind = "elevation" | "hr" | "pace" | "speed" | "cadence";
 
 type Series = (number | null)[];
 
@@ -107,6 +107,9 @@ export function buildProfile(detail: DetailFile, type: string): Profile | null {
     const c = isFootBased(type) ? paceChart(detail.speed) : speedChart(detail.speed);
     if (c) charts.push(c);
   }
+  // Cadence of 0 is a coasting/standing sample, not a rhythm: left out of the domain.
+  const cad = detail.cad?.map((v) => (v != null && v > 0 ? v : null));
+  if (cad && present(cad).length) charts.push(chart("cadence", cad, span(present(cad), 10)));
   if (charts.length === 0) return null;
 
   if (detail.d) {
@@ -225,6 +228,39 @@ export function nearestIndex(x: number[], target: number): number {
 
 const fmt = (v: number | null | undefined, f: (n: number) => string) => (v == null ? DASH : f(v));
 
+const mean = (s: Series | undefined) => {
+  const p = s ? present(s) : [];
+  return p.length ? p.reduce((a, b) => a + b, 0) / p.length : null;
+};
+
+/**
+ * The readout at rest (no cursor): the whole activity, in the same chips and order as
+ * the cursor readout, so hovering only swaps the values. Distance and time are totals,
+ * altitude the high point, the rest averages over the samples that have them.
+ */
+export function summaryReadout(
+  detail: DetailFile,
+  profile: Profile,
+  type: string,
+): { label: string; value: string }[] {
+  const series = (kind: ChartKind) => profile.charts.find((c) => c.kind === kind)?.values;
+  const out: { label: string; value: string }[] = [];
+  const lastD = detail.d ? present(detail.d).at(-1) : undefined;
+  if (detail.d) out.push({ label: "km", value: fmt(lastD, (m) => formatKm(m, 2)) });
+  out.push({ label: "time", value: formatClock(detail.t[detail.t.length - 1] ?? 0) });
+  if (detail.alt) {
+    const p = present(detail.alt);
+    out.push({ label: "m high", value: p.length ? formatMeters(Math.max(...p)) : DASH });
+  }
+  if (detail.hr) out.push({ label: "bpm avg", value: fmt(mean(detail.hr), (v) => String(Math.round(v))) });
+  if (profile.charts.some((c) => c.kind === "pace")) out.push({ label: "/km avg", value: fmt(mean(series("pace")), formatPace) });
+  if (profile.charts.some((c) => c.kind === "speed")) out.push({ label: "km/h avg", value: fmt(mean(series("speed")), (v) => v.toFixed(1)) });
+  if (series("cadence")) {
+    out.push({ label: `${isFootBased(type) ? "spm" : "rpm"} avg`, value: fmt(mean(series("cadence")), (v) => String(Math.round(v))) });
+  }
+  return out;
+}
+
 /** Values at sample `i`: distance, time, then each channel the activity has. */
 export function readout(
   detail: DetailFile,
@@ -242,8 +278,8 @@ export function readout(
   const speed = profile.charts.some((c) => c.kind === "speed");
   if (pace) out.push({ label: "/km", value: fmt(series("pace"), formatPace) });
   if (speed) out.push({ label: "km/h", value: fmt(series("speed"), (v) => v.toFixed(1)) });
-  if (detail.cad) {
-    out.push({ label: isFootBased(type) ? "spm" : "rpm", value: fmt(detail.cad[i], (v) => String(Math.round(v))) });
+  if (profile.charts.some((c) => c.kind === "cadence")) {
+    out.push({ label: isFootBased(type) ? "spm" : "rpm", value: fmt(series("cadence"), (v) => String(Math.round(v))) });
   }
   return out;
 }

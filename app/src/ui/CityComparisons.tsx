@@ -13,7 +13,8 @@ import {
 } from "../cityView";
 import type { Profile } from "../types";
 import type { CitiesState } from "./useCities";
-import { MONO } from "./theme";
+import { FS, R } from "./theme";
+import { ArrowRightIcon, MapIcon } from "./icons";
 
 interface Props {
   cities: CitiesState;
@@ -48,17 +49,23 @@ export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
               </div>
               <div style={headline} title={title}>
                 {lead && <span style={leadText}>{lead} </span>}
-                {origin.name} <span style={arrow}>→</span> {c.pick.city.name}
+                {origin.name}{" "}
+                <span style={arrow} aria-label="to">
+                  <ArrowRightIcon size={17} />
+                </span>{" "}
+                {c.pick.city.name}
               </div>
               <div style={detail}>{comparisonDetail(c)}</div>
             </div>
             <button
               type="button"
+              className="ctl-accent"
               style={showButton}
               onClick={() => onShowOnMap(c.profile)}
               aria-label={`Show ${title} ${PROFILE_TEXT[c.profile].by} on the map`}
             >
-              Show on map →
+              <MapIcon size={14} />
+              Show on map
             </button>
           </div>
         );
@@ -69,8 +76,7 @@ export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
 
 const statusText: CSSProperties = {
   margin: 0,
-  fontFamily: MONO,
-  fontSize: 11,
+  fontSize: FS.sm,
   color: "var(--text-muted)",
 };
 
@@ -79,7 +85,8 @@ const rows: CSSProperties = {
   display: "grid",
   gap: 1,
   background: "var(--card-grid)",
-  borderRadius: 10,
+  border: "1px solid var(--card-grid)",
+  borderRadius: R.md,
   overflow: "hidden",
 };
 
@@ -88,22 +95,21 @@ const row: CSSProperties = {
   flexWrap: "wrap",
   alignItems: "center",
   gap: "10px 16px",
-  background: "var(--card-bg)",
-  padding: "12px 14px",
+  background: "var(--bg-raised)",
+  padding: "14px 16px",
 };
 
 const groupLine: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 10,
-  letterSpacing: ".14em",
-  textTransform: "uppercase",
+  fontSize: FS.sm,
+  fontWeight: 500,
   color: "var(--text-muted)",
 };
 
 const headline: CSSProperties = {
   marginTop: 4,
-  fontSize: 19,
+  fontSize: 20,
   fontWeight: 650,
+  letterSpacing: "-.01em",
   color: "var(--text-strong)",
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -112,12 +118,12 @@ const headline: CSSProperties = {
 
 const leadText: CSSProperties = { fontWeight: 500, color: "var(--text-soft)" };
 
-const arrow: CSSProperties = { color: "var(--accent-text)" };
+const arrow: CSSProperties = { color: "var(--accent-text)", display: "inline-flex", verticalAlign: "-2px" };
 
 const detail: CSSProperties = {
   marginTop: 4,
-  fontFamily: MONO,
-  fontSize: 11,
+  fontSize: FS.sm,
+  fontVariantNumeric: "tabular-nums",
   color: "var(--text-soft)",
 };
 
@@ -125,13 +131,17 @@ const showButton: CSSProperties = {
   appearance: "none",
   cursor: "pointer",
   flex: "0 0 auto",
-  padding: "7px 12px",
-  borderRadius: 8,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  height: 34,
+  padding: "0 14px",
+  borderRadius: R.sm,
   border: "1px solid var(--accent)",
   background: "var(--accent-tint)",
   color: "var(--pill-on-text)",
-  fontSize: 12,
+  fontFamily: "inherit",
+  fontSize: FS.sm,
   fontWeight: 600,
-  letterSpacing: ".02em",
   whiteSpace: "nowrap",
 };
