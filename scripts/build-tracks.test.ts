@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readDisplayFiles, writeDisplayFiles } from "./build-tracks.ts";
+import { fileURLToPath } from "node:url";
+import { readDisplayFiles, writeDisplayFiles, defaultDbPath } from "./build-tracks.ts";
 import { addActivity, addSource, addStreams, withDb } from "./testDb.ts";
 
 test("routes keyed by id for visible routed activities", () => {
@@ -214,4 +215,32 @@ test("a NULL name falls back to the type", () => {
       assert.equal(a.name, "Hike");
     },
   );
+});
+
+test("default database prefers the personal one, then the demo one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "activity-atlas-db-"));
+  try {
+    const personal = join(dir, "activities.sqlite");
+    const demo = join(dir, "demo.sqlite");
+    assert.equal(defaultDbPath(personal, demo), personal);
+    writeFileSync(demo, "");
+    assert.equal(defaultDbPath(personal, demo), demo);
+    writeFileSync(personal, "");
+    assert.equal(defaultDbPath(personal, demo), personal);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the committed demo database builds a complete site", () => {
+  const demo = fileURLToPath(new URL("../data/demo/activities.sqlite", import.meta.url));
+  if (!existsSync(demo)) return; // a fork may remove the demo
+  const { activities, routes, details, profiles } = readDisplayFiles(demo);
+  assert.ok(activities.activities.length >= 100, "demo activities");
+  assert.ok(Object.keys(routes.routes).length >= 100, "demo routes");
+  assert.ok(details.size >= 100, "demo detail files");
+  assert.ok(Object.keys(profiles.profiles).length >= 100, "demo profiles");
+  assert.ok(activities.activities.every((a) => a.sources.every((s) => s.provider === "strava")));
+  assert.ok(activities.activities.some((a) => a.channels.includes("hr")));
+  assert.ok(activities.activities.some((a) => a.channels.includes("power")));
 });

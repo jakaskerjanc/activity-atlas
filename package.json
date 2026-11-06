@@ -11,10 +11,11 @@
     "app"
   ],
   "scripts": {
-    "dev": "pnpm --filter app run dev",
+    "dev": "pnpm run build:tracks && pnpm --filter app run dev",
     "build:tracks": "tsx scripts/build-tracks.ts",
     "build:icons": "tsx scripts/render-icons.ts",
     "build:cities": "tsx scripts/build-city-distances.ts",
+    "build:demo": "${PYTHON_BIN:-python3} -m ingest.demo.build",
     "build": "pnpm run build:tracks && pnpm --filter app run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test scripts/*.test.ts",

@@ -1,5 +1,6 @@
 // Build the display files in app/public/data/ from the SQLite database at
-// DB_PATH (default data/activities.sqlite, synced from R2). See
+// DB_PATH (default data/activities.sqlite, synced from R2, or the committed
+// data/demo/activities.sqlite when that does not exist). See
 // docs/2026-11-04-display-files-design.md. No network.
 //
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
@@ -30,7 +31,19 @@ import type {
 } from "./types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = process.env.DB_PATH || resolve(__dirname, "../data/activities.sqlite");
+const PERSONAL_DB_PATH = resolve(__dirname, "../data/activities.sqlite");
+const DEMO_DB_PATH = resolve(__dirname, "../data/demo/activities.sqlite");
+
+/**
+ * The database main() builds from when DB_PATH is unset: the personal one when
+ * it exists, else the committed demo database, else the personal path (which
+ * readDisplayFiles then reports as missing).
+ */
+export function defaultDbPath(personal = PERSONAL_DB_PATH, demo = DEMO_DB_PATH): string {
+  return existsSync(personal) || !existsSync(demo) ? personal : demo;
+}
+
+const DB_PATH = process.env.DB_PATH || defaultDbPath();
 export const OUT_DIR = resolve(__dirname, "../app/public/data");
 const LEGACY_TRACKS = resolve(__dirname, "../app/public/tracks.json");
 
@@ -177,6 +190,12 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
 }
 
 async function main() {
+  if (!process.env.DB_PATH && DB_PATH === DEMO_DB_PATH) {
+    console.log(
+      `No ${PERSONAL_DB_PATH}; building from the demo database. Import an export or ` +
+        "run `pnpm run sync` to use your own data.",
+    );
+  }
   const files = readDisplayFiles(DB_PATH);
   await writeDisplayFiles(files, OUT_DIR);
   // The pre-Plan 4 tracks.json; a stale local copy would be bundled by Vite.

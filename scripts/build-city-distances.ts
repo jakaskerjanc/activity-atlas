@@ -4,6 +4,14 @@
 // so it runs manually (`pnpm run build:cities`) and its output is committed.
 // See docs/2026-09-19-distance-city-comparison-design.md.
 //
+// To measure from another home city, change ORIGIN and re-run; the app reads
+// the origin from the JSON. Flags: --dry-run (stage A only), --fresh (ignore
+// the measurement cache). It is resumable after an interruption. To refresh the
+// vendored GeoNames subset first, download cities15000.zip from
+// download.geonames.org/export/dump and run scripts/prepare-geonames.ts on it.
+// Routes come from the public FOSSGIS OSRM server; keep to its usage policy
+// (one request at a time, <= 1/s, identifying User-Agent, occasional use only).
+//
 //   stage A (pure)    select ~520 candidates from the vendored GeoNames subset
 //   stage B (network) measure each with OSRM bike + foot, 1 req/s, cached
 //   stage C (pure)    validate coverage + sanity, report, write
