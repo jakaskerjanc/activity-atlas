@@ -1,5 +1,5 @@
 """The demo dataset: made-up activities on real paths around Maribor, so a
-fresh copy of the template has a working site before any import.
+fresh fork has a working site before any import.
 
 - ``routes.py`` (one-off, network): base routes from OSRM + Open-Meteo
   elevations -> ``data/demo/routes.json`` (committed).

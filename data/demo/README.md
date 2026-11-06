@@ -1,7 +1,7 @@
 # Demo data
 
-Synthetic activities so a fresh copy of the template has a working site before
-any import. Nothing here comes from a real person.
+Synthetic activities so a fresh fork has a working site before any import.
+Nothing here comes from a real person.
 
 - **`routes.json`** (`v: 1`) — base routes around Maribor, Slovenia. Their
   geometry was routed along OpenStreetMap paths by the public FOSSGIS OSRM
@@ -17,7 +17,7 @@ any import. Nothing here comes from a real person.
 
 `build-tracks.ts` and `scripts/ci_db.sh` use this database when
 `data/activities.sqlite` (the personal one) does not exist, so the demo is what
-a template fork deploys until it imports its own data.
+a fork deploys until it imports its own data.
 
 Regenerate the database after changing the routes or the generator:
 

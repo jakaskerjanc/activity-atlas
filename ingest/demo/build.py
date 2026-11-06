@@ -4,8 +4,8 @@ Offline and deterministic: from each base route this makes a year and a bit of
 made-up activities (reverse direction, pace, heart rate, cadence, power,
 pauses), writes them as a fake Strava bulk export, and runs the real
 ``ingest.strava_import`` importer over it. The committed result,
-``data/demo/activities.sqlite``, is what a fresh copy of the template builds
-its site from.
+``data/demo/activities.sqlite``, is what a fresh fork builds its
+site from.
 
 No personal data is read or written: the only input is the committed route
 JSON, and the export archive lives in a temporary directory.

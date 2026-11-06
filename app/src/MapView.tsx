@@ -25,7 +25,7 @@ import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } fr
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 /** Without a token mapboxgl.Map throws on construction and takes the whole app
  * down with it. Skip the map instead, so the panels and Analytics still work
- * (e.g. a fresh template copy showing the demo data). Every effect below
+ * (e.g. a fresh fork showing the demo data). Every effect below
  * already no-ops while mapRef is null. */
 const HAS_TOKEN = Boolean(import.meta.env.VITE_MAPBOX_TOKEN);
 

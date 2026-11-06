@@ -4,7 +4,7 @@
 #   - R2_BUCKET or R2_RO_ACCESS_KEY_ID set: pull db/activities.sqlite from R2
 #     with the read-only pair. Any missing R2 value, or a failed pull, fails
 #     the script, so the owner's site is never published empty or as the demo.
-#   - neither set: data/demo/activities.sqlite when present (template forks).
+#   - neither set: data/demo/activities.sqlite when present (forks).
 #   - else data/activities.sqlite, which may not exist: build-tracks then
 #     writes an empty payload.
 set -euo pipefail
