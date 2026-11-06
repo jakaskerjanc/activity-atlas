@@ -3,8 +3,8 @@
 // (activityFilter.ts); this file holds it and hands its results to the map, the
 // analytics page, and the panels.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { MapView, type CityRouteLine } from "./MapView";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { CityRouteLine } from "./MapView";
 import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
@@ -46,6 +46,12 @@ import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
+
+// The map is almost all of the bundle (mapbox-gl); load it after the shell so
+// the panels and Analytics can paint while the map chunk is still arriving.
+const MapView = lazy(() =>
+  import("./MapView").then((m) => ({ default: m.MapView })),
+);
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -552,30 +558,32 @@ export default function App() {
 
       {/* inert while covered, so keyboard focus can't land on the hidden map. */}
       <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <MapView
-          theme={theme}
-          data={data}
-          mapFilter={mapFilter}
-          visible={visibleOnMap}
-          colorMode={colorMode}
-          colorDomain={colorDomain}
-          grade={grade}
-          hoverId={hoverId}
-          selectedId={selectedId}
-          onHover={setHoverId}
-          onSelect={selectActivity}
-          onDeselect={deselect}
-          replaying={replaying}
-          replayFrame={replayFrame}
-          replayEpoch={replayEpoch}
-          onReplayReady={onReplayReady}
-          insets={insets}
-          cursorPoint={cursorPoint}
-          selectedDetail={selectedDetail}
-          onCursor={setCursor}
-          cityRoute={cityRoute}
-          cityRouteEpoch={cityEpoch}
-        />
+        <Suspense fallback={null}>
+          <MapView
+            theme={theme}
+            data={data}
+            mapFilter={mapFilter}
+            visible={visibleOnMap}
+            colorMode={colorMode}
+            colorDomain={colorDomain}
+            grade={grade}
+            hoverId={hoverId}
+            selectedId={selectedId}
+            onHover={setHoverId}
+            onSelect={selectActivity}
+            onDeselect={deselect}
+            replaying={replaying}
+            replayFrame={replayFrame}
+            replayEpoch={replayEpoch}
+            onReplayReady={onReplayReady}
+            insets={insets}
+            cursorPoint={cursorPoint}
+            selectedDetail={selectedDetail}
+            onCursor={setCursor}
+            cityRoute={cityRoute}
+            cityRouteEpoch={cityEpoch}
+          />
+        </Suspense>
       </div>
 
       {/* Vignette for depth (decorative, click-through). */}
