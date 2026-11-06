@@ -9,6 +9,12 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#0e0f13" />
+    <!-- The initial data fetch otherwise waits for the JS to execute. Start it
+         with the bundle instead; Mapbox's own requests come from its chunk. -->
+    <link rel="preload" href="%BASE_URL%data/routes.json" as="fetch" crossorigin />
+    <link rel="preload" href="%BASE_URL%data/activities.json" as="fetch" crossorigin />
+    <link rel="preconnect" href="https://api.mapbox.com" crossorigin />
+    <link rel="preconnect" href="https://events.mapbox.com" crossorigin />
     <script>
       // Set the theme before first paint (saved choice, else OS preference) so the
       // panels don't flash the wrong palette. App.tsx keeps this in sync afterward.
