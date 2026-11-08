@@ -50,8 +50,9 @@ export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
               <div style={headline} title={title}>
                 {lead && <span style={leadText}>{lead} </span>}
                 {origin.name}{" "}
-                <span style={arrow} aria-label="to">
+                <span style={arrow}>
                   <ArrowRightIcon size={17} />
+                  <span className="sr-only">to</span>
                 </span>{" "}
                 {c.pick.city.name}
               </div>
@@ -62,7 +63,8 @@ export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
               className="ctl-accent"
               style={showButton}
               onClick={() => onShowOnMap(c.profile)}
-              aria-label={`Show ${title} ${PROFILE_TEXT[c.profile].by} on the map`}
+              // Starts with the visible text, so speech users can say what they see.
+              aria-label={`Show on map: ${origin.name} to ${c.pick.city.name} ${PROFILE_TEXT[c.profile].by}`}
             >
               <MapIcon size={14} />
               Show on map

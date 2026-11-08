@@ -18,6 +18,7 @@ import {
 import { lineGradient, type GradeRoutes } from "./grade";
 import type { ReplayFrame } from "./replay";
 import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./cluster";
+import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
 import { formatDate, formatKm } from "./format";
@@ -140,6 +141,8 @@ interface Props {
   cityRoute: CityRouteLine | null;
   /** Bumped each time a city route is asked for, so asking again refits the camera. */
   cityRouteEpoch: number;
+  /** Called as the routes start to fade in, so the route preview can fade out. */
+  onRoutesShown?: () => void;
 }
 
 /** A comparison city's route, as the map draws it. */
@@ -152,7 +155,7 @@ export interface CityRouteLine {
   cityName: string;
 }
 
-/** Where the map starts before the activities arrive: Slovenia, centered on Ljubljana. */
+/** Where the map starts if the activities haven't arrived: Slovenia, centered on Ljubljana. */
 const SLOVENIA_CENTER: [number, number] = [14.5058, 46.0569];
 const SLOVENIA_ZOOM = 7.6;
 
@@ -242,7 +245,7 @@ export function MapView(props: Props) {
       p.visible.length ? p.visible : p.data.features,
     );
     if (!box) return;
-    const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), 13);
+    const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), HOME_MAX_ZOOM);
     if (camera) map.jumpTo(camera);
   }
 
@@ -532,6 +535,7 @@ export function MapView(props: Props) {
   function startFade() {
     const map = mapRef.current;
     if (!map || !map.getLayer(GLOW_ID)) return;
+    propsRef.current.onRoutesShown?.();
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     if (prefersReducedMotion()) {
       fadeRef.current = 1;
@@ -714,11 +718,19 @@ export function MapView(props: Props) {
   // Init map once.
   useEffect(() => {
     if (!HAS_TOKEN || !containerRef.current || mapRef.current) return;
+    // Open on the home frame (App mounts the map once the routes are in, unless they
+    // failed), so the first tiles fetched are the ones the view keeps, and they land
+    // under the route preview. frameHome still runs on load, with Mapbox's own numbers.
+    const el = containerRef.current;
+    const p = propsRef.current;
+    const home = p.data
+      ? homeCamera(p.visible.length ? p.visible : p.data.features, el.clientWidth, el.clientHeight, p.insets)
+      : null;
     const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: STYLE_URL[propsRef.current.theme],
-      center: SLOVENIA_CENTER,
-      zoom: SLOVENIA_ZOOM,
+      container: el,
+      style: STYLE_URL[p.theme],
+      center: home?.center ?? SLOVENIA_CENTER,
+      zoom: home?.zoom ?? SLOVENIA_ZOOM,
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
@@ -729,7 +741,7 @@ export function MapView(props: Props) {
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     mapRef.current = map;
-    appliedStyleRef.current = STYLE_URL[propsRef.current.theme];
+    appliedStyleRef.current = STYLE_URL[p.theme];
     // Dev only: lets screenshot scripts wait for the map to settle instead of sleeping.
     if (import.meta.env.DEV) (window as unknown as { __map?: mapboxgl.Map }).__map = map;
 

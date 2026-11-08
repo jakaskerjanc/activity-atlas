@@ -79,7 +79,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain("On foot · 10 km");
     expect(html).toContain("Not yet");
     expect(html).toContain("27 km on foot · Slovenia · 37% of the way");
-    expect(html).toContain('aria-label="Show Ljubljana → Kranj on foot on the map"');
+    expect(html).toContain('aria-label="Show on map: Ljubljana to Kranj on foot"');
     expect(html).not.toContain("Rides");
 
     expect(render({ cities: { status: "ready", data }, comparisons: [] })).toContain(

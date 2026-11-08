@@ -11,6 +11,7 @@ import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
 import { AnalyticsView, ANALYTICS_SECTIONS } from "./ui/AnalyticsView";
 import { useView } from "./ui/useView";
+import { RoutePreview } from "./ui/RoutePreview";
 import {
   createActivityFilter,
   activeIsolation,
@@ -48,11 +49,18 @@ import { useCities } from "./ui/useCities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 
-// The map is almost all of the bundle (mapbox-gl); load it after the shell so
-// the panels and Analytics can paint while the map chunk is still arriving. The
-// import starts as this module runs, not at first render, to shave the wait.
-const mapViewModule = import("./MapView");
-const MapView = lazy(() => mapViewModule.then((m) => ({ default: m.MapView })));
+// The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
+// once the map is wanted: a visit that opens on Analytics never pays for it until the
+// user heads for the map (hovering the Map tab starts it early). On the map it waits
+// for the route preview to paint, so the routes arrive before the ~520 kB that draws
+// them properly instead of sharing a slow connection with it; on a fast one the wait
+// is a frame or two.
+let mapViewImport: Promise<typeof import("./MapView")> | null = null;
+const loadMapView = () => (mapViewImport ??= import("./MapView"));
+const MapView = lazy(() => loadMapView().then((m) => ({ default: m.MapView })));
+// An early start on intent. A failure surfaces when the map mounts (MapErrorBoundary),
+// so don't also report it here as an unhandled rejection.
+const prefetchMapView = () => void loadMapView().catch(() => {});
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -86,9 +94,17 @@ export default function App() {
   }, [theme]);
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
-  // Map or analytics page. The map stays mounted underneath analytics, so switching back
-  // keeps its camera and selection.
+  // Map or analytics page. The map mounts the first time it is shown, then stays mounted
+  // underneath analytics, so switching back keeps its camera and selection.
   const [view, setView] = useView();
+  const [mapMounted, setMapMounted] = useState(view === "map");
+  useEffect(() => {
+    if (view === "map") setMapMounted(true);
+  }, [view]);
+  // The route preview is up (or has nothing to show), so the map can load.
+  const [previewSettled, setPreviewSettled] = useState(false);
+  // The map has drawn the routes, so the route preview can go.
+  const [mapDrawn, setMapDrawn] = useState(false);
 
   // index.css keys the panel material off the page: see-through glass on the map only.
   useEffect(() => {
@@ -455,6 +471,7 @@ export default function App() {
         onToggleTheme={toggleTheme}
         view={view}
         onViewChange={setView}
+        onMapIntent={prefetchMapView}
         filtersOpen={filter ? !panels.sideCollapsed : undefined}
         onToggleFilters={filter ? panels.toggleSide : undefined}
       />
@@ -574,36 +591,51 @@ export default function App() {
       )}
 
       {/* inert while covered, so keyboard focus can't land on the hidden map. */}
-      <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <MapErrorBoundary onError={() => setMapFailed(true)}>
-          <Suspense fallback={null}>
-            <MapView
-              theme={theme}
-              data={data}
-              mapFilter={mapFilter}
-              visible={visibleOnMap}
-              colorMode={colorMode}
-              colorDomain={colorDomain}
-              grade={grade}
-              hoverId={hoverId}
-              selectedId={selectedId}
-              onHover={setHoverId}
-              onSelect={selectActivity}
-              onDeselect={deselect}
-              replaying={replaying}
-              replayFrame={replayFrame}
-              replayEpoch={replayEpoch}
-              onReplayReady={onReplayReady}
+      {mapMounted && (
+        <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+          {/* After the preview, or at once if the routes failed to load. */}
+          {(previewSettled || error != null) && (
+            <MapErrorBoundary onError={() => setMapFailed(true)}>
+              <Suspense fallback={null}>
+                <MapView
+                  theme={theme}
+                  data={data}
+                  mapFilter={mapFilter}
+                  visible={visibleOnMap}
+                  colorMode={colorMode}
+                  colorDomain={colorDomain}
+                  grade={grade}
+                  hoverId={hoverId}
+                  selectedId={selectedId}
+                  onHover={setHoverId}
+                  onSelect={selectActivity}
+                  onDeselect={deselect}
+                  replaying={replaying}
+                  replayFrame={replayFrame}
+                  replayEpoch={replayEpoch}
+                  onReplayReady={onReplayReady}
+                  insets={insets}
+                  cursorPoint={cursorPoint}
+                  selectedDetail={selectedDetail}
+                  onCursor={setCursor}
+                  cityRoute={cityRoute}
+                  cityRouteEpoch={cityEpoch}
+                  onRoutesShown={() => setMapDrawn(true)}
+                />
+              </Suspense>
+            </MapErrorBoundary>
+          )}
+          {/* Over the map's canvas: the routes until the map draws its own. */}
+          {data && (
+            <RoutePreview
+              features={visibleOnMap}
               insets={insets}
-              cursorPoint={cursorPoint}
-              selectedDetail={selectedDetail}
-              onCursor={setCursor}
-              cityRoute={cityRoute}
-              cityRouteEpoch={cityEpoch}
+              done={mapDrawn}
+              onSettled={() => setPreviewSettled(true)}
             />
-          </Suspense>
-        </MapErrorBoundary>
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Vignette for depth (decorative, click-through). */}
       <div
@@ -626,8 +658,9 @@ function RouteTitle({ from, to }: { from: string; to: string }) {
   return (
     <>
       {from}{" "}
-      <span style={{ color: "var(--accent-text)", display: "inline-flex", verticalAlign: "-2px" }} aria-label="to">
+      <span style={{ color: "var(--accent-text)", display: "inline-flex", verticalAlign: "-2px" }}>
         <ArrowRightIcon size={15} />
+        <span className="sr-only">to</span>
       </span>{" "}
       {to}
     </>

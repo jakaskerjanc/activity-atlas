@@ -17,12 +17,22 @@ interface Props {
   onToggleTheme: () => void;
   view: View;
   onViewChange: (view: View) => void;
+  /** The pointer or focus is on the Map tab: a cue to start loading the map. */
+  onMapIntent?: () => void;
   /** The filters panel's state, for the Filters toggle; omitted before data loads. */
   filtersOpen?: boolean;
   onToggleFilters?: () => void;
 }
 
-export function Header({ theme, onToggleTheme, view, onViewChange, filtersOpen, onToggleFilters }: Props) {
+export function Header({
+  theme,
+  onToggleTheme,
+  view,
+  onViewChange,
+  onMapIntent,
+  filtersOpen,
+  onToggleFilters,
+}: Props) {
   const next = theme === "dark" ? "light" : "dark";
   const solid = view === "analytics";
   return (
@@ -92,7 +102,7 @@ export function Header({ theme, onToggleTheme, view, onViewChange, filtersOpen, 
             <span className="header-btn-label">Filters</span>
           </button>
         )}
-        <ViewSwitch view={view} onChange={onViewChange} />
+        <ViewSwitch view={view} onChange={onViewChange} onMapIntent={onMapIntent} />
         <button
           type="button"
           className="ctl"
@@ -136,7 +146,15 @@ const VIEWS: { view: View; label: string; Icon: ComponentType }[] = [
 
 // Segmented control for the two pages. On a phone the labels drop (see
 // .view-switch-label in index.css) and the aria-labels carry the names.
-function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+function ViewSwitch({
+  view,
+  onChange,
+  onMapIntent,
+}: {
+  view: View;
+  onChange: (view: View) => void;
+  onMapIntent?: () => void;
+}) {
   return (
     <nav aria-label="Pages" style={switchBox}>
       {VIEWS.map(({ view: v, label, Icon }) => {
@@ -150,6 +168,8 @@ function ViewSwitch({ view, onChange }: { view: View; onChange: (view: View) => 
             aria-label={label}
             title={label}
             onClick={() => onChange(v)}
+            onPointerEnter={v === "map" ? onMapIntent : undefined}
+            onFocus={v === "map" ? onMapIntent : undefined}
             style={switchBtn(on)}
           >
             <Icon />

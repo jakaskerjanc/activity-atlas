@@ -3,8 +3,8 @@
    chrome flips by swapping the data-theme attribute on <html>. Sizes (type scale,
    spacing, radii) are theme-independent and mirrored in ui/theme.ts for inline styles. */
 :root {
-  --font-ui: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-ui: "Inter Variable", "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
   /* Type scale (px). Mono is for numbers only; labels are sentence-case sans. */
   --fs-2xs: 10px; /* chart axis ticks */
@@ -481,6 +481,19 @@ input[type="range"].range-dual::-moz-range-thumb {
 }
 .pulse-dot {
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* Read by screen readers, not shown: words an icon stands for. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot {
