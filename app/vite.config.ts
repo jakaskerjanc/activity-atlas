@@ -8,4 +8,17 @@ export default defineConfig({
   base: `${process.env.BASE_PATH ?? ""}/`,
   envDir: "..",
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep the rarely changing vendors in their own chunks: a normal app
+        // change then invalidates only the small app chunk, not mapbox-gl. Other
+        // deps are left to Rollup, so one used only by the lazy map stays lazy.
+        manualChunks(id) {
+          if (id.includes("/node_modules/mapbox-gl/")) return "mapbox";
+          if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "react";
+        },
+      },
+    },
+  },
 });

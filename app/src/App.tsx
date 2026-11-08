@@ -3,8 +3,8 @@
 // (activityFilter.ts); this file holds it and hands its results to the map, the
 // analytics page, and the panels.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { MapView, type CityRouteLine } from "./MapView";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { CityRouteLine } from "./MapView";
 import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
@@ -40,12 +40,19 @@ import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
 import { chromeInsets } from "./ui/layout";
-import { FS, primaryButton } from "./ui/theme";
+import { FS, primaryButton, secondaryButton } from "./ui/theme";
+import { MapErrorBoundary } from "./ui/MapErrorBoundary";
 import { ArrowRightIcon } from "./ui/icons";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
+
+// The map is almost all of the bundle (mapbox-gl); load it after the shell so
+// the panels and Analytics can paint while the map chunk is still arriving. The
+// import starts as this module runs, not at first render, to shave the wait.
+const mapViewModule = import("./MapView");
+const MapView = lazy(() => mapViewModule.then((m) => ({ default: m.MapView })));
 
 const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
@@ -67,6 +74,7 @@ function initialTheme(): Theme {
 export default function App() {
   const [data, setData] = useState<ActivityFeatureCollection | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mapFailed, setMapFailed] = useState(false);
 
   const [theme, setTheme] = useState<Theme>(initialTheme);
   useEffect(() => {
@@ -550,32 +558,51 @@ export default function App() {
         </div>
       )}
 
+      {/* A data error already explains the empty map; don't stack a second chip on it. */}
+      {mapFailed && !error && view === "map" && (
+        <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
+          Couldn't load the map.
+          <button
+            type="button"
+            className="ctl"
+            style={{ ...secondaryButton, height: 28 }}
+            onClick={() => window.location.reload()}
+          >
+            Reload
+          </button>
+        </div>
+      )}
+
       {/* inert while covered, so keyboard focus can't land on the hidden map. */}
       <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <MapView
-          theme={theme}
-          data={data}
-          mapFilter={mapFilter}
-          visible={visibleOnMap}
-          colorMode={colorMode}
-          colorDomain={colorDomain}
-          grade={grade}
-          hoverId={hoverId}
-          selectedId={selectedId}
-          onHover={setHoverId}
-          onSelect={selectActivity}
-          onDeselect={deselect}
-          replaying={replaying}
-          replayFrame={replayFrame}
-          replayEpoch={replayEpoch}
-          onReplayReady={onReplayReady}
-          insets={insets}
-          cursorPoint={cursorPoint}
-          selectedDetail={selectedDetail}
-          onCursor={setCursor}
-          cityRoute={cityRoute}
-          cityRouteEpoch={cityEpoch}
-        />
+        <MapErrorBoundary onError={() => setMapFailed(true)}>
+          <Suspense fallback={null}>
+            <MapView
+              theme={theme}
+              data={data}
+              mapFilter={mapFilter}
+              visible={visibleOnMap}
+              colorMode={colorMode}
+              colorDomain={colorDomain}
+              grade={grade}
+              hoverId={hoverId}
+              selectedId={selectedId}
+              onHover={setHoverId}
+              onSelect={selectActivity}
+              onDeselect={deselect}
+              replaying={replaying}
+              replayFrame={replayFrame}
+              replayEpoch={replayEpoch}
+              onReplayReady={onReplayReady}
+              insets={insets}
+              cursorPoint={cursorPoint}
+              selectedDetail={selectedDetail}
+              onCursor={setCursor}
+              cityRoute={cityRoute}
+              cityRouteEpoch={cityEpoch}
+            />
+          </Suspense>
+        </MapErrorBoundary>
       </div>
 
       {/* Vignette for depth (decorative, click-through). */}
