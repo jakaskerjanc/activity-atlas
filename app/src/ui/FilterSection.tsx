@@ -204,10 +204,11 @@ function countStyle(on: boolean): CSSProperties {
 // span's percentages map to thumb-centre positions rather than the raw input box.
 const THUMB = 16;
 
+// 24 px tall: the minimum pointer target (WCAG 2.5.8), the inputs filling it.
 const rangeWrap: CSSProperties = {
   position: "relative",
-  height: 20,
-  margin: "0 0 6px",
+  height: 24,
+  margin: "-2px 0 4px",
 };
 
 const rail: CSSProperties = {
