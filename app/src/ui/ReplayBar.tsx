@@ -93,20 +93,42 @@ export function ReplayBar(p: Props) {
               className={s === p.speed ? undefined : "ctl"}
               aria-pressed={s === p.speed}
               onClick={() => p.onSpeed(s)}
+              aria-label={`${s}× speed`}
               style={pillStyle(s === p.speed)}
             >
-              {s}×
+              <span style={multiplier}>
+                <span style={capTrim}>{s}</span>
+                <svg
+                  width={7}
+                  height={7}
+                  viewBox="0 0 7 7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.2}
+                  strokeLinecap="round"
+                  aria-hidden
+                  style={{ display: "block", flex: "none", overflow: "visible" }}
+                >
+                  <path d="M1 1l5 5M6 1L1 6" />
+                </svg>
+              </span>
             </button>
           ))}
         </div>
         <button type="button" className="ctl" onClick={p.onExit} style={secondaryButton}>
           <CloseIcon size={14} />
-          Exit replay
+          <span style={capTrim}>Exit replay</span>
         </button>
       </div>
     </GlassPanel>
   );
 }
+
+/** Trims a label's box to its cap height, so a flex row centers the letters themselves
+ *  (not the font's ascent/descent) against an icon. No-op where unsupported. */
+const capTrim = { textBox: "trim-both cap alphabetic" } as CSSProperties;
+
+const multiplier: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 2 };
 
 const topRow: CSSProperties = {
   display: "flex",
