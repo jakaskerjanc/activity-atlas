@@ -16,7 +16,7 @@ import {
   type ColorDomain,
 } from "./colors";
 import { lineGradient, type GradeRoutes } from "./grade";
-import type { ReplayFrame } from "./replay";
+import type { ReplayFrame, ReplayStep } from "./replay";
 import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./cluster";
 import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
@@ -48,7 +48,8 @@ const GLOW_ID = "activities-glow";
 const CORE_ID = "activities-core";
 // The single route currently drawing in replay gets its own layers (and source) on top,
 // so line-trim-offset (a per-layer paint prop) reveals just it while completed routes
-// stay fully painted underneath.
+// stay fully painted underneath. During replay these layers hold every route, and
+// feature-state shows only the one drawing (DRAWING_STATE).
 const ACTIVE_GLOW_ID = "activities-active-glow";
 const ACTIVE_CORE_ID = "activities-active-core";
 const HOVER_GLOW_ID = "activities-hover-glow";
@@ -78,6 +79,14 @@ const NO_LINES: GeoJSON.FeatureCollection = { type: "FeatureCollection", feature
 /** Per-feature highlight gate. Toggling feature-state is cheap; swapping paint
  * expressions would force Mapbox to reload the whole source on every hover. */
 const ACTIVE_STATE: ExpressionSpecification = ["boolean", ["feature-state", "active"], false];
+
+/** Replay gates, also on feature-state, for the same reason. A filter change makes Mapbox
+ * rebuild the source's tiles in a worker, so a filter-driven replay showed each route
+ * transition late, while the paint (the trim) changed at once: a route that just finished
+ * vanished until the rebuild caught up. Feature-state lands on the next frame, in step
+ * with the trim. `pending`: a base route not yet drawn. `drawing`: the one route drawing. */
+const PENDING_STATE: ExpressionSpecification = ["boolean", ["feature-state", "pending"], false];
+const DRAWING_STATE: ExpressionSpecification = ["boolean", ["feature-state", "drawing"], false];
 
 /** Matches nothing — parks the active layers when no route is drawing. */
 const MATCH_NONE: ExpressionSpecification = ["==", ["get", "id"], ""];
@@ -125,6 +134,8 @@ interface Props {
   replaying: boolean;
   /** Current replay frame (null when idle). Drives the completed/active split + trim. */
   replayFrame: ReplayFrame | null;
+  /** The replay's routes in drawing order; a frame's index points into it. */
+  replayTimeline: ReplayStep[];
   /** Signals replay just became active — used to fit the camera to the visible activities once. */
   replayEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
@@ -204,6 +215,15 @@ export function MapView(props: Props) {
   const framedRef = useRef(false);
   // Whether the base layers currently wear the muted selection color.
   const mutedRef = useRef<boolean | null>(null);
+  // The replay state applyReplay last wrote to the map, so each frame writes only what
+  // changed: the timeline whose routes carry `pending`, how many of them are done (no
+  // longer pending), the route carrying `drawing`, and whether the active layers are live.
+  const replayMapRef = useRef<{
+    timeline: ReplayStep[] | null;
+    done: number;
+    drawingId: string | null;
+    live: boolean;
+  }>({ timeline: null, done: 0, drawingId: null, live: false });
 
   /** Single source of truth for the highlighted track: hover beats selection, and
    * replay suspends highlighting. Both the base-layer dimming and the feature-state
@@ -271,8 +291,13 @@ export function MapView(props: Props) {
     map.setPaintProperty(CORE_ID, "line-width", heat ? 1.8 : 2.6);
 
     if (!active) {
-      map.setPaintProperty(GLOW_ID, "line-opacity", (heat ? 0.14 : 0.2) * f);
-      map.setPaintProperty(CORE_ID, "line-opacity", (heat ? 0.34 : 0.85) * f);
+      // In replay, routes not drawn yet stay hidden (see PENDING_STATE). The expression
+      // is written once on entry: a data-driven value costs a relayout, so it never
+      // changes per frame (Mapbox skips writes of an equal value).
+      const hidePending = (v: number): number | ExpressionSpecification =>
+        p.replaying ? ["case", PENDING_STATE, 0, v] : v;
+      map.setPaintProperty(GLOW_ID, "line-opacity", hidePending((heat ? 0.14 : 0.2) * f));
+      map.setPaintProperty(CORE_ID, "line-opacity", hidePending((heat ? 0.34 : 0.85) * f));
       return;
     }
     map.setPaintProperty(GLOW_ID, "line-opacity", 0);
@@ -359,42 +384,70 @@ export function MapView(props: Props) {
   }
 
   /**
-   * Reflect a replay frame onto the map: base layers show the completed set
-   * (everything before the drawing route), the active layers reveal just the
-   * drawing route up to its trim. A null frame parks the active layers and hands
-   * the base layers back to the plain user filter.
+   * Reflect a replay frame onto the map: the base layers show the completed routes
+   * (the timeline before the drawing route), the active layers reveal just the
+   * drawing route up to its trim. A null frame clears it all, leaving the base
+   * layers on the plain user filter.
+   *
+   * Every per-frame change goes through feature-state or a constant paint value, both
+   * applied on the next render. Filters change only on entry and exit: a filter change
+   * rebuilds the source's tiles in a worker, which lags the trim (see PENDING_STATE).
    */
   function applyReplay(frame: ReplayFrame | null) {
     const map = mapRef.current;
     if (!map || !map.getLayer(ACTIVE_GLOW_ID)) return;
+    const s = replayMapRef.current;
 
     applyActiveGradient(frame);
-    if (!frame) {
-      map.setFilter(ACTIVE_GLOW_ID, MATCH_NONE);
-      map.setFilter(ACTIVE_CORE_ID, MATCH_NONE);
-      applyBaseFilter(map, propsRef.current.mapFilter);
-      return;
+
+    // Mark the timeline's routes pending (a new timeline: entry, or a filter change
+    // mid-replay), or clear the marks on exit.
+    const timeline = frame ? propsRef.current.replayTimeline : null;
+    if (s.timeline !== timeline) {
+      for (const step of s.timeline ?? []) {
+        map.removeFeatureState({ source: SOURCE_ID, id: step.id }, "pending");
+      }
+      for (const step of timeline ?? []) {
+        map.setFeatureState({ source: SOURCE_ID, id: step.id }, { pending: true });
+      }
+      s.timeline = timeline;
+      s.done = 0;
     }
 
-    const user = propsRef.current.mapFilter;
-    // "Before the drawing route" in the exact order buildTimeline uses: ts, then
-    // id (string) as the lexicographic tiebreak — must match buildTimeline's sort.
-    // Keying on the pair (not ts alone) keeps same-second activities from
-    // flickering out while a route sharing their timestamp draws.
-    const before: ExpressionSpecification = [
-      "any",
-      ["<", ["get", "ts"], frame.ts],
-      ["all", ["==", ["get", "ts"], frame.ts], ["<", ["get", "id"], frame.id]],
-    ];
-    const completed = (
-      user ? ["all", user, before] : before
-    ) as ExpressionSpecification;
-    map.setFilter(GLOW_ID, completed);
-    map.setFilter(CORE_ID, completed);
+    // Hand `drawing` to the route now drawing.
+    const drawingId = frame?.id ?? null;
+    if (s.drawingId !== drawingId) {
+      if (s.drawingId != null) {
+        map.removeFeatureState({ source: ACTIVE_SOURCE_ID, id: s.drawingId }, "drawing");
+      }
+      if (drawingId != null) {
+        map.setFeatureState({ source: ACTIVE_SOURCE_ID, id: drawingId }, { drawing: true });
+      }
+      s.drawingId = drawingId;
+    }
 
-    const only: ExpressionSpecification = ["==", ["get", "id"], frame.id];
-    map.setFilter(ACTIVE_GLOW_ID, only);
-    map.setFilter(ACTIVE_CORE_ID, only);
+    // The active layers hold every route while replay runs (only `drawing` shows), and
+    // are parked otherwise so they cost nothing.
+    const live = frame != null;
+    if (s.live !== live) {
+      const filter = live ? null : MATCH_NONE;
+      map.setFilter(ACTIVE_GLOW_ID, filter);
+      map.setFilter(ACTIVE_CORE_ID, filter);
+      s.live = live;
+    }
+
+    if (!frame || !timeline) return;
+
+    // Routes before the drawing one are done; scrubbing back makes some pending again.
+    const k = Math.min(frame.index, timeline.length);
+    for (let i = s.done; i < k; i++) {
+      map.setFeatureState({ source: SOURCE_ID, id: timeline[i].id }, { pending: false });
+    }
+    for (let i = k; i < s.done; i++) {
+      map.setFeatureState({ source: SOURCE_ID, id: timeline[i].id }, { pending: true });
+    }
+    s.done = k;
+
     // Hide the [trim, 1] tail so the line reveals from its start to `trim`.
     const tail: [number, number] = [frame.trim, 1];
     map.setPaintProperty(ACTIVE_GLOW_ID, "line-trim-offset", tail);
@@ -579,6 +632,8 @@ export function MapView(props: Props) {
         data: NO_LINES,
         // Required for line-trim-offset (the replay draw-on reveal) and line-gradient.
         lineMetrics: true,
+        // Exposes each route's id to feature-state, which picks the one drawing.
+        promoteId: "id",
       });
     }
     if (!map.getLayer(GLOW_ID)) {
@@ -643,7 +698,7 @@ export function MapView(props: Props) {
         paint: {
           "line-color": ACCENT,
           "line-width": 11,
-          "line-opacity": 0.55,
+          "line-opacity": ["case", DRAWING_STATE, 0.55, 0],
           "line-blur": 8,
           "line-trim-offset": [0, 1],
         },
@@ -659,7 +714,7 @@ export function MapView(props: Props) {
         paint: {
           "line-color": ACCENT,
           "line-width": 4.4,
-          "line-opacity": 1,
+          "line-opacity": ["case", DRAWING_STATE, 1, 0],
           "line-trim-offset": [0, 1],
         },
       });
@@ -830,6 +885,7 @@ export function MapView(props: Props) {
       applyActiveRoutes();
       mutedRef.current = null;
       syncedActiveRef.current = null;
+      replayMapRef.current = { timeline: null, done: 0, drawingId: null, live: false };
       syncFeatureState(true);
       fadeRef.current = 1;
       if (propsRef.current.replaying) applyReplay(propsRef.current.replayFrame);
@@ -859,14 +915,13 @@ export function MapView(props: Props) {
     applyActiveGradient(propsRef.current.replayFrame);
   }, [routeData]);
 
-  // Apply filter changes. Skipped while replaying — applyReplay owns the base
-  // layers' filter then (it folds the current filter into the completed set).
+  // Apply filter changes. Replay keeps the user filter on the base layers and hides
+  // the routes it hasn't drawn yet through feature-state (applyReplay).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current || !map.getLayer(CORE_ID)) return;
-    if (replaying) return;
     applyBaseFilter(map, mapFilter);
-  }, [mapFilter, replaying]);
+  }, [mapFilter]);
 
   // Recolor when the color mode or its value domain changes. applyPaint follows
   // so heat mode's dimmed base opacities take effect immediately.

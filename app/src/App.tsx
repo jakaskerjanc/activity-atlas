@@ -612,6 +612,7 @@ export default function App() {
                   onDeselect={deselect}
                   replaying={replaying}
                   replayFrame={replayFrame}
+                  replayTimeline={timeline}
                   replayEpoch={replayEpoch}
                   onReplayReady={onReplayReady}
                   insets={insets}
