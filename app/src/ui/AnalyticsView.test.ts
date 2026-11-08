@@ -125,4 +125,20 @@ describe("AnalyticsView", () => {
     const html = render({ filter: empty, visible: visibleActivities(empty), onResetFilter: () => {} });
     expect(html).toContain("Reset filters");
   });
+
+  test("adds steps to the calendar only when there is step data", () => {
+    expect(render()).toContain("Moving time per day");
+    expect(render({ steps: { status: "error" } })).not.toContain(">Steps<");
+    expect(render({ steps: { status: "ready", file: { v: 1, steps: [] } } })).not.toContain(">Steps<");
+    const html = render({ steps: { status: "ready", file: { v: 1, start: "2024-08-18", steps: [12000] } } });
+    expect(html).toContain("Moving time and steps per day");
+    expect(html).toContain(">Steps<");
+  });
+
+  test("shows the active hours clock", () => {
+    const html = render();
+    expect(html).toContain("Active hours");
+    expect(html).toContain("Weekdays");
+    expect(html).toContain("Weekends");
+  });
 });

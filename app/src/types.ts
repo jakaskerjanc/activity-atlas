@@ -75,6 +75,18 @@ export interface ProfilesFile {
   profiles: Record<string, number[]>;
 }
 
+/**
+ * Root of steps.json: Garmin's daily step totals, the only wellness value the site
+ * publishes. steps[i] is the total for the local date `start` + i days; null = no total
+ * that day. No step data: `start` is absent and `steps` is empty.
+ */
+export interface StepsFile {
+  v: 1;
+  /** First local date covered, YYYY-MM-DD. */
+  start?: string;
+  steps: (number | null)[];
+}
+
 /** activity/<id>.json: downsampled samples; every array is as long as `t`. */
 export interface DetailFile {
   v: 1;

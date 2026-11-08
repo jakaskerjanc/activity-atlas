@@ -49,7 +49,9 @@ Plan 4 replaces the bridge with the spec's display files and uses them:
 - The demo database (§6), Garmin gear, parallel R2 uploads.
 - Changing ingest. The database is read as it is; any clean-up of provider
   values happens in the display build.
-- Wellness on the site.
+- Wellness on the site. *(2026-11-08: daily step totals are now published; see
+  [2026-11-08-active-hours-and-steps-design.md](2026-11-08-active-hours-and-steps-design.md).
+  Every other wellness value still stays off the site.)*
 - Activities without a route on the map. They have no line to click (see
   [Decisions](#decisions-made-for-the-owner)).
 

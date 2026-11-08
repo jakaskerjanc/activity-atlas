@@ -15,8 +15,8 @@ pnpm run import:garmin <garmin-export.zip>
 Each import stores the zip and every file it reads byte for byte in the
 archive (`ARCHIVE_URL`, default `file://data/archive`, gitignored), then
 parses streams, laps and gear into the database. The Garmin import also stores
-the export's all-day monitoring data as wellness data, which is never
-published.
+the export's all-day monitoring data as wellness data. Of that, only the daily
+step totals are published.
 
 - Re-running an import changes nothing.
 - A newer export that lacks an activity inside its date range marks that
@@ -76,9 +76,11 @@ deleted activity never leaves a stale file behind.
 | `activities.json` | Every visible activity's numbers. |
 | `activity/<id>.json` | One activity's samples, fetched only when it is opened. |
 | `profiles.json` | Elevation profiles, fetched only by the Analytics page. |
+| `steps.json` | Daily step totals, fetched only by the Analytics page. The newest day (still being counted when it was fetched) is left out. Empty without step data. |
 
-An unknown value is left out, never written as `0`. No wellness data is
-published, and the browser never calls the Strava or Garmin APIs.
+An unknown value is left out, never written as `0`. Daily step totals are the
+only wellness data published; `build:tracks` reads nothing else from
+`daily_stats`. The browser never calls the Strava or Garmin APIs.
 
 `build:tracks` reads the database at `DB_PATH` when set (the deploy sets it),
 else `data/activities.sqlite`, else the demo database

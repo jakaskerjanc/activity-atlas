@@ -90,6 +90,14 @@ A distance comparison's route from Ljubljana to its city, drawn dashed on the ma
 The Analytics chart that draws every visible activity's route profile as a see-through line against distance in km, in its activity type's color; repeated climbs darken where the lines stack up.
 _Avoid_: heatmap
 
+**Steps calendar**:
+The second grid in the Activity calendar card: the same year's days on the same grid, shaded by Garmin's daily step total (under 10k ringed in the accent, then 10–12k, 12–16k, 16–22k, 22k+). It follows the date range only; the type selection doesn't apply to steps. Daily step totals are the only wellness data the site publishes.
+_Avoid_: steps heatmap
+
+**Active hours**:
+The Analytics clock of time out in each local hour of the day: each visible activity counts in every hour from its local start through its elapsed time, wrapping past midnight.
+_Avoid_: activity clock, listening clock
+
 **Ridgeline**:
 The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each day's gain is a narrow peak inside that day, so a ridge never shows climbing on a day without any. Each row is labelled with the month's summed elevation gain.
 _Avoid_: joyplot
