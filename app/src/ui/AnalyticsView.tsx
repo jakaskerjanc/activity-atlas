@@ -9,7 +9,9 @@ import { ActivityCalendar } from "./ActivityCalendar";
 import { Ridgeline } from "./Ridgeline";
 import { ElevationProfiles } from "./ElevationProfiles";
 import { CityComparisons } from "./CityComparisons";
+import { ActiveHoursClocks } from "./ActiveHoursClock";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
+import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
 import { card, FS, primaryButton } from "./theme";
 import { SIDE_PANEL_CLEARANCE } from "./layout";
@@ -20,6 +22,8 @@ import {
   type MonthIsolation,
 } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
+import { activeHoursByWeekPart } from "../activeHours";
+import { stepsCalendar } from "../steps";
 import { climbingRidgeline } from "../ridgeline";
 import { profileChart } from "../elevationProfiles";
 import { totalCards } from "../stats";
@@ -39,6 +43,8 @@ interface Props {
   onPickMonth: (month: number) => void;
   /** The route profiles' load state; tests pass one in, the page fetches them otherwise. */
   profiles?: ProfilesState;
+  /** The daily steps' load state; tests pass one in, the page fetches them otherwise. */
+  steps?: StepsState;
   /** The city distances' load state; App owns it, since the map draws a city route too. */
   cities: CitiesState;
   /** The visible activities' distance comparisons, as App hands them to the map. */
@@ -58,6 +64,7 @@ export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
   { id: "consistency", label: "Consistency" },
   { id: "distance", label: "How far is that?" },
   { id: "calendar", label: "Activity calendar" },
+  { id: "hours", label: "Active hours" },
   { id: "climbing", label: "Climbing by month" },
   { id: "profiles", label: "Elevation profiles" },
 ];
@@ -72,6 +79,7 @@ export function AnalyticsView({
   isolation,
   onPickMonth,
   profiles: given,
+  steps: givenSteps,
   cities,
   comparisons,
   onShowCity,
@@ -81,6 +89,8 @@ export function AnalyticsView({
 }: Props) {
   const fetched = useRouteProfiles();
   const profiles = given ?? fetched;
+  const fetchedSteps = useSteps();
+  const steps = givenSteps ?? fetchedSteps;
   // The column starts right of the docked filters panel and fills the rest of the page;
   // on a phone the filters overlay the page instead.
   const left = sidePanelExpanded && !mobile ? SIDE_PANEL_CLEARANCE + GUTTER : GUTTER;
@@ -97,6 +107,16 @@ export function AnalyticsView({
       calendar: activityCalendar(visible, from, end),
     };
   }, [filter, visible]);
+
+  // The steps grid only when there is step data at all (not the demo, not a fork without
+  // Garmin): a failed or empty load leaves the calendar as it was.
+  const stepYears = useMemo(
+    () =>
+      steps.status === "ready" && steps.file.steps.length > 0 ? stepsCalendar(calendar, steps.file) : undefined,
+    [steps, calendar],
+  );
+
+  const hours = useMemo(() => activeHoursByWeekPart(visible), [visible]);
 
   const ridgeline = useMemo(
     () => (filter ? climbingRidgeline(visible, filter.fromMonth, filter.toMonth) : null),
@@ -169,8 +189,18 @@ export function AnalyticsView({
                   />
                 </section>
                 <section id="calendar" style={card} className="span-2">
-                  <SectionHeading title="Activity calendar" subtitle="Moving time per day" />
-                  <ActivityCalendar years={calendar} compact={mobile} />
+                  <SectionHeading
+                    title="Activity calendar"
+                    subtitle={stepYears ? "Moving time and steps per day" : "Moving time per day"}
+                  />
+                  <ActivityCalendar years={calendar} steps={stepYears} compact={mobile} />
+                </section>
+                <section id="hours" style={card} className="span-2">
+                  <SectionHeading
+                    title="Active hours"
+                    subtitle="Time out in each hour of the day, local time. Each clock is scaled to its own busiest hour."
+                  />
+                  <ActiveHoursClocks split={hours} />
                 </section>
                 <section id="climbing" style={card} className="span-2">
                   <SectionHeading

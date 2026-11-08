@@ -125,3 +125,13 @@ export function addStreams(
       `VALUES (?, ?, 1${cols.map(() => ",?").join("")})`,
   ).run(sha, n, ...cols.map((c) => encodeChannel(c, channels[c]!)));
 }
+
+/** A daily_stats row (created on first use, as the demo database has none), with a raw blob. */
+export function addDailyStats(db: Database.Database, date: string, steps: number | null) {
+  db.exec(`CREATE TABLE IF NOT EXISTS daily_stats (
+    date TEXT PRIMARY KEY, resting_hr REAL, sleep_s REAL, steps INTEGER, weight_kg REAL, raw TEXT
+  )`);
+  db.prepare(
+    "INSERT INTO daily_stats (date, resting_hr, sleep_s, steps, weight_kg, raw) VALUES (?, 52, 28000, ?, 70, ?)",
+  ).run(date, steps, JSON.stringify({ steps: [{ stepGoal: 10000, totalSteps: steps }] }));
+}

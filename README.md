@@ -15,8 +15,9 @@ on built-in demo data until you import your own.
   elevation, speed or heat, and a replay of your history.
 - **Activity view:** elevation, heart-rate and pace charts, with a marker that
   follows them along the route.
-- **Analytics:** totals, consistency, an activity calendar, climbing by month,
-  overlaid elevation profiles, and your distance as a trip to a city.
+- **Analytics:** totals, consistency, an activity calendar with your daily
+  steps, the hours of the day you're out, climbing by month, overlaid
+  elevation profiles, and your distance as a trip to a city.
 - **Data:** Strava and Garmin bulk exports, merged where both recorded the same
   outing, kept current by a daily fetch from Garmin's Personal API.
 - **Hosting:** a static site on GitHub Pages. Your data lives in a private R2
@@ -38,8 +39,8 @@ Garmin API ────┘   (raw files)  (activities, streams,                 
    activity. Strava's values win; Garmin fills the gaps.
 3. **Build.** `build-tracks.ts` turns the database into small JSON files: route
    polylines, each activity's numbers, per-activity samples (loaded when an
-   activity is opened) and elevation profiles. Wellness data is never
-   published.
+   activity is opened), elevation profiles and daily step totals. No other
+   wellness data is published.
 4. **Deploy.** `deploy.yml` pulls the database from R2 with a read-only token,
    builds the site and publishes it. The browser never calls Strava or Garmin.
 

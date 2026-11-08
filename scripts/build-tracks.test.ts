@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readDisplayFiles, writeDisplayFiles, defaultDbPath } from "./build-tracks.ts";
-import { addActivity, addSource, addStreams, withDb } from "./testDb.ts";
+import { addActivity, addDailyStats, addSource, addStreams, withDb } from "./testDb.ts";
 
 test("routes keyed by id for visible routed activities", () => {
   withDb(
@@ -112,6 +112,7 @@ test("writeDisplayFiles empties the output folder first", async () => {
       step: 100,
       profiles: {},
     });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "steps.json"), "utf8")), { v: 1, steps: [] });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -243,4 +244,47 @@ test("the committed demo database builds a complete site", () => {
   assert.ok(activities.activities.every((a) => a.sources.every((s) => s.provider === "strava")));
   assert.ok(activities.activities.some((a) => a.channels.includes("hr")));
   assert.ok(activities.activities.some((a) => a.channels.includes("power")));
+});
+
+test("steps: daily totals only, the newest (still counting) day left out", () => {
+  withDb(
+    (db) => {
+      addDailyStats(db, "2026-01-01", 12000);
+      addDailyStats(db, "2026-01-02", 9000);
+      addDailyStats(db, "2026-01-04", 15000);
+      addDailyStats(db, "2026-01-05", 23); // the fetch day
+    },
+    (path) => {
+      const { steps } = readDisplayFiles(path);
+      // 01-03 is missing: null, never 0. Nothing but v, start and steps.
+      assert.deepEqual(steps, { v: 1, start: "2026-01-01", steps: [12000, 9000, null, 15000] });
+    },
+  );
+});
+
+test("steps: unknown and zero totals are null, and the span trims to known days", () => {
+  withDb(
+    (db) => {
+      addDailyStats(db, "2026-03-01", null);
+      addDailyStats(db, "2026-03-02", 11000);
+      addDailyStats(db, "2026-03-03", 0);
+      addDailyStats(db, "2026-03-04", 13000);
+      addDailyStats(db, "2026-03-05", null);
+      addDailyStats(db, "2026-03-06", 500);
+    },
+    (path) => {
+      assert.deepEqual(readDisplayFiles(path).steps, { v: 1, start: "2026-03-02", steps: [11000, null, 13000] });
+    },
+  );
+});
+
+test("steps: none without a daily_stats table or with only the fetch day", () => {
+  withDb(
+    (db) => addActivity(db, "aaa"),
+    (path) => assert.deepEqual(readDisplayFiles(path).steps, { v: 1, steps: [] }),
+  );
+  withDb(
+    (db) => addDailyStats(db, "2026-01-01", 12000),
+    (path) => assert.deepEqual(readDisplayFiles(path).steps, { v: 1, steps: [] }),
+  );
 });

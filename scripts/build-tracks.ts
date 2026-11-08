@@ -7,9 +7,11 @@
 //   activities.json     v1  every visible activity's numbers; unknown values left out
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
 //   profiles.json       v1  every activity's elevation every 100 m, for the analytics profiles chart
+//   steps.json          v1  Garmin's daily step totals, for the analytics steps calendar
 //
 // Hidden and deleted activities never reach these files, and the folder is
-// emptied before each write so a stale file cannot survive.
+// emptied before each write so a stale file cannot survive. The step totals are
+// the only wellness value published: nothing else from daily_stats is read.
 
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -28,6 +30,7 @@ import type {
   DetailFile,
   ProfilesFile,
   RoutesFile,
+  StepsFile,
 } from "./types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -49,6 +52,7 @@ const LEGACY_TRACKS = resolve(__dirname, "../app/public/tracks.json");
 
 export const ROUTES_VERSION = 4;
 export const ACTIVITIES_VERSION = 1;
+export const STEPS_VERSION = 1;
 /** Douglas–Peucker tolerance (meters) applied to the stored line for the wire. */
 const SIMPLIFY_TOLERANCE_M = Number(process.env.SIMPLIFY_TOLERANCE_M) || 10;
 
@@ -62,6 +66,7 @@ export interface DisplayFiles {
   activities: ActivitiesFile;
   details: Map<string, DetailFile>;
   profiles: ProfilesFile;
+  steps: StepsFile;
   stats: Stats;
 }
 
@@ -116,12 +121,42 @@ function readDetail(stmt: Database.Statement, sha: string | null): DetailFile | 
   return buildDetail(streams as Streams);
 }
 
+const DAY_MS = 86_400_000;
+const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * The daily step totals, from daily_stats.date and .steps only. The newest date is left
+ * out: it is the day the fetch ran, so its total was still growing. A missing date or a
+ * total that isn't a positive number (0 means the watch recorded nothing) is null. A
+ * database without daily_stats (the demo, an older schema) has no step data.
+ */
+export function readSteps(db: Database.Database): StepsFile {
+  const none: StepsFile = { v: STEPS_VERSION, steps: [] };
+  const table = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daily_stats'")
+    .get();
+  if (!table) return none;
+  const rows = db
+    .prepare("SELECT date, steps FROM daily_stats WHERE date IS NOT NULL ORDER BY date")
+    .all() as { date: string; steps: number | null }[];
+  const known = rows
+    .slice(0, -1)
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && typeof r.steps === "number" && r.steps > 0);
+  if (known.length === 0) return none;
+  const first = Date.parse(known[0].date);
+  const last = Date.parse(known[known.length - 1].date);
+  const steps: (number | null)[] = new Array((last - first) / DAY_MS + 1).fill(null);
+  for (const r of known) steps[(Date.parse(r.date) - first) / DAY_MS] = Math.round(r.steps as number);
+  return { v: STEPS_VERSION, start: isoDay(first), steps };
+}
+
 function emptyFiles(stats: Stats): DisplayFiles {
   return {
     routes: { v: ROUTES_VERSION, routes: {} },
     activities: { v: ACTIVITIES_VERSION, activities: [] },
     details: new Map(),
     profiles: { v: PROFILES_VERSION, step: PROFILE_STEP_M, profiles: {} },
+    steps: { v: STEPS_VERSION, steps: [] },
     stats,
   };
 }
@@ -171,6 +206,7 @@ export function readDisplayFiles(
       }
       files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null));
     }
+    files.steps = readSteps(db);
     return files;
   } finally {
     db.close();
@@ -184,6 +220,7 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
   await writeFile(join(outDir, "routes.json"), JSON.stringify(files.routes));
   await writeFile(join(outDir, "activities.json"), JSON.stringify(files.activities));
   await writeFile(join(outDir, "profiles.json"), JSON.stringify(files.profiles));
+  await writeFile(join(outDir, "steps.json"), JSON.stringify(files.steps));
   for (const [id, detail] of files.details) {
     await writeFile(join(outDir, "activity", `${id}.json`), JSON.stringify(detail));
   }
@@ -203,7 +240,8 @@ async function main() {
   const { stats } = files;
   console.log(
     `Wrote ${Object.keys(files.routes.routes).length} routes, ${files.activities.activities.length} activities, ` +
-      `${files.details.size} detail files, ${Object.keys(files.profiles.profiles).length} route profiles ` +
+      `${files.details.size} detail files, ${Object.keys(files.profiles.profiles).length} route profiles, ` +
+      `${files.steps.steps.filter((s) => s != null).length} days of steps ` +
       `to ${OUT_DIR}; route points ${stats.rawPoints} -> ${stats.keptPoints} ` +
       `after ${SIMPLIFY_TOLERANCE_M}m simplify.`,
   );
