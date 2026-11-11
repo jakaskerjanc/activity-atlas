@@ -14,7 +14,7 @@ from ingest.tests.test_garmin_import import _garmin_zip
 from ingest.tests.test_rebuild import _imported
 from ingest.tests.test_strava_import import HEADER, _row, _zip
 from ingest import matcher
-from ingest.refresh import refresh
+from ingest.refresh import refresh, refresh_file
 from ingest.tests.test_grouping import A, N, _loop_from
 from ingest.tests.test_refresh import _fill, _rows, build_db
 from ingest.tests.track_fixture import climb_alts, insert_activity, offset
@@ -339,8 +339,9 @@ def test_list_routes_uses_local_dates(conn):
 
 def test_cli_name_place_then_list(tmp_path, monkeypatch, capsys):
     path = build_db(tmp_path)
+    refresh_file(path)              # a write job's refresh fills the group tables; listing never refreshes
     monkeypatch.setattr(sys, "argv", ["activity", "places", "--db", path])
-    activity_cli.main()             # the run's refresh fills the group tables before they are listed
+    activity_cli.main()
     assert any(ln.startswith("h1 ") and "Slavnik" in ln for ln in capsys.readouterr().out.splitlines())
     monkeypatch.setattr(sys, "argv", ["activity", "name-place", "h1", "Moj hrib", "--db", path])
     activity_cli.main()
@@ -357,3 +358,61 @@ def test_cli_name_place_then_list(tmp_path, monkeypatch, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].split() == ["id", "type", "name", "name_source", "count", "first", "last"]
     assert lines[1].startswith("r1 ") and lines[0].index("first") == lines[1].index("2025-06-05")
+
+
+def _no_refresh(monkeypatch):
+    def refuse(*a, **k):
+        raise AssertionError("a list must not refresh")
+    monkeypatch.setattr("ingest.refresh.refresh_file", refuse)
+    monkeypatch.setattr(writer, "run", refuse)
+
+
+def test_list_with_a_local_archive_reads_the_database_in_place(tmp_path, monkeypatch, capsys):
+    path = build_db(tmp_path)
+    refresh_file(path)
+    before = open(path, "rb").read()
+    _no_refresh(monkeypatch)
+    for cmd in ("places", "routes"):
+        monkeypatch.setattr(sys, "argv", ["activity", cmd, "--db", path, "--archive", f"file://{tmp_path}/arch"])
+        activity_cli.main()
+    out = capsys.readouterr().out
+    assert "Slavnik" in out and "r1 " in out
+    assert open(path, "rb").read() == before
+
+
+def test_list_without_group_tables_says_so(tmp_path, monkeypatch):
+    path = str(tmp_path / "v4.sqlite")
+    c = db.connect(path)
+    c.execute("CREATE TABLE activities (id TEXT)")
+    c.commit()
+    c.close()
+    _no_refresh(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["activity", "places", "--db", path, "--archive", f"file://{tmp_path}/arch"])
+    with pytest.raises(SystemExit, match="no places or routes yet"):
+        activity_cli.main()
+
+
+def test_list_through_r2_never_uploads(tmp_path, monkeypatch, capsys):
+    path = build_db(tmp_path)
+    refresh_file(path)
+    store = MemoryStore()
+    store.bucket = "bkt"
+    store.put(writer.DB_KEY, open(path, "rb").read())
+
+    def no_put(*a, **k):
+        raise AssertionError("a list must not upload")
+    monkeypatch.setattr(store, "put", no_put)
+    monkeypatch.setattr(store, "delete", no_put)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.delenv("ARCHIVE_URL", raising=False)
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    _no_refresh(monkeypatch)
+    local = tmp_path / "data" / "local.sqlite"
+    for cmd in ("places", "routes"):
+        monkeypatch.setattr(sys, "argv", ["activity", cmd, "--db", str(local)])
+        activity_cli.main()
+    out = capsys.readouterr().out
+    assert "Slavnik" in out and "r1 " in out
+    assert not local.exists()                                   # nothing installed locally
+    assert [p.name for p in local.parent.iterdir()] == []       # and the temporary pull is gone

@@ -4,12 +4,18 @@ sources are pinned, and identity survives re-imports and rebuilds.
 
 Also the owner's names and merges for places and same routes, kept in
 group_overrides: list them, name one, merge one place into another. The
-refresh that writer.run does after every job applies them on the same run."""
+refresh that writer.run does after every job applies them on the same run.
+
+Listing is read-only: it reads a temporary pull of the R2 database, or the
+local database in place, and never uploads or refreshes. It shows the groups
+as the last write job left them."""
 import argparse
+import os
+import sqlite3
 from datetime import date
 
 from . import db, matcher, merge as merging, writer
-from .archive import open_archive
+from .archive import is_remote, open_archive
 
 
 def _require_activity(conn, activity_id: str) -> None:
@@ -180,6 +186,42 @@ def format_table(rows: list[dict], cols: tuple[str, ...]) -> str:
 
 PLACE_COLS = ("id", "name", "name_source", "kind", "ele", "count")
 ROUTE_COLS = ("id", "type", "name", "name_source", "count", "first", "last")
+LIST_COMMANDS = ("places", "routes")
+_GROUP_TABLES = ("places", "route_groups", "activity_groups")
+
+
+def _print_list(path: str, cmd: str) -> None:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        have = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if not have.issuperset(_GROUP_TABLES):
+            raise SystemExit("activity: this database has no places or routes yet; "
+                             "they appear after the next write job")
+        if cmd == "places":
+            print(format_table(list_places(conn), PLACE_COLS))
+        else:
+            print(format_table(list_routes(conn), ROUTE_COLS))
+    finally:
+        conn.close()
+
+
+def list_groups(cmd: str, db_path: str, archive) -> None:
+    """Print places or routes without writing anything: from a temporary pull of the R2 database, which
+    is deleted afterwards, or from ``db_path`` in place with a local archive."""
+    if not is_remote(archive):
+        if not os.path.exists(db_path):
+            raise SystemExit(f"activity: no database at {db_path}")
+        _print_list(db_path, cmd)
+        return
+    tmp = writer.working_copy(db_path)
+    try:
+        if writer.pull(archive.store, tmp) is None:
+            raise SystemExit(f"activity: R2 has no database at {writer.DB_KEY}")
+        _print_list(tmp, cmd)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 def main():
@@ -212,6 +254,9 @@ def main():
         provider, sep, pid = args.source.partition(":")
         if not sep or not pid:
             ap.error("source must be provider:provider_activity_id")
+    if args.cmd in LIST_COMMANDS:
+        list_groups(args.cmd, args.db, open_archive(args.archive))
+        return
 
     def work(path):
         conn = db.open_db(path)
@@ -221,8 +266,6 @@ def main():
                 message = f"merged {args.other_id} into {args.keep_id}"
             elif args.cmd == "split":
                 message = f"split {args.source} into {split(conn, args.activity_id, provider, pid)}"
-            elif args.cmd in ("places", "routes"):
-                message = None      # listed below, after the run's refresh
             elif args.cmd.startswith("name-"):
                 kind = args.cmd.removeprefix("name-")
                 name_group(conn, kind, args.group_id, args.name)
@@ -245,19 +288,7 @@ def main():
             conn.close()
 
     # work may run again after an upload conflict, so the message is printed once, here.
-    message = writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat())
-    if message is not None:
-        print(message)
-        return
-    # A list reads the local copy, which writer.run has brought up to date and refreshed.
-    conn = db.connect(args.db)
-    try:
-        if args.cmd == "places":
-            print(format_table(list_places(conn), PLACE_COLS))
-        else:
-            print(format_table(list_routes(conn), ROUTE_COLS))
-    finally:
-        conn.close()
+    print(writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat()))
 
 
 if __name__ == "__main__":
