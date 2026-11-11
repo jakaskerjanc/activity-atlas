@@ -96,12 +96,26 @@ def track_top(lats, lons, alts) -> Top | None:
     return Top(rows[k][0], rows[k][1], sm[k], climb)
 
 
+def _segment_dist(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    seg2 = dx * dx + dy * dy
+    t = 0.0 if seg2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / seg2))
+    return math.dist(p, (a[0] + dx * t, a[1] + dy * t))
+
+
+def _polyline_dist(p: tuple[float, float], line: Sequence[tuple[float, float]]) -> float:
+    if len(line) == 1:
+        return math.dist(p, line[0])
+    return min(_segment_dist(p, a, b) for a, b in zip(line, line[1:]))
+
+
 def route_shape(xy: Sequence[tuple[float, float]]) -> str:
+    """Out-and-back when >= 70% of the second half lies within 50 m of the first half's polyline."""
     if math.dist(xy[0], xy[-1]) > POINT_TO_POINT_M:
         return "point-to-point"
     half = len(xy) // 2
     first, second = xy[:half], xy[half:]
-    near = sum(1 for s in second if min(math.dist(s, f) for f in first) <= OUT_AND_BACK_M)
+    near = sum(1 for s in second if _polyline_dist(s, first) <= OUT_AND_BACK_M)
     return "out-and-back" if near >= OUT_AND_BACK_SHARE * len(second) else "loop"
 
 

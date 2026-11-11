@@ -113,3 +113,14 @@ def test_insert_activity_fixture(tmp_path):
         "JOIN streams s ON s.file_sha256 = a.streams_sha256")}
     assert abs(rows["a"][0] - 3000) < 5 and rows["a"][1] == 1
     assert rows["a"][2] == 1 and rows["b"][2] == 0
+
+
+def test_shape_resampled_out_and_back_with_wobbly_return():
+    # 10 km out-and-back whose return wobbles +-25 m sideways: always within 50 m of the
+    # outbound line, but after resampling to 64 points (~160 m apart) the return samples
+    # fall between the outbound ones.
+    out = line(A, 0, 5000, 200)
+    back = [offset([p], 25 * math.sin(i / 3), 0)[0] for i, p in enumerate(line(out[-1], 180, 5000, 200))]
+    xy = resample(project(out + back[1:], A), 64)
+    assert route_shape(xy) == "out-and-back"
+    assert route_shape(resample(project(loop(A, 800, 100), A), 64)) == "loop"
