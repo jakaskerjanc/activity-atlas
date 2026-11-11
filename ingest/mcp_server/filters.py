@@ -111,4 +111,7 @@ def where_sql(f: ActivityFilter) -> tuple[str, list, list[str]]:
         params += list(f.place_ids)
         n = len(f.place_ids)
         rules.append(f"place: {f.place}" + (f" ({n} places with that name)" if n > 1 else ""))
+        if f.include_hidden:
+            # The refresh groups visible activities only, so a hidden one is never in a place.
+            rules.append("place groups cover visible activities only")
     return (" AND ".join(conds) or "1"), params, rules

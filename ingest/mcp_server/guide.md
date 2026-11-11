@@ -53,8 +53,10 @@ moving time, local calendar years") and mention `as_of` when recency matters.
   activity names, or "Top at … m") unless the owner named it; `name_source`
   says which. The `place` filter takes a place id or a name, with case and
   accents ignored ("smarna gora" matches "Šmarna gora"); a name that several
-  places share matches them all, and `counted.rules` says so. For summits the
-  owner has reached, prefer it over `find_place` + `activities_near`.
+  places share matches them all, and `counted.rules` says so. Places group
+  visible activities only, so with `include_hidden` the place filter still
+  finds no hidden ones (`counted.rules` says so too). For summits the owner
+  has reached, prefer it over `find_place` + `activities_near`.
 - Same-route groups hold visible activities of one type with a similar
   distance that follow the same line. Their names are automatic too.
 

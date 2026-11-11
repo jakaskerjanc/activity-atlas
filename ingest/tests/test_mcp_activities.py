@@ -175,6 +175,14 @@ def test_place_filter_rule_mentions_duplicates(db):
     assert "place: Grmada (2 places with that name)" in r["counted"]["rules"]
 
 
+def test_place_filter_with_hidden_says_places_cover_visible_only(db):
+    rules = list_activities(db, ActivityFilter(place="Slavnik", include_hidden=True))["counted"]["rules"]
+    assert "hidden activities included" in rules
+    assert "place groups cover visible activities only" in rules
+    rules = list_activities(db, ActivityFilter(place="Slavnik"))["counted"]["rules"]
+    assert "place groups cover visible activities only" not in rules
+
+
 def test_place_filter_in_summarize(db):
     r = summarize(db, ActivityFilter(place="Slavnik"), period="all")
     assert r["data"]["rows"][0]["count"] == 2 and "place: Slavnik" in r["counted"]["rules"]
