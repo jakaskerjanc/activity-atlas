@@ -477,9 +477,9 @@ Hike on 21 Aug 2025
 
 ## Done when
 
-- [ ] A rebuild reproduces places, same-route groups and names without
+- [x] A rebuild reproduces places, same-route groups and names without
       network.
-- [ ] Tests on a fixture:
+- [x] Tests on a fixture:
   - Slavnik's hikes share one place.
   - A flat run gets no place.
   - A reversed loop is the same route.
@@ -490,10 +490,24 @@ Hike on 21 Aug 2025
     within 500 m of the start or end.
   - No two routes of the same type end up with the same name.
   - Merges and renames survive a rebuild.
-- [ ] A write job with no new data leaves the database unchanged and
+- [x] A write job with no new data leaves the database unchanged and
       uploads nothing.
-- [ ] `places.json` has no coordinates.
-- [ ] The Places section filters the map, stats and Analytics together, and
+- [x] `places.json` has no coordinates.
+- [x] The Places section filters the map, stats and Analytics together, and
       the selected activity shows its place and same route.
-- [ ] Sizes of the new tables and `places.json` are measured and written
+- [x] Sizes of the new tables and `places.json` are measured and written
       down.
+
+  Measured 2026-11-11 on the owner's data, with SI and AT loaded:
+
+  - `places.json`: 8,296 bytes, 2,476 gzipped (108 places, 21 routes). The
+    demo's is 1,567 bytes, 385 gzipped.
+  - Raw OSM snapshots in the archive (`osm/<CC>/…`), as Overpass returned
+    them: SI 3,909,501 bytes, AT 10,002,472 bytes. The 871 KB for Slovenia
+    above counts the parsed points only.
+  - Parsed points: SI 19,144, AT 49,203. 31 features near the border come
+    back for both countries and are kept once.
+  - Database: 44,732,416 bytes before, 52,359,168 after the new tables and
+    `places:update`, and 52,387,840 after the first refresh.
+  - Rows: `osm_points` 68,347, `places` 108, `route_groups` 21,
+    `activity_groups` 280.
