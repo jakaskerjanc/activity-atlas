@@ -34,10 +34,12 @@ jobs:
         run: scripts/ci_fetch.sh
 
   # Nothing is committed, so nothing retriggers deploy.yml: call it directly,
-  # and only when the fetch changed the database.
+  # whenever the database in R2 changed, even if the fetch job then failed
+  # (exit 7 after a places-and-routes refresh failure, or a partial fetch
+  # error): the uploaded database is what the site should show.
   deploy:
     needs: fetch
-    if: needs.fetch.outputs.db_changed == 'true'
+    if: ${{ !cancelled() && needs.fetch.outputs.db_changed == 'true' }}
     uses: ./.github/workflows/deploy.yml
     secrets:
       VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN }}

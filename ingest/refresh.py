@@ -52,7 +52,8 @@ def _orphan_note(kind: str, gid: str, name: str | None, merge: str | None,
 
 
 def _refresh(conn) -> tuple[dict[str, Any], list[str]]:
-    tracks = grouping.load_tracks(conn)
+    skipped: list[str] = []
+    tracks = grouping.load_tracks(conn, skipped)
     points = [naming.OsmPoint(*r) for r in conn.execute(
         "SELECT osm_id, kind, name, lat, lon, ele FROM osm_points ORDER BY osm_id")]
     index = naming.PointIndex(points)
@@ -91,6 +92,8 @@ def _refresh(conn) -> tuple[dict[str, Any], list[str]]:
             notes.append(note)
     if no_osm and points:
         notes.insert(0, f"{no_osm} places have no OSM data nearby; run pnpm run places:update")
+    if skipped:
+        notes.insert(0, f"skipped {len(skipped)} activities whose track won't decode: {', '.join(sorted(skipped))}")
     result = {"places": len(places), "routes": len(routes), "rows_changed": rows_changed,
               "no_osm_nearby": no_osm, "orphaned_overrides": orphaned}
     return result, notes

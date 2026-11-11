@@ -230,3 +230,15 @@ def test_orphans_are_printed_with_the_command_that_clears_them(tmp_path):
     assert 'unmerge-place b1' in lines[0]
     assert 'name-place gone ""' in lines[1] and "unmerge-place gone" in lines[1]
     assert 'name-route h2 ""' in lines[2]
+
+
+def test_undecodable_track_is_skipped_and_named(tmp_path):
+    path = build_db(tmp_path)
+    c = db.connect(path)
+    c.execute("UPDATE activities SET polyline = '_p~iF' WHERE id IN ('r2', 'h3')")
+    c.commit()
+    c.close()
+    lines = []
+    result = refresh_file(path, log=lines.append)
+    assert result["places"] == 2 and result["routes"] == 0
+    assert lines == ["skipped 2 activities whose track won't decode: h3, r2"]

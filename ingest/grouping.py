@@ -42,9 +42,10 @@ def _top(lat_blob, lon_blob, alt_blob) -> Top | None:
                      codec.decode("altitude", alt_blob))
 
 
-def load_tracks(conn) -> list[ActivityTrack]:
+def load_tracks(conn, skipped: list[str] | None = None) -> list[ActivityTrack]:
     """Visible activities with a polyline of at least two points, by (start_time, id). ``top`` is None
-    without a streams row or without altitude."""
+    without a streams row or without altitude. An activity whose polyline won't decode is left out, and
+    its id appended to ``skipped`` when given, so one bad row never stops the whole refresh."""
     rows = conn.execute(
         "SELECT a.id, a.type, a.start_time, a.start_local, a.name, a.distance, a.polyline,"
         " s.lat, s.lon, s.altitude"
@@ -54,7 +55,12 @@ def load_tracks(conn) -> list[ActivityTrack]:
     ).fetchall()
     tracks = []
     for r in rows:
-        line = tuple(tuple(p) for p in polyline.decode(r[6], 5))
+        try:
+            line = tuple(tuple(p) for p in polyline.decode(r[6], 5))
+        except (IndexError, ValueError, TypeError):
+            if skipped is not None:
+                skipped.append(r[0])
+            continue
         if len(line) < 2:
             continue
         tracks.append(ActivityTrack(id=r[0], type=r[1], start_time=r[2], start_local=r[3], name=r[4] or "",

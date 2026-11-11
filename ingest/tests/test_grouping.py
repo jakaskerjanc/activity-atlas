@@ -89,6 +89,16 @@ def test_altitude_holes_are_skipped(conn):
     assert _groups(conn).place_of == {"h": "h"}
 
 
+def test_undecodable_polyline_is_skipped_and_reported(conn):
+    insert_activity(conn, "good", "Run", _t(1), _loop_from(A))
+    insert_activity(conn, "bad", "Run", _t(2), _loop_from(A))
+    conn.execute("UPDATE activities SET polyline = '_p~iF' WHERE id = 'bad'")   # cut off mid-number
+    skipped = []
+    assert [t.id for t in load_tracks(conn, skipped)] == ["good"]
+    assert skipped == ["bad"]
+    assert [t.id for t in load_tracks(conn)] == ["good"]
+
+
 # --- places ----------------------------------------------------------------------------------------------------
 
 def test_hikes_to_same_top_share_a_place(conn):
