@@ -32,8 +32,7 @@ export function PlacesSection({ filter, places, onChange }: Props) {
   );
   if (places.length === 0) return null;
   const searching = query.trim() !== "";
-  // Open, and longer than the short list: offer closing it again.
-  const canClose = expanded && !searching && rows.length > PLACES_SHOWN;
+  const toggle = listToggle({ expanded, searching, more, shown: rows.length });
   return (
     <>
       <hr style={divider} />
@@ -57,32 +56,32 @@ export function PlacesSection({ filter, places, onChange }: Props) {
         ))}
       </div>
       {searching && rows.length === 0 && <p style={note}>No places match “{query.trim()}”.</p>}
-      {more > 0 && (
+      {toggle && (
         <button
           type="button"
           className="ctl"
-          aria-expanded={false}
+          aria-expanded={expanded}
           aria-controls={listId}
-          onClick={() => setExpanded(true)}
+          onClick={() => setExpanded(!expanded)}
           style={moreButton}
         >
-          {`+ ${more} more`}
-        </button>
-      )}
-      {canClose && (
-        <button
-          type="button"
-          className="ctl"
-          aria-expanded={true}
-          aria-controls={listId}
-          onClick={() => setExpanded(false)}
-          style={moreButton}
-        >
-          Show fewer
+          {toggle}
         </button>
       )}
     </>
   );
+}
+
+/**
+ * The label of the one button that opens and closes the list, or null for none. One
+ * button relabelled (not two swapped) keeps keyboard focus on it across the toggle.
+ * Collapsed: "+ N more" while some are hidden. Open: "Show fewer" when the list is
+ * longer than the short one. A search shows every match, so it needs neither.
+ */
+export function listToggle(s: { expanded: boolean; searching: boolean; more: number; shown: number }): string | null {
+  if (s.searching) return null;
+  if (!s.expanded) return s.more > 0 ? `+ ${s.more} more` : null;
+  return s.shown > PLACES_SHOWN ? "Show fewer" : null;
 }
 
 /** One place: kind mark, name (wrapping), height, then the count at the right. */

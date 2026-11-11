@@ -1018,10 +1018,12 @@ export function MapView(props: Props) {
 
   // A picked place: fly to where its routes cluster, with replay's easing. Clearing a
   // place doesn't bump the epoch, so the camera stays; nothing visible leaves it be too.
-  // Reads `visible` from propsRef, as above: the epoch is the only trigger.
+  // Reads `visible` from propsRef, as above: the epoch is the only trigger. While
+  // replaying, replay drives the camera (and follows the new filter), so no fly.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current || props.placeFlyEpoch === 0) return;
+    if (propsRef.current.replaying) return;
     const box = densestClusterBounds(propsRef.current.visible);
     if (!box) return;
     const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), 12);

@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PlacesSection } from "./PlacesSection";
+import { listToggle, PlacesSection } from "./PlacesSection";
 import { createActivityFilter, togglePlace } from "../activityFilter";
 import { record } from "../testFixtures";
 import type { Place } from "../types";
@@ -54,5 +54,19 @@ describe("PlacesSection", () => {
     expect(html.match(/aria-pressed=/g)).toHaveLength(8);
     expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>\+ 3 more<\/button>/);
     expect(html).not.toContain("Show fewer");
+    // One toggle, after the last row.
+    expect(html.match(/aria-expanded=/g)).toHaveLength(1);
+    expect(html.indexOf("aria-expanded")).toBeGreaterThan(html.lastIndexOf("aria-pressed"));
+  });
+
+  // Opening and closing relabel one toggle, so the focused button stays in the DOM.
+  test("one toggle: '+ N more' when collapsed, 'Show fewer' when open, none while searching", () => {
+    expect(listToggle({ expanded: false, searching: false, more: 3, shown: 8 })).toBe("+ 3 more");
+    expect(listToggle({ expanded: false, searching: false, more: 0, shown: 5 })).toBeNull();
+    expect(listToggle({ expanded: true, searching: false, more: 0, shown: 11 })).toBe("Show fewer");
+    // Open but no longer than the short list: nothing to close.
+    expect(listToggle({ expanded: true, searching: false, more: 0, shown: 8 })).toBeNull();
+    expect(listToggle({ expanded: true, searching: true, more: 0, shown: 11 })).toBeNull();
+    expect(listToggle({ expanded: false, searching: true, more: 0, shown: 11 })).toBeNull();
   });
 });
