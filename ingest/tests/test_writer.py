@@ -1,9 +1,10 @@
 import hashlib
 import os
+import warnings
 from datetime import date, timedelta
 
 import pytest
-from ingest import db, writer
+from ingest import db, engine, writer
 from ingest.archive import LocalArchive, RemoteArchive
 from ingest.objstore import MemoryStore
 from ingest.tests.test_grouping import A, N, _hike
@@ -340,3 +341,43 @@ def test_local_run_refreshes(tmp_path, db_path):
     assert writer.run(db_path, LocalArchive(str(tmp_path / "a")), _insert_hike, today=TODAY) == "inserted"
     with open(db_path, "rb") as fh:
         assert _read(fh.read(), tmp_path, "SELECT * FROM activity_groups") == [("hike1", "hike1", None)]
+
+
+def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_path):
+    """The first daily job after the upgrade: R2 holds a v4 database and the archive the records behind it,
+    among them a walk that climbs 106 m. The job opens the database as the fetchers do, which rebuilds it
+    to v5; the run's refresh then fills the group tables, and the upload carries both."""
+    from ingest.tests.test_rebuild import NOW, _imported
+    (tmp_path / "import").mkdir()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        dbp, local = _imported(tmp_path / "import")
+    for root, _, files in os.walk(local.root):          # the archive, under the same keys in R2
+        for name in files:
+            path = os.path.join(root, name)
+            with open(path, "rb") as fh:
+                store.put(os.path.relpath(path, local.root).replace(os.sep, "/"), fh.read())
+    conn = db.connect(dbp)
+    [walk] = [r[0] for r in conn.execute("SELECT id FROM activities WHERE type = 'Walk'")]
+    for table in ("activity_groups", "route_groups", "places", "group_overrides", "osm_points"):
+        conn.execute(f"DROP TABLE {table}")
+    conn.execute("PRAGMA user_version = 4")
+    conn.commit()
+    conn.close()
+    with open(dbp, "rb") as fh:
+        store.put(writer.DB_KEY, fh.read())
+
+    def work(path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            engine.open_for_write(path, archive, now=NOW).close()
+        return "fetched"
+
+    assert writer.run(db_path, archive, work, today=TODAY) == "fetched"
+    for key in (writer.DB_KEY, f"db/snapshots/{TODAY}.sqlite"):
+        data = store.get(key)[0]
+        assert _read(data, tmp_path, "PRAGMA user_version") == [(db.SCHEMA_VERSION,)] == [(5,)]
+        assert _read(data, tmp_path, "SELECT id, name, name_source, kind FROM places") == [
+            (walk, "Top at 410 m", "fallback", "top")]
+        assert _read(data, tmp_path, "SELECT * FROM activity_groups") == [(walk, walk, None)]
+        assert len(_read(data, tmp_path, "SELECT id FROM activities")) == 3
