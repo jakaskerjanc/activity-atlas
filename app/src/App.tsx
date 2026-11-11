@@ -447,6 +447,14 @@ export default function App() {
     () => (selectedFeature && filter ? routeTable(selectedFeature.properties, filter, routeMap) : null),
     [selectedFeature, filter, routeMap],
   );
+  // While the route table is open, the map highlights its routes the filter shows.
+  const groupIds = useMemo(
+    () =>
+      routeOpen && selectedRouteTable
+        ? selectedRouteTable.rows.filter((r) => !r.outside).map((r) => r.id)
+        : null,
+    [routeOpen, selectedRouteTable],
+  );
   // Like picking the place in the list, except that it never clears it: the row sets
   // the place (if it isn't already) and flies there, keeping this activity selected.
   const pickPlace = (id: string) => {
@@ -712,6 +720,7 @@ export default function App() {
                   colorDomain={colorDomain}
                   grade={grade}
                   hoverId={hoverId}
+                  groupIds={groupIds}
                   selectedId={selectedId}
                   onHover={setHoverId}
                   onSelect={selectActivity}
