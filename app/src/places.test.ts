@@ -161,6 +161,9 @@ test("titles", () => {
   expect(placeTitle(filterWith(["WeightTraining"], top.id), byId)).toBe(
     "WeightTraining activities to Top at 812 m",
   );
+  // A type named like an Object.prototype key is still just a type.
+  expect(placeTitle(filterWith(["constructor"], slavnik.id), byId)).toBe("constructor activities to Slavnik");
+  expect(placeTitle(filterWith(["toString"], vrsic.id), byId)).toBe("toString activities over Vršič");
   expect(placeTitle(filterWith(["Hike"], null), byId)).toBe("All activities");
   expect(placeTitle(filterWith(["Hike"], "p:missing"), byId)).toBe("All activities");
 });

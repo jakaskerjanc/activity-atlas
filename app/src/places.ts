@@ -116,7 +116,8 @@ export function placeTitle(filter: ActivityFilter, places: ReadonlyMap<string, P
   const prep = preposition(place);
   if (filter.types.size === 1) {
     const [type] = filter.types;
-    return `${TYPE_PLURALS[type] ?? `${type} activities`} ${prep} ${place.name}`;
+    const plural = Object.hasOwn(TYPE_PLURALS, type) ? TYPE_PLURALS[type] : `${type} activities`;
+    return `${plural} ${prep} ${place.name}`;
   }
   return `${prep[0].toUpperCase()}${prep.slice(1)} ${place.name}`;
 }
