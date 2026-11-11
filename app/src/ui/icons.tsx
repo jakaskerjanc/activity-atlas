@@ -107,3 +107,21 @@ export function ArrowRightIcon({ size = 14 }: P) {
     </svg>
   );
 }
+
+/** A peak, solid: the places list's mark for a summit. */
+export function PeakIcon({ size = 12 }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 4.5 21.5 19.5h-19z" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A saddle between two shoulders: the places list's mark for a pass. */
+export function SaddleIcon({ size = 12 }: P) {
+  return (
+    <svg {...iconProps(size)} strokeWidth={2.6}>
+      <path d="M2.5 18.5 7 8.5c1.8 3.2 3 4.5 5 4.5s3.2-1.3 5-4.5l4.5 10" />
+    </svg>
+  );
+}

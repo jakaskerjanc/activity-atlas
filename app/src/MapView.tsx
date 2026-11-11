@@ -138,6 +138,8 @@ interface Props {
   replayTimeline: ReplayStep[];
   /** Signals replay just became active — used to fit the camera to the visible activities once. */
   replayEpoch: number;
+  /** Bumped when a place is picked: fly to the densest cluster of the visible routes. */
+  placeFlyEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
   onReplayReady: () => void;
   /** Screen space the panels cover at each edge; fitted routes stay clear of it. */
@@ -1013,6 +1015,24 @@ export function MapView(props: Props) {
       map.off("moveend", ready);
     };
   }, [replaying, replayEpoch]);
+
+  // A picked place: fly to where its routes cluster, with replay's easing. Clearing a
+  // place doesn't bump the epoch, so the camera stays; nothing visible leaves it be too.
+  // Reads `visible` from propsRef, as above: the epoch is the only trigger.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current || props.placeFlyEpoch === 0) return;
+    const box = densestClusterBounds(propsRef.current.visible);
+    if (!box) return;
+    const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), 12);
+    if (!camera) return;
+    map.flyTo({
+      ...camera,
+      duration: 900,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+      essential: true,
+    });
+  }, [props.placeFlyEpoch]);
 
   // Smoothly fly to + fit the whole selected track into the area the panels leave free.
   // Refits when that area changes (the phone's sheet grows once the charts load, or is

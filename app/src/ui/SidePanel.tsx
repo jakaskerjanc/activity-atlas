@@ -1,5 +1,5 @@
-// The filters panel: the activity filter (types + date range), and on the map the route
-// coloring and replay. Docked top-left on desktop; on a phone it opens over the map from
+// The filters panel: the activity filter (types, places, date range), and on the map the
+// route coloring and replay. Docked top-left on desktop; on a phone it opens over the map from
 // the header's Filters button. Collapsing slides it fully off-screen, so no sliver of
 // clipped controls is left behind; the header's Filters button brings it back.
 
@@ -13,7 +13,7 @@ import { FS, R } from "./theme";
 import { HEADER_HEIGHT, PANEL_EDGE, PANEL_TOP, SIDE_PANEL_WIDTH } from "./layout";
 import type { ColorMode, ColorDomain } from "../colors";
 import type { ActivityFilter } from "../activityFilter";
-import type { Theme } from "../types";
+import type { Place, Theme } from "../types";
 
 // The last kind of input, so focus is only moved for keyboard users.
 let lastInput: "key" | "pointer" = "pointer";
@@ -25,6 +25,8 @@ if (typeof window !== "undefined") {
 interface Props {
   filter: ActivityFilter;
   onFilterChange: (filter: ActivityFilter) => void;
+  /** The places the activities reach, for the filter's places list. */
+  places: readonly Place[];
   /** How many activities pass the filter, for the panel's subtitle. */
   shownCount: number;
   colorMode: ColorMode;
@@ -96,7 +98,13 @@ export function SidePanel(p: Props) {
         />
       }
     >
-      <FilterSection filter={p.filter} onChange={p.onFilterChange} colorMode={p.colorMode} theme={p.theme} />
+      <FilterSection
+        filter={p.filter}
+        onChange={p.onFilterChange}
+        places={p.places}
+        colorMode={p.colorMode}
+        theme={p.theme}
+      />
       {p.sections && p.sections.length > 0 && (
         <>
           <hr style={divider} />
