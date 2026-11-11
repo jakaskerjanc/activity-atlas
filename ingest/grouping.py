@@ -1,12 +1,13 @@
 """Group activities into places (where they climbed to) and same routes. Pure apart from reading tracks:
 it imports ``geometry`` and ``codec`` and nothing else from ingest."""
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import polyline
 
 from ingest import codec
-from ingest.geometry import Top, discrete_frechet, haversine_m, project, resample, track_top
+from ingest.geometry import Top, frechet_below, haversine_m, project, resample, track_top
 
 PLACE_RADIUS_M = 500
 ROUTE_POINTS = 64
@@ -92,8 +93,18 @@ def _same_route(anchor: ActivityTrack, anchor_xy, t: ActivityTrack) -> bool:
     start = t.line[0]
     if min(haversine_m(*start, *anchor.line[0]), haversine_m(*start, *anchor.line[-1])) > ROUTE_START_NEAR_M:
         return False
-    xy = resample(project(t.line, anchor.line[0]), ROUTE_POINTS)
-    return min(discrete_frechet(anchor_xy, xy), discrete_frechet(anchor_xy, xy[::-1])) < ROUTE_MAX_FRECHET_M
+    origin = anchor.line[0]
+    # Forward, t's first point pairs with the anchor's first; reversed, with its last. When both are too far,
+    # neither way matches. The resample keeps that first point, so this is frechet_below's own end check,
+    # made before paying for the resample.
+    first = project(t.line[:1], origin)[0]
+    if min(math.dist(anchor_xy[0], first), math.dist(anchor_xy[-1], first)) >= ROUTE_MAX_FRECHET_M:
+        return False
+    xy = resample(project(t.line, origin), ROUTE_POINTS)
+    # The same route when the Fréchet distance is below the limit either way round; the reversed check runs
+    # only when the forward one fails.
+    return (frechet_below(anchor_xy, xy, ROUTE_MAX_FRECHET_M)
+            or frechet_below(anchor_xy, xy[::-1], ROUTE_MAX_FRECHET_M))
 
 
 def _routes(tracks: Sequence[ActivityTrack]) -> dict[str, str]:

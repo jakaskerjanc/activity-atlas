@@ -3,9 +3,10 @@ import math
 import pytest
 
 from ingest import db
-from ingest.geometry import haversine_m
-from ingest.grouping import ActivityTrack, Groups, group_activities, load_tracks
-from ingest.tests.track_fixture import climb_alts, insert_activity, loop, offset
+from ingest.geometry import discrete_frechet, haversine_m, project, resample
+from ingest.grouping import (ROUTE_MAX_FRECHET_M, ROUTE_POINTS, ActivityTrack, Groups, _same_route,
+                             group_activities, load_tracks)
+from ingest.tests.track_fixture import climb_alts, insert_activity, line, loop, offset
 
 A = (45.6, 14.0)
 N = 301
@@ -217,3 +218,37 @@ def test_grouping_sorts_its_input():
     early = ActivityTrack("z", "Run", "2025-01-01T07:00:00+00:00", None, "", 1100.0, line, None)
     late = ActivityTrack("a", "Run", "2025-01-02T07:00:00+00:00", None, "", 1100.0, line, None)
     assert group_activities([late, early]).route_of == {"z": "z", "a": "z"}
+
+
+def _track(id_: str, pts) -> ActivityTrack:
+    length = sum(haversine_m(*a, *b) for a, b in zip(pts, pts[1:]))
+    return ActivityTrack(id_, "Run", "2025-01-01T07:00:00+00:00", None, "", length, tuple(pts), None)
+
+
+def test_same_route_is_the_frechet_rule_either_way_round():
+    """_same_route answers as min(discrete_frechet forward, reversed) < 250 m after the distance and start
+    checks, for loops, reversed loops and lines started from either end, near the 250 m limit too."""
+    tracks = [_track("loop", _loop_from(A)), _track("loop_rev", _loop_from(A)[::-1])]
+    for east in (0, 120, 240, 249.5, 250.5, 260, 400, 900):
+        tracks.append(_track(f"loop+{east}", offset(_loop_from(A), east, 0)))
+        tracks.append(_track(f"loop_rev+{east}", offset(_loop_from(A)[::-1], east, 0)))
+        out = line(offset([A], east, 0)[0], 10, 3000, 200)
+        tracks.append(_track(f"line+{east}", out))
+        tracks.append(_track(f"line_rev+{east}", out[::-1]))   # starts near the far end of "line+0"
+    tracks.append(_track("wide", _loop_from(A, along=R + 200, across=240)))
+    answers = set()
+    for anchor in tracks:
+        anchor_xy = resample(project(anchor.line, anchor.line[0]), ROUTE_POINTS)
+        for t in tracks:
+            a, b = anchor.distance, t.distance
+            start = t.line[0]
+            near = min(haversine_m(*start, *anchor.line[0]), haversine_m(*start, *anchor.line[-1])) <= 1000
+            if abs(a - b) > 0.15 * max(a, b) or not near:
+                expected = False
+            else:
+                xy = resample(project(t.line, anchor.line[0]), ROUTE_POINTS)
+                expected = min(discrete_frechet(anchor_xy, xy), discrete_frechet(anchor_xy, xy[::-1])) \
+                    < ROUTE_MAX_FRECHET_M
+            assert _same_route(anchor, anchor_xy, t) == expected, (anchor.id, t.id)
+            answers.add((near, expected))
+    assert answers == {(True, True), (True, False), (False, False)}

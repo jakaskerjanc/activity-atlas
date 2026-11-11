@@ -1,7 +1,8 @@
 import math
+import random
 
-from ingest.geometry import (discrete_frechet, farthest_index, haversine_m, project, resample, route_shape,
-                             smooth, track_top)
+from ingest.geometry import (discrete_frechet, farthest_index, frechet_below, haversine_m, project, resample,
+                             route_shape, smooth, track_top)
 from ingest.tests.track_fixture import climb_alts, line, loop, offset, out_and_back
 
 A = (45.6, 14.0)
@@ -41,6 +42,69 @@ def test_frechet_identical_zero_and_offset():
 def test_frechet_reversed_is_large():
     xy = resample(project(line(A, 0, 5000, 100), A), 64)
     assert discrete_frechet(xy, xy[::-1]) > 1000
+
+
+def _limits(d: float) -> list[float]:
+    """Limits around a Fréchet distance d: at it, one float either side of it, and further off."""
+    return [0.0, d, math.nextafter(d, math.inf), math.nextafter(d, 0), d * 0.9, d * 1.1, d + 50, max(d - 50, 0)]
+
+
+def _agrees(p, q) -> None:
+    d = discrete_frechet(p, q)
+    for limit in _limits(d):
+        assert frechet_below(p, q, limit) == (d < limit), (p, q, limit)
+
+
+def test_frechet_below_agrees_with_discrete_frechet_on_random_walks():
+    rng = random.Random(5)
+
+    def walk(n: int, step: float) -> list[tuple[float, float]]:
+        x = y = 0.0
+        pts = []
+        for _ in range(n):
+            x, y = x + rng.uniform(-step, step), y + rng.uniform(-step, step)
+            pts.append((x, y))
+        return pts
+
+    for _ in range(400):
+        p = walk(rng.randint(1, 30), rng.choice((10, 100)))
+        kind = rng.randrange(3)
+        if kind == 0:     # unrelated
+            q = walk(rng.randint(1, 30), rng.choice((10, 100)))
+        elif kind == 1:   # p with noise, sometimes thinned or reversed
+            q = [(x + rng.uniform(-30, 30), y + rng.uniform(-30, 30)) for x, y in p if rng.random() < 0.8] or p[:1]
+            q = q[::-1] if rng.random() < 0.3 else q
+        else:             # p with a detour in the middle
+            q = list(p)
+            i = len(q) // 2
+            q[i] = (q[i][0] + rng.uniform(100, 400), q[i][1])
+        _agrees(p, q)
+        _agrees(q, p)
+
+
+def test_frechet_below_agrees_on_resampled_tracks():
+    base = resample(project(line(A, 30, 3000, 200), A), 64)
+    for east in (0, 100, 249, 250, 251, 400):
+        shifted = resample(project(offset(line(A, 30, 3000, 200), east, 0), A), 64)
+        for q in (shifted, shifted[::-1]):
+            _agrees(base, q)
+    circle = resample(project(loop(A, 500, 300), A), 64)
+    for start in (0, 10, 45, 90, 180):
+        other = resample(project(loop(A, 520, 300, start_deg=start), A), 64)
+        for q in (other, other[::-1]):
+            _agrees(circle, q)
+    out_back = resample(project(out_and_back(A, 0, 2000, 300), A), 64)
+    _agrees(out_back, resample(project(line(A, 0, 2000, 200), A), 64))
+    _agrees(out_back, out_back[::-1])
+
+
+def test_frechet_below_single_points_and_ends():
+    assert frechet_below([(0.0, 0.0)], [(3.0, 4.0)], 5.0000001)
+    assert not frechet_below([(0.0, 0.0)], [(3.0, 4.0)], 5.0)
+    # Close everywhere but at the last pair: the end check alone rules it out.
+    p = [(float(i), 0.0) for i in range(10)]
+    assert not frechet_below(p, p[:-1] + [(9.0, 300.0)], 250)
+    assert frechet_below(p, p[:-1] + [(9.0, 249.0)], 250)
 
 
 def test_smooth_edges():

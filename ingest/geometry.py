@@ -2,6 +2,7 @@
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import accumulate
 
 EARTH_RADIUS_M = 6_371_008.8
 MIN_CLIMB_M = 50.0
@@ -28,9 +29,7 @@ def project(points: Sequence[tuple[float, float]], origin: tuple[float, float]) 
 
 def resample(xy: Sequence[tuple[float, float]], n: int = 64) -> list[tuple[float, float]]:
     """n points evenly spaced by path length; a zero-length path gives n copies of the first point."""
-    cum = [0.0]
-    for a, b in zip(xy, xy[1:]):
-        cum.append(cum[-1] + math.dist(a, b))
+    cum = list(accumulate(map(math.dist, xy, xy[1:]), initial=0.0))
     total = cum[-1]
     if total == 0:
         return [tuple(xy[0])] * n
@@ -62,6 +61,42 @@ def discrete_frechet(p: Sequence[tuple[float, float]], q: Sequence[tuple[float, 
                 v = max(min(prev[j], prev[j - 1], row[j - 1]), d)
             row.append(v)
         prev = row
+    return prev[-1]
+
+
+def frechet_below(p: Sequence[tuple[float, float]], q: Sequence[tuple[float, float]], limit: float) -> bool:
+    """Whether ``discrete_frechet(p, q) < limit``, without filling the whole table. The distance is the
+    smallest largest pair over the monotone couplings of p and q, so it is below ``limit`` exactly when some
+    coupling uses only pairs nearer than ``limit``. Row by row this keeps the pairs such a coupling reaches,
+    measures only pairs next to one, and gives up on a row that reaches none. Every coupling holds both end
+    pairs, so those are checked first."""
+    if math.dist(p[0], q[0]) >= limit or math.dist(p[-1], q[-1]) >= limit:
+        return False
+    m = len(q)
+    a = p[0]
+    hi = 0
+    while hi + 1 < m and math.dist(a, q[hi + 1]) < limit:
+        hi += 1
+    prev = [j <= hi for j in range(m)]
+    lo = 0                # the row before reaches only cells in [lo, hi]
+    for a in p[1:]:
+        row = [False] * m
+        left = False
+        new_lo = new_hi = -1
+        for j in range(lo, m):
+            if left or prev[j] or (j > lo and prev[j - 1]):
+                if math.dist(a, q[j]) < limit:
+                    row[j] = left = True
+                    if new_lo < 0:
+                        new_lo = j
+                    new_hi = j
+                    continue
+            elif j > hi:
+                break     # neither the row before nor this one reaches anything from here on
+            left = False
+        if new_lo < 0:
+            return False
+        prev, lo, hi = row, new_lo, new_hi
     return prev[-1]
 
 
