@@ -33,3 +33,17 @@ def test_open_db_flags_older_v2(tmp_path):
 def test_open_db_initialises_new_file(tmp_path):
     conn = db.open_db(str(tmp_path / "new.sqlite"))
     assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+
+
+def test_v4_database_needs_rebuild(tmp_path):
+    p = tmp_path / "v4.sqlite"
+    c = db.connect(str(p)); db.init_schema(c); c.execute("PRAGMA user_version = 4"); c.commit(); c.close()
+    with pytest.raises(db.NeedsRebuild):
+        db.open_db(str(p))
+
+
+def test_v5_has_group_tables():
+    conn = db.connect(":memory:"); db.init_schema(conn)
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"osm_points", "places", "route_groups", "activity_groups", "group_overrides"} <= names
+    assert db.SCHEMA_VERSION == 5
