@@ -52,6 +52,47 @@ pnpm run activity unhide <id>
 Merged and split sources are pinned, so later imports, fetches and rebuilds
 keep them as you set them. Hidden activities stay in the database.
 
+## Places and same routes
+
+After every job that writes the database (an import, the Garmin fetch, a
+rebuild, `pnpm run activity`, `places:update`), the run recomputes the places
+(where activities climbed to), the same-route groups and their names. Only
+visible activities are grouped. If that refresh fails, the job's own work is
+still saved (and uploaded to R2) with the previous places and routes, and the
+run exits with code 7.
+
+Names come from OpenStreetMap points. Download them once per country:
+
+```bash
+pnpm run places:update SI AT
+```
+
+For each country (ISO 3166-1 codes) it asks Overpass for the named peaks,
+passes, parks, lakes and other water, and neighbourhoods up to villages,
+stores the raw response in the archive under `osm/<CC>/`, and replaces that
+country's points in the database. All countries are downloaded first: if any fails (an
+HTTP error, a timeout, no network) it stops before writing anything. Without
+OSM points, places are named "Top at … m" and routes by distance and shape
+("5.2 km loop").
+
+To name places and routes yourself:
+
+```bash
+pnpm run activity places                       # list places, unnamed ones first
+pnpm run activity routes                       # list same routes
+pnpm run activity name-place <id> "Moj hrib"
+pnpm run activity name-route <id> "Tivoli loop"
+pnpm run activity merge-place <id> <into-id>   # one summit found as two places
+pnpm run activity unmerge-place <id>
+```
+
+A name of `""` clears it. Names and merges are kept in `group_overrides` and
+apply on the same run. One that points at a place or route that is gone (its
+first activity was hidden, say) is reported after every refresh, with the
+command that clears it. `places` and `routes` only read: with R2 they read a
+fresh copy of the database in R2, and they never upload, refresh or change the
+local copy.
+
 ## Rebuild
 
 ```bash
@@ -59,8 +100,10 @@ pnpm run rebuild
 ```
 
 Rebuilds the database from the archive. Activities keep their IDs, manual
-pins, deletions and hidden flags; everything else is re-derived, so rebuilding
-twice gives the same rows. If an activity in the database has no record in the
+pins, deletions and hidden flags, and your place and route names and merges
+(`group_overrides`) carry over; the OSM snapshots in the archive are applied
+again and places and routes refresh as after any write job. Everything else is
+re-derived, so rebuilding twice gives the same rows. If an activity in the database has no record in the
 archive (a wrong `--archive` path, say), it stops without changing anything;
 `--force` rebuilds anyway and those activities lose their data.
 
