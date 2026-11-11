@@ -13,7 +13,7 @@ import { ActiveHoursClocks } from "./ActiveHoursClock";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
-import { card, FS, primaryButton } from "./theme";
+import { card, FS, primaryButton, secondaryButton } from "./theme";
 import { SIDE_PANEL_CLEARANCE } from "./layout";
 import {
   rangeTs,
@@ -28,8 +28,9 @@ import { climbingRidgeline } from "../ridgeline";
 import { profileChart } from "../elevationProfiles";
 import { totalCards } from "../stats";
 import { formatMonth, formatMonthShort } from "../format";
+import { emptyNotice } from "../places";
 import type { CityComparison } from "../cityMatch";
-import type { ActivityRecord, Profile, Theme } from "../types";
+import type { ActivityRecord, Place, Profile, Theme } from "../types";
 
 interface Props {
   /** null until the data loads. */
@@ -55,6 +56,10 @@ interface Props {
   mobile?: boolean;
   /** Put the filter back to its defaults (offered when nothing matches). */
   onResetFilter?: () => void;
+  /** The places by id, so an empty page can name the picked place. */
+  places?: ReadonlyMap<string, Place>;
+  /** Clear just the picked place (offered first when nothing matches at a place). */
+  onClearPlace?: () => void;
   theme?: Theme;
 }
 
@@ -68,6 +73,8 @@ export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
   { id: "climbing", label: "Climbing by month" },
   { id: "profiles", label: "Elevation profiles" },
 ];
+
+const NO_PLACES: ReadonlyMap<string, Place> = new Map();
 
 /** Gap between the docked filters panel and the content column. */
 const GUTTER = 24;
@@ -85,6 +92,8 @@ export function AnalyticsView({
   onShowCity,
   mobile = false,
   onResetFilter,
+  places = NO_PLACES,
+  onClearPlace,
   theme = "dark",
 }: Props) {
   const fetched = useRouteProfiles();
@@ -152,17 +161,11 @@ export function AnalyticsView({
               {formatMonthShort(filter.fromMonth)} to {formatMonthShort(filter.toMonth)}
             </p>
             {visible.length === 0 ? (
-              <section style={{ ...card, marginTop: 16 }}>
-                <SectionHeading
-                  title="No activities match the filter"
-                  subtitle="Switch on an activity type or widen the date range."
-                />
-                {onResetFilter && (
-                  <button type="button" className="ctl-accent" style={primaryButton} onClick={onResetFilter}>
-                    Reset filters
-                  </button>
-                )}
-              </section>
+              <EmptyPage
+                notice={emptyNotice(filter, places)}
+                onClearPlace={onClearPlace}
+                onResetFilter={onResetFilter}
+              />
             ) : (
               <div className="analytics__grid">
                 <section id="totals" style={card}>
@@ -244,6 +247,45 @@ export function AnalyticsView({
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * The page when nothing is visible: the map's empty notice (emptyNotice's text), with
+ * "Clear place" first when a place is picked, then "Reset filters".
+ */
+function EmptyPage({
+  notice,
+  onClearPlace,
+  onResetFilter,
+}: {
+  notice: { text: string; clearPlace: boolean };
+  onClearPlace?: () => void;
+  onResetFilter?: () => void;
+}) {
+  const clear = notice.clearPlace ? onClearPlace : undefined;
+  return (
+    <section style={{ ...card, marginTop: 16 }}>
+      <SectionHeading title="No activities match the filter" subtitle={notice.text} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {clear && (
+          <button type="button" className="ctl-accent" style={primaryButton} onClick={clear}>
+            Clear place
+          </button>
+        )}
+        {onResetFilter && (
+          // Second to Clear place when that is offered: the narrower way back.
+          <button
+            type="button"
+            className={clear ? "ctl" : "ctl-accent"}
+            style={clear ? { ...secondaryButton, height: 36 } : primaryButton}
+            onClick={onResetFilter}
+          >
+            Reset filters
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 

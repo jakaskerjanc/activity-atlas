@@ -542,10 +542,14 @@ export default function App() {
     setFilter(createActivityFilter(filter.activities));
     setIsolation(null);
   };
+  // Clear just the picked place; changeFilter never flies when the place goes.
+  const clearPlace = () => {
+    if (filter?.place != null) changeFilter(togglePlace(filter, filter.place));
+  };
   // With a place picked, the notice names it and offers clearing just the place.
   const empty =
     filter && visible.length === 0 && !selectedFeature && !shownCity ? emptyNoticeFor(filter, placeMap) : null;
-  const clearablePlace = empty?.clearPlace ? (filter?.place ?? null) : null;
+  const canClearPlace = empty?.clearPlace === true;
   const emptyNotice =
     filter && empty ? (
       <div style={{ padding: "4px 0 2px" }}>
@@ -553,21 +557,16 @@ export default function App() {
           {empty.text}
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {clearablePlace !== null && (
-            <button
-              type="button"
-              className="ctl-accent"
-              style={primaryButton}
-              onClick={() => changeFilter(togglePlace(filter, clearablePlace))}
-            >
+          {canClearPlace && (
+            <button type="button" className="ctl-accent" style={primaryButton} onClick={clearPlace}>
               Clear place
             </button>
           )}
           {/* Second to Clear place when that is offered: the narrower way back. */}
           <button
             type="button"
-            className={clearablePlace !== null ? "ctl" : "ctl-accent"}
-            style={clearablePlace !== null ? { ...secondaryButton, height: 36 } : primaryButton}
+            className={canClearPlace ? "ctl" : "ctl-accent"}
+            style={canClearPlace ? { ...secondaryButton, height: 36 } : primaryButton}
             onClick={resetFilter}
           >
             Reset filters
@@ -633,6 +632,8 @@ export default function App() {
           comparisons={comparisons}
           onShowCity={showCity}
           onResetFilter={resetFilter}
+          places={placeMap}
+          onClearPlace={clearPlace}
           theme={theme}
         />
       )}
@@ -656,7 +657,7 @@ export default function App() {
           />
         ) : (
           <InfoPanel
-            title={empty && clearablePlace === null ? "Nothing to show" : title}
+            title={empty && !canClearPlace ? "Nothing to show" : title}
             titleNode={
               !selectedFeature && shownCity && cities.status === "ready" ? (
                 <RouteTitle from={cities.data.origin.name} to={shownCity.pick.city.name} />
