@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import urllib.error
 import urllib.parse
 
 import pytest
@@ -118,6 +119,16 @@ def test_fetch_raises_on_zero_points():
         fetch_country("SI", post)
 
 
+@pytest.mark.parametrize("error", [urllib.error.URLError("[Errno -3] Temporary failure in name resolution"),
+                                   TimeoutError("The read operation timed out"),
+                                   ConnectionResetError(104, "Connection reset by peer")])
+def test_fetch_turns_network_errors_into_osm_error(error):
+    def post(url, data, headers):
+        raise error
+    with pytest.raises(OsmError, match="SI: "):
+        fetch_country("SI", post)
+
+
 def _country_of(data):
     return "SI" if '"ISO3166-1"="SI"' in urllib.parse.unquote_plus(data.decode()) else "AT"
 
@@ -150,6 +161,20 @@ def test_main_writes_nothing_when_a_country_times_out(cli, monkeypatch):
     answers = {"SI": (200, body(peak(1))), "AT": (200, body(peak(2), remark=remark))}
     monkeypatch.setattr(osm, "_http_post", lambda url, data, headers: answers[_country_of(data)])
     with pytest.raises(SystemExit, match="timed out"):
+        run("SI", "AT")
+    assert not (archive_dir / "osm").exists()
+    assert not os.path.exists(db_path)
+
+
+def test_main_writes_nothing_on_a_network_error(cli, monkeypatch):
+    run, archive_dir, db_path = cli
+
+    def post(url, data, headers):
+        if _country_of(data) == "AT":
+            raise urllib.error.URLError("[Errno 111] Connection refused")
+        return 200, body(peak(1))
+    monkeypatch.setattr(osm, "_http_post", post)
+    with pytest.raises(SystemExit, match="AT: .*Connection refused.*nothing was written"):
         run("SI", "AT")
     assert not (archive_dir / "osm").exists()
     assert not os.path.exists(db_path)

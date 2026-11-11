@@ -111,7 +111,11 @@ def _http_post(url: str, body: bytes, headers: dict) -> tuple[int, bytes]:
 
 def fetch_country(country: str, post=_http_post) -> bytes:
     body = urllib.parse.urlencode({"data": overpass_query(country)}).encode()
-    status, data = post(OVERPASS_URL, body, {"User-Agent": USER_AGENT})
+    try:
+        status, data = post(OVERPASS_URL, body, {"User-Agent": USER_AGENT})
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        reason = e.reason if isinstance(e, urllib.error.URLError) else e
+        raise OsmError(f"{country}: could not reach Overpass ({type(e).__name__}: {reason})") from e
     if status != 200:
         raise OsmError(f"{country}: Overpass answered HTTP {status}")
     if not parse_points(data, country):
