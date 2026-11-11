@@ -1,0 +1,17 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.1 (hand-written fixture)",
+  "osm3s": {"timestamp_osm_base": "2026-11-09T09:00:00Z", "copyright": "The data included in this document is from www.openstreetmap.org."},
+  "elements": [
+    {"type": "node", "id": 101, "lat": 45.5367, "lon": 14.0306, "tags": {"natural": "peak", "name": "Slavnik", "ele": "1028"}},
+    {"type": "node", "id": 102, "lat": 46.4333, "lon": 13.7442, "tags": {"mountain_pass": "yes", "name": "Vršič", "ele": "1611"}},
+    {"type": "node", "id": 103, "lat": 46.3700, "lon": 14.0100, "tags": {"natural": "saddle", "name": "Sedlo pod Vrhom"}},
+    {"type": "way", "id": 201, "center": {"lat": 46.0569, "lon": 14.4950}, "tags": {"leisure": "park", "name": "Park Tivoli"}},
+    {"type": "relation", "id": 301, "center": {"lat": 46.2800, "lon": 14.0900}, "tags": {"natural": "water", "name": "Blejsko jezero"}},
+    {"type": "node", "id": 104, "lat": 46.0500, "lon": 14.4700, "tags": {"place": "neighbourhood", "name": "Koseze"}},
+    {"type": "node", "id": 105, "lat": 46.1000, "lon": 14.6000, "tags": {"place": "village", "name": "Zgornja Vas"}},
+    {"type": "node", "id": 106, "lat": 46.2000, "lon": 14.2000, "tags": {"natural": "peak", "ele": "900"}},
+    {"type": "node", "id": 107, "tags": {"natural": "peak", "name": "Brez Lege", "ele": "700"}},
+    {"type": "node", "id": 108, "lat": 46.3000, "lon": 14.3000, "tags": {"place": "hamlet", "name": "Zaprevalje"}}
+  ]
+}
