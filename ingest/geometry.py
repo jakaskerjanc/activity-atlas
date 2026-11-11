@@ -1,0 +1,113 @@
+"""Track geometry for places and same-route groups. A leaf module: it imports nothing from ingest."""
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+EARTH_RADIUS_M = 6_371_008.8
+MIN_CLIMB_M = 50.0
+TOP_SAMPLE_MIN = 30
+BASE_INDEX = 15
+POINT_TO_POINT_M = 200.0
+OUT_AND_BACK_M = 50.0
+OUT_AND_BACK_SHARE = 0.7
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def project(points: Sequence[tuple[float, float]], origin: tuple[float, float]) -> list[tuple[float, float]]:
+    """Equirectangular metres around origin; x is scaled by cos(origin latitude)."""
+    lat0, lon0 = origin
+    k = math.cos(math.radians(lat0))
+    m = math.pi / 180 * EARTH_RADIUS_M
+    return [((lon - lon0) * m * k, (lat - lat0) * m) for lat, lon in points]
+
+
+def resample(xy: Sequence[tuple[float, float]], n: int = 64) -> list[tuple[float, float]]:
+    """n points evenly spaced by path length; a zero-length path gives n copies of the first point."""
+    cum = [0.0]
+    for a, b in zip(xy, xy[1:]):
+        cum.append(cum[-1] + math.dist(a, b))
+    total = cum[-1]
+    if total == 0:
+        return [tuple(xy[0])] * n
+    out = []
+    j = 0
+    for i in range(n):
+        target = total * i / (n - 1)
+        while j < len(xy) - 2 and cum[j + 1] < target:
+            j += 1
+        seg = cum[j + 1] - cum[j]
+        t = 0.0 if seg == 0 else min(1.0, (target - cum[j]) / seg)
+        out.append((xy[j][0] + (xy[j + 1][0] - xy[j][0]) * t, xy[j][1] + (xy[j + 1][1] - xy[j][1]) * t))
+    return out
+
+
+def discrete_frechet(p: Sequence[tuple[float, float]], q: Sequence[tuple[float, float]]) -> float:
+    prev: list[float] = []
+    for i, a in enumerate(p):
+        row: list[float] = []
+        for j, b in enumerate(q):
+            d = math.dist(a, b)
+            if i == 0 and j == 0:
+                v = d
+            elif i == 0:
+                v = max(row[j - 1], d)
+            elif j == 0:
+                v = max(prev[0], d)
+            else:
+                v = max(min(prev[j], prev[j - 1], row[j - 1]), d)
+            row.append(v)
+        prev = row
+    return prev[-1]
+
+
+def smooth(values: Sequence[float], window: int = 15) -> list[float]:
+    """Centred moving average over the samples available at the edges."""
+    half = window // 2
+    n = len(values)
+    out = []
+    for i in range(n):
+        chunk = values[max(0, i - half):min(n, i + half + 1)]
+        out.append(sum(chunk) / len(chunk))
+    return out
+
+
+@dataclass(frozen=True)
+class Top:
+    lat: float
+    lon: float
+    ele: float
+    climb: float
+
+
+def track_top(lats, lons, alts) -> Top | None:
+    rows = [(a, o, e) for a, o, e in zip(lats, lons, alts) if a is not None and o is not None and e is not None]
+    if len(rows) < TOP_SAMPLE_MIN:
+        return None
+    sm = smooth([r[2] for r in rows])
+    k = max(range(len(sm)), key=sm.__getitem__)
+    climb = sm[k] - sm[min(BASE_INDEX, len(sm) - 1)]
+    if climb < MIN_CLIMB_M:
+        return None
+    return Top(rows[k][0], rows[k][1], sm[k], climb)
+
+
+def route_shape(xy: Sequence[tuple[float, float]]) -> str:
+    if math.dist(xy[0], xy[-1]) > POINT_TO_POINT_M:
+        return "point-to-point"
+    half = len(xy) // 2
+    first, second = xy[:half], xy[half:]
+    near = sum(1 for s in second if min(math.dist(s, f) for f in first) <= OUT_AND_BACK_M)
+    return "out-and-back" if near >= OUT_AND_BACK_SHARE * len(second) else "loop"
+
+
+def farthest_index(xy: Sequence[tuple[float, float]], skip_m: float = 0.0) -> int:
+    """Index farthest from xy[0], ignoring points within skip_m of the first or last point."""
+    first, last = xy[0], xy[-1]
+    dist = [math.dist(first, p) for p in xy]
+    kept = [i for i, p in enumerate(xy) if math.dist(first, p) >= skip_m and math.dist(last, p) >= skip_m]
+    return max(kept or range(len(xy)), key=dist.__getitem__)
