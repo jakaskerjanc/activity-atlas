@@ -48,6 +48,27 @@ test("normalizeName drops accents and case", () => {
   expect(normalizeName("Vršič")).toBe("vrsic");
 });
 
+test("normalizeName folds the letters NFD leaves whole: ß, ł, ø, đ", () => {
+  expect(normalizeName("Großglockner")).toBe("grossglockner");
+  expect(normalizeName("GROẞGLOCKNER")).toBe("grossglockner");
+  expect(normalizeName("Łysica")).toBe("lysica");
+  expect(normalizeName("Snøhetta")).toBe("snohetta");
+  expect(normalizeName("ØRESUND")).toBe("oresund");
+  expect(normalizeName("Đurđevac")).toBe("durdevac");
+});
+
+test("a search for the folded spelling finds the place", () => {
+  const gross = place("p:gross", "Großglockner");
+  const lysica = place("p:lysica", "Łysica");
+  const counts = { [gross.id]: 1, [lysica.id]: 1 };
+  expect(listedPlaces([gross, lysica], counts, null, "gross", false).rows.map((r) => r.place.name)).toEqual([
+    "Großglockner",
+  ]);
+  expect(listedPlaces([gross, lysica], counts, null, "lysica", false).rows.map((r) => r.place.name)).toEqual([
+    "Łysica",
+  ]);
+});
+
 describe("the places list", () => {
   const ps = [slavnik, vrsic, smarna, top];
   const c = { [slavnik.id]: 5, [vrsic.id]: 3, [smarna.id]: 2, [top.id]: 1 };

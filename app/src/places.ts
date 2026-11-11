@@ -40,9 +40,19 @@ export function checkPlacesFile(raw: unknown): PlacesFile {
   return raw as unknown as PlacesFile;
 }
 
-/** A name for matching: accents (combining marks after NFD) removed, lowercased. */
+/** Letters NFD leaves whole, folded like the accented ones; "ß" also covers "ẞ". */
+const FOLDS: Record<string, string> = { ß: "ss", ł: "l", ø: "o", đ: "d" };
+
+/**
+ * A name for matching: accents (combining marks after NFD) removed, lowercased, and
+ * ß, ł, ø, đ folded ("gross" finds Großglockner). The MCP server's fold_name agrees.
+ */
 export function normalizeName(s: string): string {
-  return s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[ßłøđ]/g, (c) => FOLDS[c]);
 }
 
 /** Rows the places list shows before `+ N more`. */

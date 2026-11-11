@@ -169,6 +169,15 @@ def test_place_filter_ignores_case_and_accents(db):
     assert fold_name("Šmarna gora") == fold_name("smarna gora") == "smarna gora"
 
 
+def test_fold_name_folds_letters_nfd_leaves_whole():
+    # The site's normalizeName folds the same way.
+    assert fold_name("Großglockner") == fold_name("GROẞGLOCKNER") == "grossglockner"
+    assert fold_name("Łysica") == "lysica"
+    assert fold_name("Snøhetta") == "snohetta"
+    assert fold_name("ØRESUND") == "oresund"
+    assert fold_name("Đurđevac") == "durdevac"
+
+
 def test_place_filter_rule_mentions_duplicates(db):
     r = list_activities(db, ActivityFilter(place="Grmada"))
     assert ids_of(r) == ["grmada2", "grmada1"]

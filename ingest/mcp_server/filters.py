@@ -31,9 +31,15 @@ def has_group_tables(conn) -> bool:
     return n == len(GROUP_TABLES)
 
 
+# Letters NFD leaves whole, folded like the accented ones (casefold() already turns ß into ss).
+_FOLDS = str.maketrans({"ł": "l", "ø": "o", "đ": "d"})
+
+
 def fold_name(s: str) -> str:
-    """Case and accents dropped, as the site's normalizeName does (SQLite's lower() folds ASCII only)."""
-    return "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c)).casefold()
+    """Case and accents dropped, and ß, ł, ø, đ folded, as the site's normalizeName does
+    (SQLite's lower() folds ASCII only)."""
+    bare = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+    return bare.casefold().translate(_FOLDS)
 
 
 def resolve_place(conn, f: ActivityFilter) -> ActivityFilter:
