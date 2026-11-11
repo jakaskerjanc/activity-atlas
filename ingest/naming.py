@@ -232,12 +232,13 @@ def _km(t: ActivityTrack) -> str:
 def _route_base(t: ActivityTrack, place: PlaceInfo | None, index: PointIndex) -> _Route:
     xy = _xy(t, t.line[0])
     shape = route_shape(xy)
+    if place is not None:
+        return _Route(t, f"{place.name} {shape}", False)
     if shape == "point-to-point":
         start, end = name_point(*t.line[0], index), name_point(*t.line[-1], index)
         if start is not None and end is not None and start != end:
             return _Route(t, f"{start} → {end}", False)
-    if place is not None:
-        return _Route(t, f"{place.name} {shape}", False)
+    # A point-to-point without a place and without two different end names is named like a loop.
     turn = name_point(*_unproject(xy[farthest_index(xy, skip_m=END_SKIP_M)], t.line[0]), index)
     if turn is not None:
         return _Route(t, f"{turn} {'loop' if shape == 'point-to-point' else shape}", False)
@@ -259,9 +260,10 @@ def _via_divergence(r: _Route, others: Sequence[_Route], index: PointIndex) -> s
 
 
 def _via_feature(r: _Route, others: Sequence[_Route], index: PointIndex) -> str | None:
-    """Tiebreak 2: a named point of any kind within 75 m of r and more than 150 m from every other route.
-    When several qualify, the one nearest to r wins (ties by osm_id). Both distances are to the full tracks:
-    the 64-point resample only seeds the search, since its chords cut corners on long, curvy routes."""
+    """Tiebreak 2: a named point of any kind within 75 m of r and more than 150 m from every other route, and,
+    as in tiebreak 1, not within 500 m of r's first or last point. When several qualify, the one nearest to r
+    wins (ties by osm_id). Both distances are to the full tracks: the 64-point resample only seeds the
+    search, since its chords cut corners on long, curvy routes."""
     origin = r.track.line[0]
     line = project(r.track.line, origin)
     others_xy = [project(o.track.line, origin) for o in others]
@@ -276,6 +278,8 @@ def _via_feature(r: _Route, others: Sequence[_Route], index: PointIndex) -> str 
                 continue
             checked.add(pt.osm_id)
             fxy = project([(pt.lat, pt.lon)], origin)[0]
+            if math.dist(fxy, line[0]) < END_SKIP_M or math.dist(fxy, line[-1]) < END_SKIP_M:
+                continue
             d = polyline_dist(fxy, line)
             if d <= VIA_FEATURE_M and all(polyline_dist(fxy, o) > VIA_OTHERS_M for o in others_xy):
                 found[pt.osm_id] = (d, pt)
@@ -308,18 +312,24 @@ _TIEBREAKS: tuple[Callable[[_Route, Sequence[_Route], PointIndex], str | None], 
     _via_divergence, _via_feature, _with_distance, _since_month)
 
 
-def _break_ties(routes: Sequence[_Route], index: PointIndex) -> dict[str, str]:
-    """Names for one type's automatic routes, unique among them. Colliding routes go through the tiebreaks
-    level by level; each settles at the first level whose result is unique, as base plus one suffix."""
+def _break_ties(routes: Sequence[_Route], index: PointIndex, reserved: Collection[str] = ()) -> dict[str, str]:
+    """Names for one type's automatic routes, unique among them and never one of ``reserved`` (the type's
+    owner names). Colliding routes, and a route whose base is reserved, go through the tiebreaks level by
+    level; each settles at the first level whose result is unique, as base plus one suffix."""
+    reserved = set(reserved)
     by_base: dict[str, list[_Route]] = {}
     for r in routes:
         by_base.setdefault(r.base, []).append(r)
-    names = {r.id: r.base for r in routes if len(by_base[r.base]) == 1}
-    pending = [r for r in routes if len(by_base[r.base]) > 1]
+
+    def collides(r: _Route) -> bool:
+        return len(by_base[r.base]) > 1 or r.base in reserved
+
+    names = {r.id: r.base for r in routes if not collides(r)}
+    pending = [r for r in routes if collides(r)]
     for tiebreak in _TIEBREAKS:
         if not pending:
             break
-        taken = set(names.values())
+        taken = set(names.values()) | reserved
         cand = {r.id: tiebreak(r, [o for o in by_base[r.base] if o is not r], index) for r in pending}
         for r in pending:
             c = cand[r.id]
@@ -327,29 +337,37 @@ def _break_ties(routes: Sequence[_Route], index: PointIndex) -> dict[str, str]:
                 names[r.id] = c
         pending = [r for r in pending if r.id not in names]
     seen: dict[str, int] = {}
+    taken = set(names.values()) | reserved
     for r in pending:     # already in anchor order
         name = _since_day(r)
-        seen[name] = seen.get(name, 0) + 1
-        names[r.id] = name if seen[name] == 1 else f"{name} ({seen[name]})"
+        n = seen.get(name, 0) + 1
+        while (name if n == 1 else f"{name} ({n})") in taken:
+            n += 1
+        seen[name] = n
+        names[r.id] = name if n == 1 else f"{name} ({n})"
+        taken.add(names[r.id])
     return names
 
 
 def name_routes(groups: Groups, tracks: Iterable[ActivityTrack], places: Mapping[str, PlaceInfo],
                 index: PointIndex, owner_names: Mapping[str, str]) -> dict[str, RouteInfo]:
-    """Every route in ``groups.route_of``, named from its anchor track. Owner names win and take no part in
-    collisions; the rest get a base and, when bases collide within a type, a tiebreak."""
+    """Every route in ``groups.route_of``, named from its anchor track. Owner names win and never get a
+    suffix; the rest get a base and, when it collides within a type with another base or an owner name of
+    that type, a tiebreak."""
     by_id = {t.id: t for t in tracks}
     anchors = sorted((by_id[r] for r in set(groups.route_of.values())), key=lambda t: (t.start_time, t.id))
     out: dict[str, RouteInfo] = {}
     auto: dict[str, list[_Route]] = {}
+    owned: dict[str, set[str]] = {}
     for t in anchors:
         owner = owner_names.get(t.id)
         if owner:
             out[t.id] = RouteInfo(t.id, owner, "owner")
+            owned.setdefault(t.type, set()).add(owner)
             continue
         pid = groups.place_of.get(t.id)
         auto.setdefault(t.type, []).append(_route_base(t, places.get(pid) if pid else None, index))
-    for routes in auto.values():
-        for rid, name in _break_ties(routes, index).items():
+    for type_, routes in auto.items():
+        for rid, name in _break_ties(routes, index, owned.get(type_, ())).items():
             out[rid] = RouteInfo(rid, name, "auto")
     return {t.id: out[t.id] for t in anchors}

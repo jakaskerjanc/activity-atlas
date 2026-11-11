@@ -42,8 +42,8 @@
 - **Height:** the `ele` of the OSM peak or pass within 400 m when there is one, otherwise the top rounded to 10 m.
 - **Point naming:** the nearest point of the first kind with a hit, in this order: peak/pass 150 m, park 250 m, water 150 m, neighbourhood 800 m, quarter or hamlet 1000 m, suburb 1500 m, village 2000 m.
 - **Route base:**
-  - point-to-point whose start and end are both named and the names differ: `"{start} → {end}"`
-  - otherwise a route with a place: `"{place name} {shape}"`
+  - a route with a place: `"{place name} {shape}"`, with its true shape (a point-to-point too)
+  - otherwise, a point-to-point whose start and end are both named and the names differ: `"{start} → {end}"`
   - otherwise, when the turnaround has a name: `"{turnaround name} {shape}"`, where point-to-point reads as `loop`
   - otherwise (no OSM point in range, as for the demo data, a fork before `places:update`, or a country not downloaded): `"{km:.1f} km {shape}"` from the anchor's distance, with the true shape, e.g. "5.2 km loop" or "12.0 km point-to-point"
 - **Route tiebreaks** (within one type, when bases collide), first that makes the name unique:

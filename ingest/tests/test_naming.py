@@ -204,6 +204,15 @@ def test_route_with_place_uses_place_name_and_shape():
     assert _route_names([hike], index, places=places, place_of={"h": "p", "h-2": "p"}) == {"h": "Slavnik out-and-back"}
 
 
+def test_route_with_place_comes_before_start_to_end():
+    # A traverse over the place, with differently named ends: the place names it, with its true shape.
+    index = PointIndex([_osm("1", "village", "Podgorje", 0, -100), _osm("2", "village", "Kozina", 100, 6000)])
+    hike = _track("h", _path([(0, 0), (0, 6000)]), type_="Hike")
+    places = {"p": PlaceInfo("p", "Slavnik", "osm", "peak", 1028)}
+    assert _route_names([hike], index, places=places, place_of={"h": "p", "h-2": "p"}) == {
+        "h": "Slavnik point-to-point"}
+
+
 def test_route_owner_name_wins():
     run = _track("r", _loop_route(300, 300))
     names = _route_names([run], owner={"r": "Domači krog"})
@@ -211,6 +220,15 @@ def test_route_owner_name_wins():
     groups = Groups(place_of={}, route_of={"r": "r"}, place_anchors=frozenset())
     assert name_routes(groups, [run], {}, EMPTY, {"r": "Domači krog"})["r"].name_source == "owner"
     assert name_routes(groups, [run], {}, EMPTY, {})["r"].name_source == "auto"
+
+
+def test_automatic_route_name_avoids_owner_names_of_its_type():
+    index = PointIndex([_osm("1", "neighbourhood", "Koseze", 5000, 3100)])
+    mine = _track("a", _loop_route(300, 300))
+    auto = _track("b", _loop_route(300, 300, dx=5000), distance=6400, start="2024-06-03T07:00:00+00:00")
+    walk = _track("w", _loop_route(300, 300, dx=5000), type_="Walk", start="2024-06-03T07:00:00+00:00")
+    names = _route_names([mine, auto, walk], index, owner={"a": "Koseze loop"})
+    assert names == {"a": "Koseze loop", "b": "Koseze loop, 6.4 km", "w": "Koseze loop"}
 
 
 def test_flat_loop_named_after_turnaround():
@@ -248,6 +266,16 @@ def test_collision_via_divergence_ignores_first_500_m():
     a = _track("a", _loop_route(400, 400))
     b = _track("b", _loop_route(-400, -400), start="2024-06-03T07:00:00+00:00")
     assert _route_names([a, b], index) == {"a": "Novo Brdo loop via Rožnik", "b": "Novo Brdo loop via Ribnik"}
+
+
+def test_collision_via_feature_ignores_first_and_last_500_m():
+    # Vrtača is 50 m from a's start and more than 150 m from b, but a via is never named near an end.
+    index = PointIndex([_osm("1", "neighbourhood", "Novo Brdo", 0, 3100),
+                        _osm("2", "neighbourhood", "Vrtača", 400, -50)])
+    a = _track("a", _loop_route(400, 400))
+    b = _track("b", _loop_route(-400, -400), start="2024-06-03T07:00:00+00:00")
+    assert _route_names([a, b], index) == {"a": "Novo Brdo loop, since May 2024",
+                                           "b": "Novo Brdo loop, since Jun 2024"}
 
 
 def test_collision_via_feature_only_this_route_passes():
