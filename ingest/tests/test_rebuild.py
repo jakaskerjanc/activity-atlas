@@ -10,6 +10,7 @@ from ingest.rebuild import rebuild
 from ingest.records import WellnessRecord
 from ingest.strava_import import StravaImporter
 from ingest.tests.factories import fixture_bytes, garmin_heart_rate
+from ingest.tests.test_osm import body, peak
 from ingest.tests.test_garmin_import import _garmin_zip
 from ingest.tests.test_strava_import import GYM, HEADER, _row, _zip
 
@@ -168,3 +169,44 @@ def test_rebuild_reproduces_api_intraday_series_from_the_archive(tmp_path):
     for _ in range(2):
         rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
         assert _snapshot(dbp, "daily_series", "date, channel") == series
+
+
+GROUP_OVERRIDES = [("place", "p1", "Moj hrib", None), ("place", "p2", None, "p1"),
+                   ("place", "p3", "Grmada", "p1"), ("route", "r1", "Tivoli loop", None)]
+
+
+def test_rebuild_keeps_place_names_and_merges(tmp_path):
+    dbp, arch = _imported(tmp_path)
+    conn = db.connect(dbp)
+    conn.executemany("INSERT INTO group_overrides (kind, group_id, name, merge_into) VALUES (?,?,?,?)",
+                     GROUP_OVERRIDES)
+    conn.commit(); conn.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
+    assert _snapshot(dbp, "group_overrides", "kind, group_id") == GROUP_OVERRIDES
+
+
+def test_rebuild_reads_an_old_file_without_group_overrides_as_none(tmp_path):
+    dbp, arch = _imported(tmp_path)
+    ident = _identity(dbp)
+    conn = db.connect(dbp)
+    conn.execute("DROP TABLE group_overrides")
+    conn.execute("PRAGMA user_version = 4")
+    conn.commit(); conn.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
+    assert _snapshot(dbp, "group_overrides", "kind, group_id") == []
+    assert _identity(dbp) == ident
+
+
+def test_rebuild_restores_osm_points_from_archive(tmp_path):
+    dbp, arch = _imported(tmp_path)
+    arch.put_osm("SI", body(peak(1), peak(2)), fetched_at=NOW)
+    arch.put_osm("AT", body(peak(3)), fetched_at=NOW)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
+    assert [(r[0], r[2], r[6]) for r in _snapshot(dbp, "osm_points", "osm_id")] == [
+        ("node/1", "P1", "SI"), ("node/2", "P2", "SI"), ("node/3", "P3", "AT")]

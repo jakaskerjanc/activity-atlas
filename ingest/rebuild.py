@@ -1,39 +1,46 @@
 """Rebuild the database from the archive. Only the identity columns of
-activity_sources and the activity_overrides rows are carried over from the
-current database; everything else is re-derived, so activity IDs never
-change. Records without an identity row go through the matcher as new.
-Wellness records are re-applied after the activities."""
+activity_sources and the activity_overrides and group_overrides rows are
+carried over from the current database; everything else is re-derived, so
+activity IDs never change. Records without an identity row go through the
+matcher as new. Wellness records are re-applied after the activities, then
+the OSM points from the archive's snapshots. The group tables are left to the
+refresh that writer.run does after every write job."""
 import argparse
 import os
 import warnings
 from datetime import date
 
-from . import db, engine, wellness, writer
+from . import db, engine, osm, wellness, writer
 from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .records import latest, latest_wellness
 
 _KEPT_SOURCE_COLS = ("provider", "provider_activity_id", "activity_id", "pinned", "deleted_at", "first_seen")
+_GROUP_OVERRIDE_COLS = ("kind", "group_id", "name", "merge_into")
 
 
 def _kept_state(db_path: str):
     if not os.path.exists(db_path):
-        return [], []
+        return [], [], []
     conn = db.connect(db_path)
     try:
         sources = [tuple(r) for r in conn.execute(
             f"SELECT {','.join(_KEPT_SOURCE_COLS)} FROM activity_sources")]
         overrides = [tuple(r) for r in conn.execute("SELECT activity_id, hidden FROM activity_overrides")]
+        groups = []
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='group_overrides'").fetchone():
+            groups = [tuple(r) for r in conn.execute(
+                f"SELECT {','.join(_GROUP_OVERRIDE_COLS)} FROM group_overrides")]   # older files have none
     finally:
         conn.close()
-    return sources, overrides
+    return sources, overrides, groups
 
 
 def rebuild(db_path: str, archive: Archive, *, now: str, force: bool = False) -> dict[str, int]:
     """Kept source rows with no record in the archive would lose all their
     data (a wrong or empty archive path wipes every activity), so the rebuild
     stops before touching the database unless ``force`` is set."""
-    sources, overrides = _kept_state(db_path)
+    sources, overrides, group_overrides = _kept_state(db_path)
     records = latest(archive.list_records())
     have = {(r.provider, r.provider_activity_id) for r in records}
     orphans = [s for s in sources if (s[0], s[1]) not in have]
@@ -53,8 +60,12 @@ def rebuild(db_path: str, archive: Archive, *, now: str, force: bool = False) ->
             f"INSERT INTO activity_sources ({','.join(_KEPT_SOURCE_COLS)}) "
             f"VALUES ({','.join('?' * len(_KEPT_SOURCE_COLS))})", sources)
         conn.executemany("INSERT INTO activity_overrides (activity_id, hidden) VALUES (?, ?)", overrides)
+        conn.executemany(
+            f"INSERT INTO group_overrides ({','.join(_GROUP_OVERRIDE_COLS)}) "
+            f"VALUES ({','.join('?' * len(_GROUP_OVERRIDE_COLS))})", group_overrides)
         counts = engine.apply_records(conn, archive, records, now=now)
         wellness.apply_wellness(conn, archive, latest_wellness(archive.list_wellness()))
+        osm.apply_osm(conn, archive.list_osm())
         conn.commit()
     finally:
         conn.close()

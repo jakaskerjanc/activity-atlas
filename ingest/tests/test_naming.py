@@ -51,6 +51,10 @@ def test_name_words_drops_generic_and_short_words():
     assert name_words("Velika planina s Tejo") == ["velika", "planina", "tejo"]
     assert name_words("Easy run to the Hill") == []
     assert name_words("Pohod na Šmarno goro") == ["šmarno", "goro"]
+    # direction and effort words from the demo's route names are not places
+    assert name_words("Tempo run - Out to Kamnica") == ["kamnica"]
+    assert name_words("Morning hike - Forest above Ruše") == ["ruše"]
+    assert name_words("Climb to Areh, flat laps and back below") == ["areh"]
 
 
 # --- places ---------------------------------------------------------------------------------------------------

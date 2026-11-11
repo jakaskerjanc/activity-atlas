@@ -100,7 +100,7 @@ GENERIC_WORDS = frozenset("""
     via from on at up down summit attempt day trip loop tour gravel bike cycling
     easy tempo long short recovery weekend hill hills spin after work commute interval intervals race
     monday tuesday wednesday thursday friday saturday sunday
-    riverside forest dinner
+    riverside forest dinner out back above below climb flat laps
     na in do od po pri čez pohod izlet sprehod tek vzpon krog okoli iz proti nad pod ob kolo
 """.split())
 _LETTERS = re.compile(r"[^\W\d_]+")

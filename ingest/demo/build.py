@@ -30,7 +30,7 @@ import zipfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from .. import db, matcher
+from .. import db, matcher, refresh
 from ..archive import LocalArchive
 from ..calc import elevation_gain_loss
 from ..strava_import import StravaImporter
@@ -337,6 +337,8 @@ def build(routes_doc: dict, out: str, workdir: str, *, seed: int = SEED,
     if result["insert"] != len(rows):
         raise RuntimeError(f"importer inserted {result['insert']} of {len(rows)} demo activities")
 
+    # No OSM data here: places are named from the demo route names or "Top at … m", flat routes "{km} km {shape}".
+    refresh.refresh_file(str(out_path))
     conn = db.connect(str(out_path))
     try:
         conn.execute("VACUUM")
