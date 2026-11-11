@@ -8,6 +8,7 @@
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
 //   profiles.json       v1  every activity's elevation every 100 m, for the analytics profiles chart
 //   steps.json          v1  Garmin's daily step totals, for the analytics steps calendar
+//   places.json         v1  places reached and named same-route groups; no coordinates
 //
 // Hidden and deleted activities never reach these files, and the folder is
 // emptied before each write so a stale file cannot survive. The step totals are
@@ -28,7 +29,10 @@ import type {
   ActivitiesFile,
   ActivitySource,
   DetailFile,
+  Place,
+  PlacesFile,
   ProfilesFile,
+  RouteName,
   RoutesFile,
   StepsFile,
 } from "./types.ts";
@@ -53,6 +57,7 @@ const LEGACY_TRACKS = resolve(__dirname, "../app/public/tracks.json");
 export const ROUTES_VERSION = 4;
 export const ACTIVITIES_VERSION = 1;
 export const STEPS_VERSION = 1;
+export const PLACES_VERSION = 1;
 /** Douglas–Peucker tolerance (meters) applied to the stored line for the wire. */
 const SIMPLIFY_TOLERANCE_M = Number(process.env.SIMPLIFY_TOLERANCE_M) || 10;
 
@@ -67,6 +72,7 @@ export interface DisplayFiles {
   details: Map<string, DetailFile>;
   profiles: ProfilesFile;
   steps: StepsFile;
+  places: PlacesFile;
   stats: Stats;
 }
 
@@ -150,6 +156,52 @@ export function readSteps(db: Database.Database): StepsFile {
   return { v: STEPS_VERSION, start: isoDay(first), steps };
 }
 
+const hasTable = (db: Database.Database, name: string) =>
+  db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+
+/**
+ * places.json and each visible activity's place and route ids, from the places,
+ * route_groups and activity_groups tables (schema v5). Only visible activities count:
+ * a place needs one, a route group two, and placeOf/routeOf map only those. A database
+ * without the tables (older than v5) has no places or routes.
+ */
+export function readPlaces(db: Database.Database): {
+  file: PlacesFile;
+  placeOf: Map<string, string>;
+  routeOf: Map<string, string>;
+} {
+  const file: PlacesFile = { v: PLACES_VERSION, places: [], routes: [] };
+  const placeOf = new Map<string, string>();
+  const routeOf = new Map<string, string>();
+  if (!["places", "route_groups", "activity_groups"].every((t) => hasTable(db, t))) {
+    return { file, placeOf, routeOf };
+  }
+  const rows = db
+    .prepare(
+      "SELECT g.activity_id, g.place_id, g.route_id FROM activity_groups g " +
+        "JOIN activities a ON a.id = g.activity_id WHERE a.visible = 1",
+    )
+    .all() as { activity_id: string; place_id: string | null; route_id: string | null }[];
+  const routeSize = new Map<string, number>();
+  for (const r of rows) if (r.route_id != null) routeSize.set(r.route_id, (routeSize.get(r.route_id) ?? 0) + 1);
+  const places = new Map(
+    (db.prepare("SELECT id, name, ele, kind FROM places ORDER BY id").all() as Place[]).map((p) => [p.id, p]),
+  );
+  const routes = new Map(
+    (db.prepare("SELECT id, name FROM route_groups ORDER BY id").all() as RouteName[])
+      .filter((r) => (routeSize.get(r.id) ?? 0) >= 2)
+      .map((r) => [r.id, r]),
+  );
+  for (const r of rows) {
+    if (r.place_id != null && places.has(r.place_id)) placeOf.set(r.activity_id, r.place_id);
+    if (r.route_id != null && routes.has(r.route_id)) routeOf.set(r.activity_id, r.route_id);
+  }
+  const reached = new Set(placeOf.values());
+  file.places = [...places.values()].filter((p) => reached.has(p.id));
+  file.routes = [...routes.values()];
+  return { file, placeOf, routeOf };
+}
+
 function emptyFiles(stats: Stats): DisplayFiles {
   return {
     routes: { v: ROUTES_VERSION, routes: {} },
@@ -157,6 +209,7 @@ function emptyFiles(stats: Stats): DisplayFiles {
     details: new Map(),
     profiles: { v: PROFILES_VERSION, step: PROFILE_STEP_M, profiles: {} },
     steps: { v: STEPS_VERSION, steps: [] },
+    places: { v: PLACES_VERSION, places: [], routes: [] },
     stats,
   };
 }
@@ -191,6 +244,8 @@ export function readDisplayFiles(
     const sources = liveSources(db);
     const streams = db.prepare(`SELECT ${DETAIL_CHANNELS.join(",")} FROM streams WHERE file_sha256 = ?`);
     const files = emptyFiles(stats);
+    const { file: places, placeOf, routeOf } = readPlaces(db);
+    files.places = places;
     for (const row of rows) {
       if (!isUsable(row)) {
         warn(`Skipping activity ${row.id}: missing type or unparseable start_time.`);
@@ -204,7 +259,8 @@ export function readDisplayFiles(
         const profile = routeProfile(detail);
         if (profile) files.profiles.profiles[row.id] = profile;
       }
-      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null));
+      const groups = { place: placeOf.get(row.id), route: routeOf.get(row.id) };
+      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null, groups));
     }
     files.steps = readSteps(db);
     return files;
@@ -221,6 +277,7 @@ export async function writeDisplayFiles(files: DisplayFiles, outDir: string): Pr
   await writeFile(join(outDir, "activities.json"), JSON.stringify(files.activities));
   await writeFile(join(outDir, "profiles.json"), JSON.stringify(files.profiles));
   await writeFile(join(outDir, "steps.json"), JSON.stringify(files.steps));
+  await writeFile(join(outDir, "places.json"), JSON.stringify(files.places));
   for (const [id, detail] of files.details) {
     await writeFile(join(outDir, "activity", `${id}.json`), JSON.stringify(detail));
   }
@@ -241,7 +298,8 @@ async function main() {
   console.log(
     `Wrote ${Object.keys(files.routes.routes).length} routes, ${files.activities.activities.length} activities, ` +
       `${files.details.size} detail files, ${Object.keys(files.profiles.profiles).length} route profiles, ` +
-      `${files.steps.steps.filter((s) => s != null).length} days of steps ` +
+      `${files.steps.steps.filter((s) => s != null).length} days of steps, ` +
+      `${files.places.places.length} places, ${files.places.routes.length} same-route groups ` +
       `to ${OUT_DIR}; route points ${stats.rawPoints} -> ${stats.keptPoints} ` +
       `after ${SIMPLIFY_TOLERANCE_M}m simplify.`,
   );

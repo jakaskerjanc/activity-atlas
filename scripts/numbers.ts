@@ -62,7 +62,15 @@ function hrZones(text: string | null, hasHr: boolean): number[] | undefined {
   return Array.isArray(zones) && zones.some((s) => s > 0) ? zones : undefined;
 }
 
-export function toRecord(row: UsableRow, sources: ActivitySource[], hasDetail: boolean): ActivityRecord {
+/** The activity's place and same-route group ids; either is absent when unknown. */
+export type Groups = Pick<ActivityRecord, "place" | "route">;
+
+export function toRecord(
+  row: UsableRow,
+  sources: ActivitySource[],
+  hasDetail: boolean,
+  groups: Groups = {},
+): ActivityRecord {
   const hasAlt = row.has_altitude === 1;
   const optional: Partial<ActivityRecord> = {
     start_local: row.start_local ?? undefined,
@@ -92,5 +100,7 @@ export function toRecord(row: UsableRow, sources: ActivitySource[], hasDetail: b
   rec.channels = CHANNEL_FLAGS.filter(([, flag]) => row[flag] === 1).map(([c]) => c);
   rec.sources = sources;
   if (hasDetail) rec.detail = true;
+  if (groups.place !== undefined) rec.place = groups.place;
+  if (groups.route !== undefined) rec.route = groups.route;
   return rec;
 }
