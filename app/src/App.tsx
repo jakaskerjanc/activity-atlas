@@ -16,6 +16,7 @@ import {
   createActivityFilter,
   activeIsolation,
   filterExpression,
+  revealActivity,
   toggleMonth,
   togglePlace,
   visibleActivities,
@@ -40,6 +41,8 @@ import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
 import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
+import { GroupRows } from "./ui/GroupRows";
+import { placeLine, routeTable } from "./routeGroup";
 import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
@@ -431,7 +434,35 @@ export default function App() {
     [selectedDetail, cursor, selectedShown],
   );
 
-  const panelBody = useMemo(() => {
+  // The selected activity's place and same-route rows. The route table closes when the
+  // selection moves to another route (or none); stepping through its rows keeps it open.
+  const [routeOpen, setRouteOpen] = useState(false);
+  const selectedRoute = selectedFeature?.properties.route;
+  useEffect(() => setRouteOpen(false), [selectedRoute]);
+  const selectedPlaceLine = useMemo(
+    () => (selectedFeature && filter ? placeLine(selectedFeature.properties, filter, placeMap) : null),
+    [selectedFeature, filter, placeMap],
+  );
+  const selectedRouteTable = useMemo(
+    () => (selectedFeature && filter ? routeTable(selectedFeature.properties, filter, routeMap) : null),
+    [selectedFeature, filter, routeMap],
+  );
+  // Like picking the place in the list, except that it never clears it: the row sets
+  // the place (if it isn't already) and flies there, keeping this activity selected.
+  const pickPlace = (id: string) => {
+    if (!filter) return;
+    if (filter.place !== id) setFilter(togglePlace(filter, id));
+    setPlaceFlyEpoch((n) => n + 1);
+  };
+  // A table row outside the filter first widens the filter just enough to show it
+  // (revealActivity leaves a row inside it as it is).
+  const selectRouteMate = (id: string) => {
+    const mate = filter?.activities.find((a) => a.id === id);
+    if (filter && mate) changeFilter(revealActivity(filter, mate));
+    selectActivity(id);
+  };
+
+  const charts = useMemo(() => {
     if (!selectedFeature) {
       return undefined;
     }
@@ -448,6 +479,21 @@ export default function App() {
     }
     return <p style={statusLine}>{detailMessage(detailState, profile != null)}</p>;
   }, [selectedFeature, selectedDetail, profile, cursor, detailState, shownCity]);
+  // The place and route rows above the charts. Outside the memo: their handlers read
+  // the current filter and panel layout.
+  const panelBody = selectedFeature ? (
+    <>
+      <GroupRows
+        place={selectedPlaceLine}
+        route={selectedRouteTable}
+        open={routeOpen}
+        onToggle={() => setRouteOpen((v) => !v)}
+        onPickPlace={pickPlace}
+        onSelect={selectRouteMate}
+      />
+      {charts}
+    </>
+  ) : undefined;
 
   // InfoPanel content: selected activity, else the shown city route, else aggregate totals.
   const { title, subtitle, cards, links } = useMemo<{

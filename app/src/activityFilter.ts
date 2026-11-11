@@ -146,13 +146,18 @@ function passes(filter: ActivityFilter): (a: ActivityRecord) => boolean {
   return (a) => filter.types.has(a.type) && dated(a) && placed(a);
 }
 
+/** Whether one activity passes the filter: the rule visibleActivities applies. */
+export function isVisible(filter: ActivityFilter, a: ActivityRecord): boolean {
+  return passes(filter)(a);
+}
+
 /**
  * Make one of the filter's activities visible: switch its type on, widen the date
  * range just enough to include its month, and clear the place if it has another one.
  * The same filter when the activity already passes.
  */
 export function revealActivity(filter: ActivityFilter, a: ActivityRecord): ActivityFilter {
-  if (passes(filter)(a)) return filter;
+  if (isVisible(filter, a)) return filter;
   const m = monthIndex(a.ts);
   return {
     ...filter,
