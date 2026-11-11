@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { listToggle, PlacesSection } from "./PlacesSection";
+import { listToggle, PlacesSection, searchMiss } from "./PlacesSection";
 import { createActivityFilter, togglePlace } from "../activityFilter";
 import { record } from "../testFixtures";
 import type { Place } from "../types";
@@ -68,5 +68,9 @@ describe("PlacesSection", () => {
     expect(listToggle({ expanded: true, searching: false, more: 0, shown: 8 })).toBeNull();
     expect(listToggle({ expanded: true, searching: true, more: 0, shown: 11 })).toBeNull();
     expect(listToggle({ expanded: false, searching: true, more: 0, shown: 11 })).toBeNull();
+  });
+
+  test("a search miss says it's under these filters (a place with 0 here is still a place)", () => {
+    expect(searchMiss("  slavnik ")).toBe("No places match “slavnik” under these filters");
   });
 });

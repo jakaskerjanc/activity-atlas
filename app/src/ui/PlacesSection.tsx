@@ -55,7 +55,7 @@ export function PlacesSection({ filter, places, onChange }: Props) {
           <PlaceButton key={row.place.id} row={row} onClick={() => onChange(togglePlace(filter, row.place.id))} />
         ))}
       </div>
-      {searching && rows.length === 0 && <p style={note}>No places match “{query.trim()}”.</p>}
+      {searching && rows.length === 0 && <p style={note}>{searchMiss(query)}</p>}
       {toggle && (
         <button
           type="button"
@@ -70,6 +70,14 @@ export function PlacesSection({ filter, places, onChange }: Props) {
       )}
     </>
   );
+}
+
+/**
+ * The line under a search that finds nothing. The list leaves out places with no
+ * activities under the filter, so a real place can miss: the text says so.
+ */
+export function searchMiss(query: string): string {
+  return `No places match “${query.trim()}” under these filters`;
 }
 
 /**
