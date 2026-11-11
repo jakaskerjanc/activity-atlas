@@ -103,7 +103,7 @@ def _segment_dist(p: tuple[float, float], a: tuple[float, float], b: tuple[float
     return math.dist(p, (a[0] + dx * t, a[1] + dy * t))
 
 
-def _polyline_dist(p: tuple[float, float], line: Sequence[tuple[float, float]]) -> float:
+def polyline_dist(p: tuple[float, float], line: Sequence[tuple[float, float]]) -> float:
     if len(line) == 1:
         return math.dist(p, line[0])
     return min(_segment_dist(p, a, b) for a, b in zip(line, line[1:]))
@@ -115,7 +115,7 @@ def route_shape(xy: Sequence[tuple[float, float]]) -> str:
         return "point-to-point"
     half = len(xy) // 2
     first, second = xy[:half], xy[half:]
-    near = sum(1 for s in second if _polyline_dist(s, first) <= OUT_AND_BACK_M)
+    near = sum(1 for s in second if polyline_dist(s, first) <= OUT_AND_BACK_M)
     return "out-and-back" if near >= OUT_AND_BACK_SHARE * len(second) else "loop"
 
 

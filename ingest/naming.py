@@ -6,7 +6,7 @@ import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from ingest.geometry import (EARTH_RADIUS_M, _polyline_dist, farthest_index, haversine_m, project, resample,
+from ingest.geometry import (EARTH_RADIUS_M, farthest_index, haversine_m, polyline_dist, project, resample,
                              route_shape)
 from ingest.grouping import ROUTE_POINTS, ActivityTrack, Groups
 
@@ -260,19 +260,24 @@ def _via_divergence(r: _Route, others: Sequence[_Route], index: PointIndex) -> s
 
 def _via_feature(r: _Route, others: Sequence[_Route], index: PointIndex) -> str | None:
     """Tiebreak 2: a named point of any kind within 75 m of r and more than 150 m from every other route.
-    When several qualify, the one nearest to r wins (ties by osm_id)."""
+    When several qualify, the one nearest to r wins (ties by osm_id). Both distances are to the full tracks:
+    the 64-point resample only seeds the search, since its chords cut corners on long, curvy routes."""
     origin = r.track.line[0]
-    rxy = _xy(r.track, origin)
-    oxys = [_xy(o.track, origin) for o in others]
-    reach = VIA_FEATURE_M + max(math.dist(a, b) for a, b in zip(rxy, rxy[1:])) / 2
+    line = project(r.track.line, origin)
+    others_xy = [project(o.track.line, origin) for o in others]
+    step = sum(math.dist(a, b) for a, b in zip(line, line[1:])) / (ROUTE_POINTS - 1)
+    # Every point of the track is within step / 2 along it of a seed; a full step leaves room for rounding.
+    reach = VIA_FEATURE_M + step
     found: dict[str, tuple[float, OsmPoint]] = {}
-    for p in rxy:
+    checked: set[str] = set()
+    for p in resample(line, ROUTE_POINTS):
         for _, pt in index.near(*_unproject(p, origin), reach, ALL_KINDS):
-            if pt.osm_id in found or pt.name in r.base:
+            if pt.osm_id in checked or pt.name in r.base:
                 continue
+            checked.add(pt.osm_id)
             fxy = project([(pt.lat, pt.lon)], origin)[0]
-            d = _polyline_dist(fxy, rxy)
-            if d <= VIA_FEATURE_M and all(_polyline_dist(fxy, o) > VIA_OTHERS_M for o in oxys):
+            d = polyline_dist(fxy, line)
+            if d <= VIA_FEATURE_M and all(polyline_dist(fxy, o) > VIA_OTHERS_M for o in others_xy):
                 found[pt.osm_id] = (d, pt)
     if not found:
         return None

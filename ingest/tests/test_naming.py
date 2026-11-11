@@ -255,6 +255,25 @@ def test_collision_via_feature_only_this_route_passes():
     assert _route_names([a, b], index) == {"a": "Koseze loop via Debeli hrib", "b": "Koseze loop, 6.4 km"}
 
 
+def _switchback_ride(sign: int):
+    """A ~47 km loop: north 20 km on x=0, back south on x=1000 through ten 600 m switchbacks between y=12000 and
+    y=10500. ``sign=-1`` mirrors it west. Its 64-point resample is ~740 m apart and cuts the switchback corners."""
+    pts = [(0, 0), (0, 20000), (1000, 20000), (1000, 12000)]
+    pts += [(1600 if k % 2 == 0 else 1000, 12000 - 150 * (k + 1)) for k in range(10)]
+    pts += [(1000, 0), (0, 0)]
+    return _path([(sign * x, y) for x, y in pts])
+
+
+def test_via_feature_measures_against_the_full_track():
+    # "Debeli hrib" lies 1 m from a resample chord across the last hairpin but ~150 m from the ride itself;
+    # "Prevala" lies 30 m off the ride. Only the ride passes Prevala.
+    index = PointIndex([_osm("1", "village", "Koseze", 0, 20500),
+                        _osm("2", "peak", "Debeli hrib", 1210, 10400), _osm("3", "pass", "Prevala", 1030, 9000)])
+    a = _track("a", _switchback_ride(1), type_="Ride", distance=46_700)
+    b = _track("b", _switchback_ride(-1), type_="Ride", distance=46_300, start="2024-06-03T07:00:00+00:00")
+    assert _route_names([a, b], index) == {"a": "Koseze loop via Prevala", "b": "Koseze loop, 46.3 km"}
+
+
 def test_collision_falls_back_to_distance_then_since():
     index = PointIndex([_osm("1", "neighbourhood", "Koseze", 0, 3100)])
     june = "2024-06-03T07:00:00+00:00"
