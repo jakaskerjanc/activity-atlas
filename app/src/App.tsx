@@ -434,11 +434,14 @@ export default function App() {
     [selectedDetail, cursor, selectedShown],
   );
 
-  // The selected activity's place and same-route rows. The route table closes when the
-  // selection moves to another route (or none); stepping through its rows keeps it open.
-  const [routeOpen, setRouteOpen] = useState(false);
-  const selectedRoute = selectedFeature?.properties.route;
-  useEffect(() => setRouteOpen(false), [selectedRoute]);
+  // The selected activity's place and same-route rows. The route table is open while
+  // the selection stays on the route it was opened on, so stepping through its rows
+  // keeps it open and a new route never shows it open, not even for a frame. Leaving the
+  // route forgets it (set during render, not in an effect), so coming back finds it shut.
+  const [openRoute, setOpenRoute] = useState<string | null>(null);
+  const selectedRoute = selectedFeature?.properties.route ?? null;
+  if (openRoute !== null && openRoute !== selectedRoute) setOpenRoute(null);
+  const routeOpen = openRoute !== null && openRoute === selectedRoute;
   const selectedPlaceLine = useMemo(
     () => (selectedFeature && filter ? placeLine(selectedFeature.properties, filter, placeMap) : null),
     [selectedFeature, filter, placeMap],
@@ -495,7 +498,7 @@ export default function App() {
         place={selectedPlaceLine}
         route={selectedRouteTable}
         open={routeOpen}
-        onToggle={() => setRouteOpen((v) => !v)}
+        onToggle={() => setOpenRoute(routeOpen ? null : selectedRoute)}
         onPickPlace={pickPlace}
         onSelect={selectRouteMate}
       />
