@@ -1,6 +1,10 @@
 """Manual fixes to activity identity: merge two activities, split a source
 off into its own activity, hide or unhide an activity. Merged and split
-sources are pinned, and identity survives re-imports and rebuilds."""
+sources are pinned, and identity survives re-imports and rebuilds.
+
+Also the owner's names and merges for places and same routes, kept in
+group_overrides: list them, name one, merge one place into another. The
+refresh that writer.run does after every job applies them on the same run."""
 import argparse
 from datetime import date
 
@@ -68,6 +72,116 @@ def set_hidden(conn, activity_id: str, hidden: bool) -> None:
     merging.recompute_activity(conn, activity_id)
 
 
+GROUP_TABLES = {"place": "places", "route": "route_groups"}
+
+
+def _group_exists(conn, kind: str, group_id: str) -> bool:
+    if kind not in GROUP_TABLES:
+        raise ValueError(f"unknown group kind {kind!r}; use place or route")
+    return conn.execute(f"SELECT 1 FROM {GROUP_TABLES[kind]} WHERE id=?", (group_id,)).fetchone() is not None
+
+
+def _override(conn, kind: str, group_id: str):
+    return conn.execute("SELECT name, merge_into FROM group_overrides WHERE kind=? AND group_id=?",
+                        (kind, group_id)).fetchone()
+
+
+def _drop_if_empty(conn, kind: str, group_id: str) -> None:
+    conn.execute("DELETE FROM group_overrides WHERE kind=? AND group_id=? AND name IS NULL AND merge_into IS NULL",
+                 (kind, group_id))
+
+
+def list_places(conn) -> list[dict]:
+    """Every place with its activity count: fallback-named places first (they want a name), then by count."""
+    rows = conn.execute(
+        "SELECT p.id, p.name, p.name_source, p.kind, p.ele, COUNT(g.activity_id) AS count FROM places p "
+        "LEFT JOIN activity_groups g ON g.place_id = p.id GROUP BY p.id "
+        "ORDER BY p.name_source = 'fallback' DESC, count DESC, p.id")
+    return [dict(r) for r in rows]
+
+
+def list_routes(conn) -> list[dict]:
+    """Every same route with its anchor's type, its activity count and its first and last local dates."""
+    rows = conn.execute(
+        "SELECT r.id, (SELECT type FROM activities WHERE id = r.id) AS type, r.name, r.name_source, "
+        "COUNT(a.id) AS count, MIN(substr(a.start_local, 1, 10)) AS first, "
+        "MAX(substr(a.start_local, 1, 10)) AS last FROM route_groups r "
+        "LEFT JOIN activity_groups g ON g.route_id = r.id LEFT JOIN activities a ON a.id = g.activity_id "
+        "GROUP BY r.id ORDER BY type, count DESC, r.id")
+    return [dict(r) for r in rows]
+
+
+def name_group(conn, kind: str, group_id: str, name: str) -> None:
+    """Give a place or route the owner's name; an empty name clears it. Clearing works on any id with an
+    override row, even one whose group is gone, so an orphaned name can always be cleared."""
+    name = name.strip()
+    exists = _group_exists(conn, kind, group_id)
+    row = _override(conn, kind, group_id)
+    if not name:
+        if row is None:
+            if not exists:
+                raise ValueError(f"no {kind} {group_id}")
+            return
+        conn.execute("UPDATE group_overrides SET name=NULL WHERE kind=? AND group_id=?", (kind, group_id))
+        _drop_if_empty(conn, kind, group_id)
+        return
+    if row is not None and row["merge_into"]:
+        target = row["merge_into"]
+        raise ValueError(f"{kind} {group_id} is merged into {target}; name {target} instead")
+    if not exists:
+        raise ValueError(f"no {kind} {group_id}")
+    conn.execute("INSERT INTO group_overrides (kind, group_id, name) VALUES (?, ?, ?) "
+                 "ON CONFLICT(kind, group_id) DO UPDATE SET name=excluded.name", (kind, group_id, name))
+
+
+def merge_place(conn, place_id: str, into_id: str) -> None:
+    """Fold place_id's activities into into_id. Refuses a merge that would close a cycle of merges."""
+    if place_id == into_id:
+        raise ValueError(f"cannot merge place {place_id} into itself")
+    for pid in (place_id, into_id):
+        if not _group_exists(conn, "place", pid):
+            raise ValueError(f"no place {pid}")
+    merges = dict(conn.execute("SELECT group_id, merge_into FROM group_overrides "
+                               "WHERE kind='place' AND merge_into IS NOT NULL").fetchall())
+    seen, at = set(), into_id
+    while at is not None and at not in seen:
+        if at == place_id:
+            raise ValueError(f"place {into_id} is merged into {place_id}: merging {place_id} into it "
+                             "would make a cycle")
+        seen.add(at)
+        at = merges.get(at)
+    conn.execute("INSERT INTO group_overrides (kind, group_id, merge_into) VALUES ('place', ?, ?) "
+                 "ON CONFLICT(kind, group_id) DO UPDATE SET merge_into=excluded.merge_into", (place_id, into_id))
+
+
+def unmerge_place(conn, place_id: str) -> None:
+    """Undo a merge, whether or not the place or its target still exists."""
+    row = _override(conn, "place", place_id)
+    if row is None or not row["merge_into"]:
+        raise ValueError(f"place {place_id} is not merged into another place")
+    conn.execute("UPDATE group_overrides SET merge_into=NULL WHERE kind='place' AND group_id=?", (place_id,))
+    _drop_if_empty(conn, "place", place_id)
+
+
+def _cell(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def format_table(rows: list[dict], cols: tuple[str, ...]) -> str:
+    """Rows as aligned columns under a header."""
+    cells = [list(cols)] + [[_cell(r[c]) for c in cols] for r in rows]
+    widths = [max(len(line[i]) for line in cells) for i in range(len(cols))]
+    return "\n".join("  ".join(v.ljust(w) for v, w in zip(line, widths)).rstrip() for line in cells)
+
+
+PLACE_COLS = ("id", "name", "name_source", "kind", "ele", "count")
+ROUTE_COLS = ("id", "type", "name", "name_source", "count", "first", "last")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Manual fixes to activities.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -79,6 +193,16 @@ def main():
     s.add_argument("source", help="provider:provider_activity_id, e.g. garmin:123")
     for name in ("hide", "unhide"):
         sub.add_parser(name, help=f"{name} an activity on the site").add_argument("activity_id")
+    sub.add_parser("places", help="list places, unnamed (fallback-named) ones first")
+    sub.add_parser("routes", help="list same routes")
+    for kind in GROUP_TABLES:
+        n = sub.add_parser(f"name-{kind}", help=f'give a {kind} your own name ("" clears it)')
+        n.add_argument("group_id")
+        n.add_argument("name")
+    mp = sub.add_parser("merge-place", help="fold place ID into place INTO")
+    mp.add_argument("place_id")
+    mp.add_argument("into_id")
+    sub.add_parser("unmerge-place", help="undo merge-place").add_argument("place_id")
     for p in sub.choices.values():
         p.add_argument("--db", default="data/activities.sqlite")
         p.add_argument("--archive", default=None,
@@ -97,6 +221,19 @@ def main():
                 message = f"merged {args.other_id} into {args.keep_id}"
             elif args.cmd == "split":
                 message = f"split {args.source} into {split(conn, args.activity_id, provider, pid)}"
+            elif args.cmd in ("places", "routes"):
+                message = None      # listed below, after the run's refresh
+            elif args.cmd.startswith("name-"):
+                kind = args.cmd.removeprefix("name-")
+                name_group(conn, kind, args.group_id, args.name)
+                message = (f'{kind} {args.group_id} named "{args.name.strip()}"' if args.name.strip()
+                           else f"cleared the name of {kind} {args.group_id}")
+            elif args.cmd == "merge-place":
+                merge_place(conn, args.place_id, args.into_id)
+                message = f"merged place {args.place_id} into {args.into_id}"
+            elif args.cmd == "unmerge-place":
+                unmerge_place(conn, args.place_id)
+                message = f"unmerged place {args.place_id}"
             else:
                 set_hidden(conn, args.activity_id, args.cmd == "hide")
                 message = f"{args.cmd} {args.activity_id}"
@@ -108,7 +245,19 @@ def main():
             conn.close()
 
     # work may run again after an upload conflict, so the message is printed once, here.
-    print(writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat()))
+    message = writer.run(args.db, open_archive(args.archive), work, today=date.today().isoformat())
+    if message is not None:
+        print(message)
+        return
+    # A list reads the local copy, which writer.run has brought up to date and refreshed.
+    conn = db.connect(args.db)
+    try:
+        if args.cmd == "places":
+            print(format_table(list_places(conn), PLACE_COLS))
+        else:
+            print(format_table(list_routes(conn), ROUTE_COLS))
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
