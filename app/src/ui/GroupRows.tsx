@@ -81,7 +81,13 @@ function RouteList({ id, table, onSelect }: { id: string; table: RouteTable; onS
             <span>{formatDuration(row.moving_time)}</span>
             {paced && <span>{row.pace_s_per_km === undefined ? "—" : `${formatPace(row.pace_s_per_km)} /km`}</span>}
             <span style={noteStyle(row)}>
-              {[row.current && "← this one", row.fastest && "fastest"].filter(Boolean).join(" · ")}
+              {row.current && (
+                <span style={markText}>
+                  <span aria-hidden="true">←</span> this one
+                </span>
+              )}
+              {row.current && row.fastest && " · "}
+              {row.fastest && <span style={markText}>fastest</span>}
             </span>
             {row.outside && <span className="sr-only">, outside the filter</span>}
           </button>
@@ -132,14 +138,16 @@ const listStyle: CSSProperties = {
   gap: 1,
 };
 
-// Date, time, (pace,) then the marks; mono so the columns line up. The current row is
-// tinted like a picked place; rows outside the filter are greyed out.
+// Date, time, (pace,) then the marks; mono so the columns line up. The date, time and
+// pace stay on one line each; the marks column can shrink to nothing (minmax(0, 1fr))
+// and wraps, so a phone-width panel never pushes "fastest" past its edge. The current
+// row is tinted like a picked place; rows outside the filter are greyed out.
 function tableRowStyle(row: RouteRow, paced: boolean): CSSProperties {
   return {
     ...rowStyle,
     display: "grid",
-    gridTemplateColumns: paced ? "12ch 7ch 9ch 1fr" : "12ch 7ch 1fr",
-    gap: 10,
+    gridTemplateColumns: paced ? "12ch 7ch 9ch minmax(0, 1fr)" : "12ch 7ch minmax(0, 1fr)",
+    gap: 8,
     minHeight: 28,
     padding: "4px 10px",
     textAlign: "left",
@@ -156,7 +164,10 @@ function noteStyle(row: RouteRow): CSSProperties {
     fontFamily: "var(--font-ui)",
     fontSize: FS.xs,
     color: row.current ? "var(--accent-text)" : row.outside ? "var(--text-faint)" : "var(--text-muted)",
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
     textAlign: "right",
   };
 }
+
+// One mark ("← this one", "fastest"): the marks wrap between each other, not inside one.
+const markText: CSSProperties = { whiteSpace: "nowrap" };

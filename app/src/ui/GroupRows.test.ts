@@ -69,6 +69,26 @@ describe("GroupRows", () => {
     expect(text(render({ ...slavnik, count: 1 }, null, false))).toMatch(/To Slavnik · 1 time(?!s)/);
   });
 
+  test("the marks column can shrink and wrap, so a phone doesn't clip 'fastest'", () => {
+    const both: RouteTable = {
+      ...table,
+      rows: [{ ...table.rows[0], current: true, fastest: true, pace_s_per_km: 300 }, table.rows[2]],
+    };
+    const [row = ""] = render(null, both, true).match(/<li[^>]*>(?:(?!<\/li>).)*<\/li>/g) ?? [];
+    // The last (marks) column is minmax(0, 1fr), not 1fr: it gives way instead of
+    // pushing the row past the panel. Date, time and pace stay on one line each.
+    expect(row).toContain("grid-template-columns:12ch 7ch 9ch minmax(0, 1fr)");
+    expect(row).toContain("white-space:nowrap");
+    // The marks wrap between "this one" and "fastest", never inside either.
+    const note = row.match(/<span style="[^"]*white-space:normal[^"]*">(?:(?!<\/span><\/button>).)*/)?.[0] ?? "";
+    expect(text(note)).toBe("← this one · fastest");
+    // The arrow is decoration: screen readers hear "this one", not "left arrow".
+    expect(row).toContain('<span aria-hidden="true">←</span>');
+    // An unpaced table has the same shrinkable last column.
+    const rides: RouteTable = { ...table, rows: table.rows.map(({ pace_s_per_km: _, ...row }) => row) };
+    expect(render(null, rides, true)).toContain("grid-template-columns:12ch 7ch minmax(0, 1fr)");
+  });
+
   test("neither row renders nothing", () => {
     expect(render(null, null, false)).toBe("");
   });
