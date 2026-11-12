@@ -160,15 +160,20 @@ const divider: CSSProperties = {
   margin: "16px 0",
 };
 
+// The row's padding hangs outside the column (ROW_BLEED), so the swatch and the count
+// line up with the section labels and the slider; only the hover fill reaches past them.
+export const ROW_BLEED = 10;
+
 function rowStyle(on: boolean): CSSProperties {
   return {
     ...btnReset,
     display: "flex",
     alignItems: "center",
     gap: 10,
-    width: "100%",
+    width: `calc(100% + ${2 * ROW_BLEED}px)`,
+    margin: `0 -${ROW_BLEED}px`,
     height: 34,
-    padding: "0 10px",
+    padding: `0 ${ROW_BLEED}px`,
     borderRadius: R.sm,
     backgroundColor: "transparent",
     color: on ? "var(--text)" : "var(--text-dim)",

@@ -6,7 +6,7 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { GlassPanel } from "./GlassPanel";
 import { PanelHeader } from "./PanelHeader";
-import { FilterSection } from "./FilterSection";
+import { FilterSection, ROW_BLEED } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
 import { ChevronIcon, CloseIcon, PlayIcon } from "./icons";
 import { FS, R } from "./theme";
@@ -168,9 +168,11 @@ const sectionLabelStyle: CSSProperties = {
   color: "var(--text-soft)",
 };
 
+// Hangs outside the column like the filter rows, so the text lines up with the label.
 const jumpLink: CSSProperties = {
   display: "block",
-  padding: "7px 10px",
+  margin: `0 -${ROW_BLEED}px`,
+  padding: `7px ${ROW_BLEED}px`,
   borderRadius: R.sm,
   fontSize: FS.sm + 0.5,
   color: "var(--text)",
