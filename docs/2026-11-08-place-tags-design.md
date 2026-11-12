@@ -505,9 +505,11 @@ Hike on 21 Aug 2025
   - Raw OSM snapshots in the archive (`osm/<CC>/…`), as Overpass returned
     them: SI 3,909,501 bytes, AT 10,002,472 bytes. The 871 KB for Slovenia
     above counts the parsed points only.
-  - Parsed points: SI 19,144, AT 49,203. 31 features near the border come
-    back for both countries and are kept once.
-  - Database: 44,732,416 bytes before, 52,359,168 after the new tables and
-    `places:update`, and 52,387,840 after the first refresh.
+  - Points kept: SI 19,144, AT 49,203. 31 features near the border come
+    back for both countries and are counted once, so SI + AT = 68,347 rows.
+  - Database: 44,732,416 bytes before, 52,359,168 after the v5 tables were
+    added by hand and the OSM points loaded from a scratch archive (the same
+    effect on the data as `places:update`), and 52,387,840 after the first
+    refresh.
   - Rows: `osm_points` 68,347, `places` 108, `route_groups` 21,
     `activity_groups` 280.
