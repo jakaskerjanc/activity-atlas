@@ -74,7 +74,8 @@ function LegendView({ legend }: { legend: Legend }) {
   );
 }
 
-const slot: CSSProperties = { height: 40, marginTop: 10 };
+// As tall as the gradient legend (8 bar + 6 + ~13 labels), the tallest thing it holds.
+const slot: CSSProperties = { height: 30, marginTop: 10 };
 
 const hintStyle: CSSProperties = {
   margin: 0,
