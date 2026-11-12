@@ -75,6 +75,12 @@ HTTP error, a timeout, no network) it stops before writing anything. Without
 OSM points, places are named "Top at … m" and routes by distance and shape
 ("5.2 km loop").
 
+Big countries take minutes each: Austria about 3, Norway about 6 (a 28 MB
+reply, mostly named lakes). The public Overpass server is often busy: an HTTP
+502 saying it is "at capacity" means nothing was written, so run it again a
+little later, or for fewer countries at a time (a run replaces only the
+countries it names).
+
 To name places and routes yourself:
 
 ```bash

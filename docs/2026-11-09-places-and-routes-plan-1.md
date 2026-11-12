@@ -164,7 +164,7 @@ def test_remote_list_osm_rejects_unsafe_store_key(...)  # a key "osm/../x.json" 
   - `overpass_query(country: str) -> str`, in exactly this form:
 
 ```
-[out:json][timeout:180];
+[out:json][timeout:900];
 area["ISO3166-1"="{CC}"][admin_level=2]->.a;
 (
   nwr["natural"~"^(peak|saddle)$"]["name"](area.a);

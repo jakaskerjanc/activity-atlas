@@ -22,7 +22,10 @@ from .naming import OsmPoint
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "activity-atlas/0.1 (+https://github.com/jakaskerjanc/activity-atlas)"
 REQUEST_GAP_S = 5
-_TIMEOUT_S = 240
+# Overpass's own limit for one country's query. Norway (114k points, mostly named lakes)
+# took 385 s on 2026-11-12 and runs out at 180 s; Austria takes about 200 s.
+QUERY_TIMEOUT_S = 900
+_TIMEOUT_S = QUERY_TIMEOUT_S + 60   # the HTTP wait: Overpass's limit plus transfer time
 
 _PLACE_KINDS = ("neighbourhood", "quarter", "suburb", "hamlet", "village")
 _ELE = re.compile(r"\s*(\d+(?:[.,]\d+)?)")
@@ -33,7 +36,7 @@ class OsmError(Exception):
 
 
 def overpass_query(country: str) -> str:
-    return f"""[out:json][timeout:180];
+    return f"""[out:json][timeout:{QUERY_TIMEOUT_S}];
 area["ISO3166-1"="{country}"][admin_level=2]->.a;
 (
   nwr["natural"~"^(peak|saddle)$"]["name"](area.a);

@@ -35,6 +35,13 @@ def test_query_names_country():
     assert 'area["ISO3166-1"="SI"]' in overpass_query("SI")
 
 
+def test_query_allows_norway_size_countries():
+    # Norway needs ~385 s server-side; the HTTP wait must outlast Overpass's own limit.
+    from ingest import osm
+    assert overpass_query("NO").startswith("[out:json][timeout:900];")
+    assert osm._TIMEOUT_S > osm.QUERY_TIMEOUT_S
+
+
 def test_parse_kinds_and_center():
     pts = {p.name: p for p in parse_points(fixture_bytes("overpass_si_small.json"), "SI")}
     assert pts["Slavnik"].kind == "peak" and pts["Slavnik"].ele == 1028
