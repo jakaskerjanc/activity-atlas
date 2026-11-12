@@ -86,8 +86,9 @@ export function ActivityCharts({ detail, profile, type, cursor, onCursor }: Prop
     onCursor(nearestIndex(x, v));
   };
 
-  // At rest the chips show the whole activity; under the cursor, that point. Same chips,
-  // same order, so reading values never reflows the panel.
+  // At rest the chips add to the stat cards what the whole activity says (elapsed, high
+  // point, averages); under the cursor, that point's values. The row keeps a two-row
+  // height, so moving between the two never shifts the charts below.
   const items = cursor == null ? summaryReadout(detail, profile, type) : readout(detail, profile, cursor, type);
   const where =
     cursor == null
@@ -232,6 +233,9 @@ const chartTitle: CSSProperties = {
 const readoutRow: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))",
+  alignContent: "start",
+  // Two rows of chips (24 + 4 + 24): the resting set has fewer chips than the cursor's.
+  minHeight: 52,
   gap: 4,
   fontSize: FS.xs + 0.5,
 };
