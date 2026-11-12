@@ -30,7 +30,7 @@ const props = {
   onToggle: () => {},
 };
 
-const render = (over: Partial<typeof props> & { mobile?: boolean } = {}) =>
+const render = (over: Partial<typeof props> & { mobile?: boolean; replaying?: boolean } = {}) =>
   renderToStaticMarkup(createElement(SidePanel, { ...props, ...over }));
 
 describe("SidePanel on the analytics page", () => {
@@ -39,6 +39,20 @@ describe("SidePanel on the analytics page", () => {
     expect(html).toContain("Activity types");
     expect(html).not.toContain("Route color");
     expect(html).not.toContain("Replay history");
+  });
+});
+
+describe("SidePanel replay button", () => {
+  test("starts a replay when there is something to draw", () => {
+    const html = render();
+    expect(html).toMatch(/<button[^>]*class="ctl-accent"(?![^>]*disabled)[^>]*>.*Replay history/);
+  });
+
+  test("rests while a replay runs, pointing at the bar", () => {
+    const html = render({ replaying: true });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Replaying…/);
+    expect(html).not.toContain("Replay history");
+    expect(html).toContain("Use the bar below to pause or exit.");
   });
 });
 

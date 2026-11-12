@@ -506,6 +506,7 @@ export default function App() {
             startReplay();
           }}
           canReplay={timeline.length > 0}
+          replaying={replaying}
           showMapControls={view === "map"}
           sections={view === "analytics" && visible.length > 0 ? ANALYTICS_SECTIONS : undefined}
           collapsed={panels.sideCollapsed}
