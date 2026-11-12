@@ -526,7 +526,7 @@ export function MapView(props: Props) {
   }
 
   /**
-   * Name the activity under the pointer: type dot, name, then type, date and distance.
+   * Name the activity under the pointer: a dot (the type's color in Type mode), name, then type, date and distance.
    * Grade runs carry only the id, so the details come from `data`.
    */
   function showTip(id: string, x: number, y: number) {
@@ -551,7 +551,10 @@ export function MapView(props: Props) {
       name.className = "route-tip__name";
       const dot = document.createElement("span");
       dot.className = "route-tip__dot";
-      dot.style.background = typeColor(p.type, propsRef.current.theme);
+      // The type's color only where routes wear it; in the other modes the route's color
+      // varies along it or with the data, so the dot keeps to the accent.
+      dot.style.background =
+        propsRef.current.colorMode === "type" ? typeColor(p.type, propsRef.current.theme) : ACCENT;
       const label = document.createElement("span");
       label.textContent = p.name;
       label.style.overflow = "hidden";
