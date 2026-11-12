@@ -5,7 +5,7 @@
 
 import { useMemo, type CSSProperties } from "react";
 import { FS, MONO, R, sectionLabel } from "./theme";
-import { formatMonth, formatMonthShort } from "../format";
+import { formatMonth, formatMonthShort, typeLabel } from "../format";
 import { typeColor, type ColorMode } from "../colors";
 import type { Theme } from "../types";
 import {
@@ -47,7 +47,7 @@ export function FilterSection({ filter, onChange, colorMode, theme = "dark" }: P
               style={rowStyle(on)}
             >
               <span style={dotStyle(on, color)}>{on && <Check />}</span>
-              <span style={{ flex: 1, textAlign: "left" }}>{t}</span>
+              <span style={{ flex: 1, textAlign: "left" }}>{typeLabel(t)}</span>
               <span style={countStyle(on)}>{counts[t] ?? 0}</span>
             </button>
           );

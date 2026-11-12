@@ -21,7 +21,7 @@ import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./
 import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
-import { formatDate, formatKm } from "./format";
+import { formatDate, formatKm, typeLabel } from "./format";
 import { typeColor } from "./colors";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
@@ -559,7 +559,7 @@ export function MapView(props: Props) {
       name.append(dot, label);
       const meta = document.createElement("div");
       meta.className = "route-tip__meta";
-      meta.textContent = `${p.type} · ${formatDate(p.ts)}${dist}`;
+      meta.textContent = `${typeLabel(p.type)} · ${formatDate(p.ts)}${dist}`;
       tip.append(name, meta);
     }
     // Beside the pointer, flipped to stay inside the map.

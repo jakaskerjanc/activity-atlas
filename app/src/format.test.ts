@@ -11,6 +11,7 @@ import {
   monthEnd,
   formatMonth,
   isFootBased,
+  typeLabel,
   activityLinks,
 } from "./format";
 import type { ActivitySource } from "./types";
@@ -128,6 +129,19 @@ describe("isFootBased", () => {
     "%s is not foot-based",
     (t) => expect(isFootBased(t)).toBe(false),
   );
+});
+
+describe("typeLabel", () => {
+  test.each([
+    ["WeightTraining", "Weight training"],
+    ["StairStepper", "Stair stepper"],
+    ["RockClimbing", "Rock climbing"],
+    ["VirtualRun", "Virtual run"],
+    ["Trail Run", "Trail run"],
+    ["EBikeRide", "E-bike ride"],
+    ["Ride", "Ride"],
+    ["Workout", "Workout"],
+  ])("%s -> %s", (type, label) => expect(typeLabel(type)).toBe(label));
 });
 
 describe("activityLinks", () => {

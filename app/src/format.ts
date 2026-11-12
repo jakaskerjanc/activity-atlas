@@ -118,6 +118,27 @@ export function isFootBased(type: string): boolean {
   return /run|walk|hike/i.test(type);
 }
 
+// Types whose words don't split cleanly on case.
+const TYPE_LABELS: Record<string, string> = {
+  EBikeRide: "E-bike ride",
+  EMountainBikeRide: "E-mountain bike ride",
+};
+
+/**
+ * A Strava sport_type as words, in sentence case: "WeightTraining" -> "Weight training".
+ * Display only: filters, colors and keys keep the raw type.
+ */
+export function typeLabel(type: string): string {
+  const known = TYPE_LABELS[type];
+  if (known) return known;
+  const words = type
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.map((w, i) => (i === 0 ? w : w.toLowerCase())).join(" ");
+}
+
 /** An activity's page on a provider: `short` is the letter its badge shows. */
 export interface ActivityLink {
   url: string;
