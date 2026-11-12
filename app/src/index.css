@@ -547,6 +547,21 @@ input[type="range"].range-dual::-moz-range-thumb {
   transform: translateY(-50%);
 }
 
+/* Mapbox's logo and attribution must stay visible: on a phone App lifts them above the
+   bottom sheet or the replay bar (--map-bottom-inset, the panel's measured height).
+   Scoped under .mapboxgl-map to outrank mapbox-gl.css, which loads later with the map. */
+.mapboxgl-map .mapboxgl-ctrl-bottom-left,
+.mapboxgl-map .mapboxgl-ctrl-bottom-right {
+  bottom: var(--map-bottom-inset, 0px);
+  transition: bottom 0.2s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mapboxgl-map .mapboxgl-ctrl-bottom-left,
+  .mapboxgl-map .mapboxgl-ctrl-bottom-right {
+    transition: none;
+  }
+}
+
 /* The map's hover label: which activity is under the pointer. Positioned by MapView. */
 .route-tip {
   position: absolute;

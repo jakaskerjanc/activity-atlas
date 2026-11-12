@@ -356,6 +356,13 @@ export default function App() {
       }),
     [panels.mobile, panels.sideCollapsed, panels.bottomCollapsed, replaying, bottomPanelH],
   );
+  // Mapbox's terms require its logo and attribution to stay visible: on a phone, lift the
+  // map's bottom corner controls above the sheet or the replay bar (index.css). On desktop
+  // the panels clear both corners.
+  const mapBottomInset = view === "map" && panels.mobile ? bottomPanelH : 0;
+  useEffect(() => {
+    document.documentElement.style.setProperty("--map-bottom-inset", `${Math.round(mapBottomInset)}px`);
+  }, [mapBottomInset]);
 
   // The drawing activity, for the replay transport's readout.
   const namesById = useMemo(
