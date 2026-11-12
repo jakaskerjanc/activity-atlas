@@ -158,11 +158,17 @@
   --panel-blur: blur(10px) saturate(150%);
   --stat-cell-bg: rgba(12, 13, 18, 0.42);
 }
+/* Light glass is thicker than dark: white over green terrain and orange routes only
+   lightens them, so below ~60% they still read through the 10-11px muted text. */
 :root[data-theme="light"][data-view="map"] {
-  --panel-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.18));
+  --panel-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.62));
   --panel-border: rgba(255, 255, 255, 0.55);
   --panel-blur: blur(10px) saturate(190%) brightness(1.05);
-  --stat-cell-bg: rgba(255, 255, 255, 0.34);
+  --stat-cell-bg: rgba(255, 255, 255, 0.55);
+  /* The header fade holds full strength over the wordmark's line before fading, so map
+     labels don't show through it. */
+  --header-fade: rgba(238, 240, 244, 0.97);
+  --header-fade-hold: 45%;
 }
 
 html,
@@ -446,8 +452,13 @@ input[type="range"].range-dual::-moz-range-thumb {
   }
 }
 @media (max-width: 760px) {
+  /* A little more air under the header, and the title and lede inset towards the cards'
+     content, which sits 20px inside the cards. */
   .analytics {
-    padding: 72px 12px 32px;
+    padding: 80px 12px 32px;
+  }
+  .analytics__intro {
+    padding-left: 8px;
   }
   .analytics__grid {
     gap: var(--sp-3);
@@ -545,6 +556,21 @@ input[type="range"].range-dual::-moz-range-thumb {
 .city-marker__label--right {
   left: calc(100% + 8px);
   transform: translateY(-50%);
+}
+
+/* Mapbox's logo and attribution must stay visible: on a phone App lifts them above the
+   bottom sheet or the replay bar (--map-bottom-inset, the panel's measured height).
+   Scoped under .mapboxgl-map to outrank mapbox-gl.css, which loads later with the map. */
+.mapboxgl-map .mapboxgl-ctrl-bottom-left,
+.mapboxgl-map .mapboxgl-ctrl-bottom-right {
+  bottom: var(--map-bottom-inset, 0px);
+  transition: bottom 0.2s var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mapboxgl-map .mapboxgl-ctrl-bottom-left,
+  .mapboxgl-map .mapboxgl-ctrl-bottom-right {
+    transition: none;
+  }
 }
 
 /* The map's hover label: which activity is under the pointer. Positioned by MapView. */

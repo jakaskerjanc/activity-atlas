@@ -4,6 +4,7 @@ import type { ActivityFeature, ActivityRecord } from "./types";
 import {
   formatKm,
   formatDuration,
+  durationParts,
   formatMeters,
   pacePerKm,
   speedKmh,
@@ -11,9 +12,12 @@ import {
 } from "./format";
 
 export interface StatCard {
+  /** The whole value as text ("774h 40m"), what a screen reader and a fallback show. */
   value: string;
-  /** Shown small after the value ("km"); omitted for counts and durations. */
+  /** Shown small after the value ("km"); omitted for counts. */
   unit?: string;
+  /** A value in several numbers, each with a small unit ("774" h "40" m): durations. */
+  parts?: { value: string; unit: string }[];
   label: string;
   /** true = render in accent color */
   accent?: boolean;
@@ -63,6 +67,12 @@ function totalCard(c: Coverage, format: (v: number) => string, card: Omit<StatCa
   return { value: c.n === 0 ? "—" : format(c.sum), ...card };
 }
 
+/** A duration card, its hours and minutes set as units. A dash stays a plain value. */
+function withParts(card: StatCard, seconds: number | undefined): StatCard {
+  const parts = durationParts(seconds);
+  return parts ? { ...card, parts } : card;
+}
+
 /** Four aggregate cards for the visible activities. */
 export function totalCards(activities: readonly ActivityRecord[]): StatCard[] {
   const t = aggregate(activities);
@@ -70,7 +80,7 @@ export function totalCards(activities: readonly ActivityRecord[]): StatCard[] {
     { value: t.count.toLocaleString("en-US"), label: "Activities" },
     totalCard(t.distance, (m) => formatKm(m, 0), { unit: "km", label: "Distance", accent: true }),
     totalCard(t.elevation, formatMeters, { unit: "m", label: "Elevation gain" }),
-    totalCard(t.moving, formatDuration, { label: "Moving time" }),
+    withParts(totalCard(t.moving, formatDuration, { label: "Moving time" }), t.moving.n ? t.moving.sum : undefined),
   ];
 }
 
@@ -80,7 +90,7 @@ export function activityCards(feature: ActivityFeature): StatCard[] {
   const foot = isFootBased(p.type);
   return [
     { value: formatKm(p.distance), unit: "km", label: "Distance", accent: true },
-    { value: formatDuration(p.moving_time), label: "Moving time" },
+    withParts({ value: formatDuration(p.moving_time), label: "Moving time" }, p.moving_time),
     { value: formatMeters(p.elevation_gain), unit: "m", label: "Elevation gain" },
     foot
       ? { value: pacePerKm(p.distance, p.moving_time), unit: "/km", label: "Pace" }

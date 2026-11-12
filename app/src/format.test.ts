@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   formatKm,
   formatDuration,
+  durationParts,
   pacePerKm,
   speedKmh,
   formatMeters,
@@ -11,6 +12,7 @@ import {
   monthEnd,
   formatMonth,
   isFootBased,
+  typeLabel,
   activityLinks,
 } from "./format";
 import type { ActivitySource } from "./types";
@@ -40,6 +42,20 @@ describe("formatDuration", () => {
   });
   test("zero", () => {
     expect(formatDuration(0)).toBe("0m");
+  });
+});
+
+describe("durationParts", () => {
+  test("matches formatDuration, split into values and units", () => {
+    expect(durationParts(5933)).toEqual([
+      { value: "1", unit: "h" },
+      { value: "39", unit: "m" },
+    ]);
+    expect(durationParts(2849)).toEqual([{ value: "47", unit: "m" }]);
+    expect(durationParts(5933)!.map((p) => p.value + p.unit).join(" ")).toBe(formatDuration(5933));
+  });
+  test("unknown is undefined", () => {
+    expect(durationParts(undefined)).toBeUndefined();
   });
 });
 
@@ -128,6 +144,19 @@ describe("isFootBased", () => {
     "%s is not foot-based",
     (t) => expect(isFootBased(t)).toBe(false),
   );
+});
+
+describe("typeLabel", () => {
+  test.each([
+    ["WeightTraining", "Weight training"],
+    ["StairStepper", "Stair stepper"],
+    ["RockClimbing", "Rock climbing"],
+    ["VirtualRun", "Virtual run"],
+    ["Trail Run", "Trail run"],
+    ["EBikeRide", "E-bike ride"],
+    ["Ride", "Ride"],
+    ["Workout", "Workout"],
+  ])("%s -> %s", (type, label) => expect(typeLabel(type)).toBe(label));
 });
 
 describe("activityLinks", () => {

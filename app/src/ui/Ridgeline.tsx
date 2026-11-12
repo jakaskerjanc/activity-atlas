@@ -65,7 +65,7 @@ interface DayHover {
 
 export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth, compact = false, theme = "dark" }: Props) {
   const LABEL_W = compact ? 58 : 76;
-  const GAIN_W = compact ? 46 : 60;
+  const GAIN_W = compact ? 58 : 60;
   const { ridges, maxM } = ridgeline;
   const [boxRef, width] = useElementWidth<HTMLDivElement>(FALLBACK_WIDTH);
   const [hover, setHover] = useState<number | null>(null);

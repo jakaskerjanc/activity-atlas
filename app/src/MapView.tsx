@@ -21,7 +21,7 @@ import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./
 import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
-import { formatDate, formatKm } from "./format";
+import { formatDate, formatKm, typeLabel } from "./format";
 import { typeColor } from "./colors";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
@@ -526,7 +526,8 @@ export function MapView(props: Props) {
   }
 
   /**
-   * Name the activity under the pointer: type dot, name, then type, date and distance.
+   * Name the activity under the pointer: a dot (the type's color in Type mode), the name,
+   * then "Ride on <date> · <km> km", worded like the panel's subtitle.
    * Grade runs carry only the id, so the details come from `data`.
    */
   function showTip(id: string, x: number, y: number) {
@@ -551,7 +552,10 @@ export function MapView(props: Props) {
       name.className = "route-tip__name";
       const dot = document.createElement("span");
       dot.className = "route-tip__dot";
-      dot.style.background = typeColor(p.type, propsRef.current.theme);
+      // The type's color only where routes wear it; in the other modes the route's color
+      // varies along it or with the data, so the dot keeps to the accent.
+      dot.style.background =
+        propsRef.current.colorMode === "type" ? typeColor(p.type, propsRef.current.theme) : ACCENT;
       const label = document.createElement("span");
       label.textContent = p.name;
       label.style.overflow = "hidden";
@@ -559,7 +563,7 @@ export function MapView(props: Props) {
       name.append(dot, label);
       const meta = document.createElement("div");
       meta.className = "route-tip__meta";
-      meta.textContent = `${p.type} · ${formatDate(p.ts)}${dist}`;
+      meta.textContent = `${typeLabel(p.type)} on ${formatDate(p.ts)}${dist}`;
       tip.append(name, meta);
     }
     // Beside the pointer, flipped to stay inside the map.

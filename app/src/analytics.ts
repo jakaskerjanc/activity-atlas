@@ -57,10 +57,7 @@ export function consistencyCards(c: Consistency): StatCard[] {
     { value: c.activitiesPerWeek.toFixed(1), label: "Activities per week" },
     { value: formatKm(c.distancePerWeekM), unit: "km", label: "Distance per week", accent: true },
     { value: c.activeDays.toLocaleString("en-US"), label: "Active days" },
-    {
-      value: `${c.longestStreak} ${c.longestStreak === 1 ? "day" : "days"}`,
-      label: "Longest streak",
-    },
+    { value: String(c.longestStreak), unit: c.longestStreak === 1 ? "day" : "days", label: "Longest streak" },
   ];
 }
 

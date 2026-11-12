@@ -30,7 +30,7 @@ import type {
   Theme,
 } from "./types";
 import { joinActivities } from "./tracks";
-import { formatDate, formatMonthShort, activityLinks, type ActivityLink } from "./format";
+import { formatDate, formatMonthShort, activityLinks, typeLabel, type ActivityLink } from "./format";
 import { activityCards, totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
@@ -356,6 +356,13 @@ export default function App() {
       }),
     [panels.mobile, panels.sideCollapsed, panels.bottomCollapsed, replaying, bottomPanelH],
   );
+  // Mapbox's terms require its logo and attribution to stay visible: on a phone, lift the
+  // map's bottom corner controls above the sheet or the replay bar (index.css). On desktop
+  // the panels clear both corners.
+  const mapBottomInset = view === "map" && panels.mobile ? bottomPanelH : 0;
+  useEffect(() => {
+    document.documentElement.style.setProperty("--map-bottom-inset", `${Math.round(mapBottomInset)}px`);
+  }, [mapBottomInset]);
 
   // The drawing activity, for the replay transport's readout.
   const namesById = useMemo(
@@ -423,7 +430,7 @@ export default function App() {
       const p = selectedFeature.properties;
       return {
         title: p.name,
-        subtitle: `${p.type} on ${formatDate(p.ts)}`,
+        subtitle: `${typeLabel(p.type)} on ${formatDate(p.ts)}`,
         cards: activityCards(selectedFeature),
         links: activityLinks(p.sources),
       };
@@ -499,6 +506,7 @@ export default function App() {
             startReplay();
           }}
           canReplay={timeline.length > 0}
+          replaying={replaying}
           showMapControls={view === "map"}
           sections={view === "analytics" && visible.length > 0 ? ANALYTICS_SECTIONS : undefined}
           collapsed={panels.sideCollapsed}

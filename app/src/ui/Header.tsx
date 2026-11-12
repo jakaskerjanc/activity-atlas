@@ -49,7 +49,7 @@ export function Header({
         gap: 12,
         padding: "0 16px 0 20px",
         zIndex: 30,
-        background: solid ? "var(--bg)" : "linear-gradient(180deg, var(--header-fade), transparent)",
+        background: solid ? "var(--bg)" : "linear-gradient(180deg, var(--header-fade) var(--header-fade-hold, 0%), transparent)",
         // A hairline under the opaque bar only; over the map the fade has no edge.
         boxShadow: solid ? "0 1px 0 var(--divider)" : "none",
         pointerEvents: solid ? "auto" : "none",

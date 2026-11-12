@@ -92,7 +92,14 @@ describe("totalCards", () => {
       { value: "2", label: "Activities" },
       { value: "15", unit: "km", label: "Distance", accent: true },
       { value: "150", unit: "m", label: "Elevation gain" },
-      { value: "1h 20m", label: "Moving time" },
+      {
+        value: "1h 20m",
+        parts: [
+          { value: "1", unit: "h" },
+          { value: "20", unit: "m" },
+        ],
+        label: "Moving time",
+      },
     ]);
   });
 });
@@ -104,7 +111,7 @@ describe("activityCards", () => {
     );
     expect(cards).toEqual([
       { value: "10.0", unit: "km", label: "Distance", accent: true },
-      { value: "50m", label: "Moving time" },
+      { value: "50m", parts: [{ value: "50", unit: "m" }], label: "Moving time" },
       { value: "76", unit: "m", label: "Elevation gain" },
       { value: "5:00", unit: "/km", label: "Pace" },
     ]);

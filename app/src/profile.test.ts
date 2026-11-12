@@ -214,11 +214,22 @@ describe("cadence", () => {
 });
 
 describe("summaryReadout", () => {
-  test("the whole activity, in the same chips and order as the cursor readout", () => {
+  test("only what the stat cards above don't already say", () => {
     const p = buildProfile(full, "Run")!;
     const s = summaryReadout(full, p, "Run");
-    expect(s.map((e) => e.label)).toEqual(["km", "time", "m high", "bpm avg", "/km avg", "spm avg"]);
-    expect(s).toHaveLength(readout(full, p, 2, "Run").length);
-    expect(s[0].value).toBe(readout(full, p, full.t.length - 1, "Run")[0].value);
+    // No distance and no average pace or speed: the cards give the distance and the
+    // moving pace or speed, and a second, different value would contradict them.
+    expect(s.map((e) => e.label)).toEqual(["elapsed", "m high", "bpm avg", "spm avg"]);
+    expect(summaryReadout(full, buildProfile(full, "Ride")!, "Ride").map((e) => e.label)).toEqual([
+      "elapsed",
+      "m high",
+      "bpm avg",
+      "rpm avg",
+    ]);
+  });
+
+  test("elapsed is the clock time of the last sample", () => {
+    const p = buildProfile(full, "Run")!;
+    expect(summaryReadout(full, p, "Run")[0].value).toBe(readout(full, p, full.t.length - 1, "Run")[1].value);
   });
 });

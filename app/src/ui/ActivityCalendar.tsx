@@ -153,6 +153,8 @@ export function ActivityCalendar({
       />
     );
 
+  const timeSummary = `${formatDuration(shown.movingSec)} · ${activeDays(shown.activeDays)}`;
+
   return (
     <div ref={boxRef} style={{ position: "relative" }} onPointerLeave={() => setHover(null)}>
       <div style={yearRow}>
@@ -170,12 +172,17 @@ export function ActivityCalendar({
             </button>
           ))}
         </div>
-        <span style={muted}>
-          {formatDuration(shown.movingSec)} · {activeDays(shown.activeDays)}
-        </span>
+        {/* With a steps grid each grid's summary sits on its own label row; alone, the
+            moving-time grid needs no label, so its summary stays by the years. */}
+        {!steps && <span style={muted}>{timeSummary}</span>}
       </div>
 
-      {steps && <div style={gridLabel}>Moving time</div>}
+      {steps && (
+        <div style={{ ...yearRow, margin: "0 0 8px" }}>
+          <span style={{ ...gridLabel, margin: 0 }}>Moving time</span>
+          <span style={muted}>{timeSummary}</span>
+        </div>
+      )}
       {grid(
         "time",
         timeCells,

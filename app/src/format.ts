@@ -28,6 +28,19 @@ export function formatDuration(seconds: number | undefined): string {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
+/**
+ * A duration as number/unit pairs, so the letters can be set like any other unit:
+ * 5933 s -> [{ "1", "h" }, { "39", "m" }]. Same rounding as formatDuration; undefined
+ * when unknown.
+ */
+export function durationParts(seconds: number | undefined): { value: string; unit: string }[] | undefined {
+  if (seconds == null) return undefined;
+  const total = Math.round(seconds / 60);
+  const h = Math.floor(total / 60);
+  const m = { value: String(total % 60), unit: "m" };
+  return h ? [{ value: String(h), unit: "h" }, m] : [m];
+}
+
 /** min:sec per km, e.g. "5:06". Dash when either input is unknown or distance is zero. */
 export function pacePerKm(meters: number | undefined, seconds: number | undefined): string {
   if (meters == null || seconds == null || meters <= 0) return DASH;
@@ -116,6 +129,27 @@ export function formatMonthShort(index: number): string {
 /** Whether a Strava sport_type is measured by pace (foot) vs speed (wheel/water). */
 export function isFootBased(type: string): boolean {
   return /run|walk|hike/i.test(type);
+}
+
+// Types whose words don't split cleanly on case.
+const TYPE_LABELS: Record<string, string> = {
+  EBikeRide: "E-bike ride",
+  EMountainBikeRide: "E-mountain bike ride",
+};
+
+/**
+ * A Strava sport_type as words, in sentence case: "WeightTraining" -> "Weight training".
+ * Display only: filters, colors and keys keep the raw type.
+ */
+export function typeLabel(type: string): string {
+  const known = TYPE_LABELS[type];
+  if (known) return known;
+  const words = type
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.map((w, i) => (i === 0 ? w : w.toLowerCase())).join(" ");
 }
 
 /** An activity's page on a provider: `short` is the letter its badge shows. */

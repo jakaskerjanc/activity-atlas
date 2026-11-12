@@ -234,9 +234,11 @@ const mean = (s: Series | undefined) => {
 };
 
 /**
- * The readout at rest (no cursor): the whole activity, in the same chips and order as
- * the cursor readout, so hovering only swaps the values. Distance and time are totals,
- * altitude the high point, the rest averages over the samples that have them.
+ * The readout at rest (no cursor): what the whole activity adds to the stat cards above
+ * it. Distance and the moving speed or pace are on the cards, so they are left out here
+ * (a sample mean would disagree with them). Elapsed is the clock time from start to
+ * finish, pauses included; altitude is the high point, the rest averages over the
+ * samples that have them.
  */
 export function summaryReadout(
   detail: DetailFile,
@@ -245,16 +247,12 @@ export function summaryReadout(
 ): { label: string; value: string }[] {
   const series = (kind: ChartKind) => profile.charts.find((c) => c.kind === kind)?.values;
   const out: { label: string; value: string }[] = [];
-  const lastD = detail.d ? present(detail.d).at(-1) : undefined;
-  if (detail.d) out.push({ label: "km", value: fmt(lastD, (m) => formatKm(m, 2)) });
-  out.push({ label: "time", value: formatClock(detail.t[detail.t.length - 1] ?? 0) });
+  out.push({ label: "elapsed", value: formatClock(detail.t[detail.t.length - 1] ?? 0) });
   if (detail.alt) {
     const p = present(detail.alt);
     out.push({ label: "m high", value: p.length ? formatMeters(Math.max(...p)) : DASH });
   }
   if (detail.hr) out.push({ label: "bpm avg", value: fmt(mean(detail.hr), (v) => String(Math.round(v))) });
-  if (profile.charts.some((c) => c.kind === "pace")) out.push({ label: "/km avg", value: fmt(mean(series("pace")), formatPace) });
-  if (profile.charts.some((c) => c.kind === "speed")) out.push({ label: "km/h avg", value: fmt(mean(series("speed")), (v) => v.toFixed(1)) });
   if (series("cadence")) {
     out.push({ label: `${isFootBased(type) ? "spm" : "rpm"} avg`, value: fmt(mean(series("cadence")), (v) => String(Math.round(v))) });
   }

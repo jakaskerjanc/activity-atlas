@@ -6,7 +6,7 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { GlassPanel } from "./GlassPanel";
 import { PanelHeader } from "./PanelHeader";
-import { FilterSection } from "./FilterSection";
+import { FilterSection, ROW_BLEED } from "./FilterSection";
 import { ColorSection } from "./ColorSection";
 import { ChevronIcon, CloseIcon, PlayIcon } from "./icons";
 import { FS, R } from "./theme";
@@ -35,6 +35,8 @@ interface Props {
   onStartReplay: () => void;
   /** False when the filter leaves nothing to replay. */
   canReplay: boolean;
+  /** A replay is running: the bar below drives it, so the button rests. */
+  replaying?: boolean;
   /** Show the map-only sections (coloring, replay). False on the analytics page. */
   showMapControls: boolean;
   /** Slid off-screen; the header's Filters button opens it again. */
@@ -134,16 +136,18 @@ export function SidePanel(p: Props) {
             type="button"
             className="ctl-accent"
             onClick={p.onStartReplay}
-            disabled={!p.canReplay}
-            style={replayBtn(p.canReplay)}
+            disabled={!p.canReplay || p.replaying}
+            style={replayBtn(p.canReplay && !p.replaying)}
           >
             <PlayIcon size={14} />
-            Replay history
+            {p.replaying ? "Replaying…" : "Replay history"}
           </button>
           <p style={replayHint}>
-            {p.canReplay
-              ? "Draws the shown activities in the order you recorded them."
-              : "Nothing to replay: no shown activity has a route."}
+            {p.replaying
+              ? "Use the bar below to pause or exit."
+              : p.canReplay
+                ? "Draws the shown activities in the order you recorded them."
+                : "Nothing to replay: no shown activity has a route."}
           </p>
         </>
       )}
@@ -164,9 +168,11 @@ const sectionLabelStyle: CSSProperties = {
   color: "var(--text-soft)",
 };
 
+// Hangs outside the column like the filter rows, so the text lines up with the label.
 const jumpLink: CSSProperties = {
   display: "block",
-  padding: "7px 10px",
+  margin: `0 -${ROW_BLEED}px`,
+  padding: `7px ${ROW_BLEED}px`,
   borderRadius: R.sm,
   fontSize: FS.sm + 0.5,
   color: "var(--text)",

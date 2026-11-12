@@ -11,7 +11,7 @@ import { useElementWidth } from "./useElementWidth";
 import { elevationAxis, lengthM, lineAlpha, nearestLine, type ProfileChart } from "../elevationProfiles";
 import { useMediaQuery } from "./useMediaQuery";
 import { typeColor } from "../colors";
-import { formatDate, formatKm, formatMeters } from "../format";
+import { formatDate, formatKm, formatMeters, typeLabel } from "../format";
 import { niceTicks } from "../profile";
 import type { Theme } from "../types";
 
@@ -202,7 +202,7 @@ export function ElevationProfiles({ chart, order = [], theme = "dark", compact =
           >
             <div style={tipName}>{hovered.name}</div>
             <div style={muted}>
-              {hovered.type} on {formatDate(hovered.ts)}
+              {typeLabel(hovered.type)} on {formatDate(hovered.ts)}
             </div>
             <div style={{ ...muted, fontFamily: MONO, marginTop: 2 }}>
               {formatKm(lengthM(hovered, step))} km, {elevationLabel(hovered.profile)}
@@ -214,7 +214,7 @@ export function ElevationProfiles({ chart, order = [], theme = "dark", compact =
         {legend.map(([type, n]) => (
           <span key={type} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ ...swatch, background: typeColor(type, theme) }} />
-            {type}
+            {typeLabel(type)}
             <span style={{ fontFamily: MONO, color: "var(--text-muted)" }}>{n}</span>
           </span>
         ))}

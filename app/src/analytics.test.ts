@@ -98,7 +98,7 @@ describe("consistencyCards", () => {
       { value: "2.9", label: "Activities per week" },
       { value: "39.4", unit: "km", label: "Distance per week", accent: true },
       { value: "143", label: "Active days" },
-      { value: "12 days", label: "Longest streak" },
+      { value: "12", unit: "days", label: "Longest streak" },
     ]);
   });
 
@@ -109,7 +109,7 @@ describe("consistencyCards", () => {
       activitiesPerWeek: 1,
       distancePerWeekM: 0,
     });
-    expect(cards[3]).toEqual({ value: "1 day", label: "Longest streak" });
+    expect(cards[3]).toEqual({ value: "1", unit: "day", label: "Longest streak" });
   });
 });
 
