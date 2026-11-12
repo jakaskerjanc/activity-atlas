@@ -5,6 +5,7 @@ byte, and source records. Layout under the root:
     exports/<provider>/<YYYY-MM-DD>-<name>
     records/<provider>/<provider_activity_id>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
     wellness/<provider>/<source>/<key>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
+    osm/<CC>/<YYYYMMDDTHHMMSSZ>-<sha256(bytes)[:12]>.json
 
 Two backends share that layout: a plain folder (LocalArchive) and a private R2
 bucket fronted by a local cache folder (RemoteArchive).
@@ -12,6 +13,7 @@ bucket fronted by a local cache folder (RemoteArchive).
 import hashlib
 import io
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -33,12 +35,20 @@ class Archive(Protocol):
     def list_records(self) -> list[SourceRecord]: ...
     def put_wellness(self, rec: WellnessRecord) -> bool: ...
     def list_wellness(self) -> list[WellnessRecord]: ...
+    def put_osm(self, country: str, data: bytes, *, fetched_at: str) -> bool: ...
+    def list_osm(self) -> dict[str, bytes]: ...
 
 
 def _safe(part: str) -> str:
     if not part or part in (".", "..") or "/" in part or os.sep in part:
         raise ValueError(f"unsafe archive key part: {part!r}")
     return part
+
+
+def _osm_dir(country: str) -> str:
+    if not re.fullmatch(r"[A-Z]{2}", country):
+        raise ValueError(f"unsafe country code: {country!r}")
+    return f"osm/{country}"
 
 
 def _stamp(fetched_at: str) -> str:
@@ -191,6 +201,38 @@ class LocalArchive:
                     out.extend(self._read_records(os.path.join(base, provider, source, key), WellnessRecord))
         return out
 
+    def _newest_osm(self, directory: str) -> str | None:
+        path = self._path(directory)
+        if not os.path.isdir(path):
+            return None
+        names = [n for n in os.listdir(path) if n.endswith(".json") and not n.startswith(".tmp-")]
+        return max(names) if names else None
+
+    def put_osm(self, country: str, data: bytes, *, fetched_at: str) -> bool:
+        """Store one country's Overpass response as a snapshot. False, writing
+        nothing, when the newest snapshot holds the same bytes."""
+        d = _osm_dir(country)
+        newest = self._newest_osm(d)
+        if newest:
+            with open(self._path(f"{d}/{newest}"), "rb") as f:
+                if f.read() == data:
+                    return False
+        sha = hashlib.sha256(data).hexdigest()[:12]
+        self._write(f"{d}/{_stamp(fetched_at)}-{sha}.json", lambda f: f.write(data))
+        return True
+
+    def list_osm(self) -> dict[str, bytes]:
+        base = self._path("osm")
+        if not os.path.isdir(base):
+            return {}
+        out = {}
+        for country in sorted(os.listdir(base)):
+            newest = self._newest_osm(f"osm/{country}")
+            if newest:
+                with open(self._path(f"osm/{country}/{newest}"), "rb") as f:
+                    out[country] = f.read()
+        return out
+
 
 class RemoteArchive(LocalArchive):
     """The archive in an object store (R2), with ``cache_root`` as a read cache.
@@ -233,7 +275,7 @@ class RemoteArchive(LocalArchive):
         except KeyError:
             raise KeyError(sha256) from None
 
-    def _sync(self, prefix: str) -> None:
+    def _list_safe(self, prefix: str) -> list[str]:
         keys = [key for key, _ in self.store.list(prefix)]
         for key in keys:  # the store is untrusted: no key may escape the cache root
             try:
@@ -243,9 +285,31 @@ class RemoteArchive(LocalArchive):
                     _safe(part)
             except ValueError:
                 raise ValueError(f"unsafe archive key from store: {key!r}") from None
-        for key in keys:
+        return keys
+
+    def _sync(self, prefix: str) -> None:
+        for key in self._list_safe(prefix):
             if not os.path.exists(self._path(key)):
                 self._fetch(key)
+
+    def _sync_osm(self, prefix: str) -> None:
+        """Like _sync, but fetches only the newest snapshot per country."""
+        newest: dict[str, str] = {}
+        for key in self._list_safe(prefix):
+            parts = key.split("/")
+            if len(parts) == 3 and key.endswith(".json") and key > newest.get(parts[1], ""):
+                newest[parts[1]] = key
+        for key in newest.values():
+            if not os.path.exists(self._path(key)):
+                self._fetch(key)
+
+    def put_osm(self, country: str, data: bytes, *, fetched_at: str) -> bool:
+        self._sync_osm(_osm_dir(country) + "/")
+        return super().put_osm(country, data, fetched_at=fetched_at)
+
+    def list_osm(self) -> dict[str, bytes]:
+        self._sync_osm("osm/")
+        return super().list_osm()
 
     def put_record(self, rec: SourceRecord) -> bool:
         self._sync(self._record_dir(rec.provider, rec.provider_activity_id) + "/")

@@ -1,7 +1,11 @@
 """The activity filter shared by every activity tool, as SQL on alias ``a``."""
+import dataclasses
+import unicodedata
 from dataclasses import dataclass
 
 LOCAL_DATE = "substr(a.start_local, 1, 10)"
+GROUP_TABLES = ("places", "route_groups", "activity_groups")
+NO_PLACES_YET = "this database has no places yet; they appear after the next write job"
 
 
 @dataclass
@@ -16,6 +20,43 @@ class ActivityFilter:
     has_hr: bool | None = None
     has_gps: bool | None = None
     include_hidden: bool = False
+    place: str | None = None  # a place id or name, as asked for
+    place_ids: tuple[str, ...] | None = None  # filled only by resolve_place
+
+
+def has_group_tables(conn) -> bool:
+    """False for a v4 database, which has no places or same-route groups yet."""
+    n = conn.execute(f"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN "
+                     f"({', '.join('?' * len(GROUP_TABLES))})", GROUP_TABLES).fetchone()[0]
+    return n == len(GROUP_TABLES)
+
+
+# Letters NFD leaves whole, folded like the accented ones (casefold() already turns ß into ss).
+_FOLDS = str.maketrans({"ł": "l", "ø": "o", "đ": "d"})
+
+
+def fold_name(s: str) -> str:
+    """Case and accents dropped, and ß, ł, ø, đ folded, as the site's normalizeName does
+    (SQLite's lower() folds ASCII only)."""
+    bare = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+    return bare.casefold().translate(_FOLDS)
+
+
+def resolve_place(conn, f: ActivityFilter) -> ActivityFilter:
+    """Turn ``f.place`` into the ids of the places it names: the place with that id, else every place
+    whose name matches with case and accents ignored."""
+    if f.place is None:
+        return f
+    if not has_group_tables(conn):
+        raise ValueError(NO_PLACES_YET)
+    rows = conn.execute("SELECT id, name FROM places").fetchall()
+    ids = [r[0] for r in rows if r[0] == f.place]
+    if not ids:
+        want = fold_name(f.place)
+        ids = [r[0] for r in rows if fold_name(r[1]) == want]
+    if not ids:
+        raise ValueError(f"no place {f.place!r}; the places tool lists them")
+    return dataclasses.replace(f, place_ids=tuple(sorted(ids)))
 
 
 def _num(x: float) -> str:
@@ -68,4 +109,15 @@ def where_sql(f: ActivityFilter) -> tuple[str, list, list[str]]:
         conds.append("a.has_gps = ?")
         params.append(int(f.has_gps))
         rules.append("with GPS" if f.has_gps else "without GPS")
+    if f.place is not None and f.place_ids is None:
+        raise RuntimeError("place filter not resolved; call resolve_place first")
+    if f.place_ids is not None:
+        conds.append("a.id IN (SELECT activity_id FROM activity_groups WHERE place_id IN "
+                     f"({', '.join('?' * len(f.place_ids))}))")
+        params += list(f.place_ids)
+        n = len(f.place_ids)
+        rules.append(f"place: {f.place}" + (f" ({n} places with that name)" if n > 1 else ""))
+        if f.include_hidden:
+            # The refresh groups visible activities only, so a hidden one is never in a place.
+            rules.append("place groups cover visible activities only")
     return (" AND ".join(conds) or "1"), params, rules

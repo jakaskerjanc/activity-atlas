@@ -8,12 +8,18 @@ times. Nothing is ever written over a database this run has not seen.
 
 A successful upload also writes ``db/snapshots/<today>.sqlite`` and prunes old
 snapshots. With a local archive the database is simply used in place.
+
+After ``work`` returns, every run refreshes places and routes in the file it
+worked on, before the hash check. A refresh that raises leaves the group tables
+as they were; the run keeps (and uploads) the work as usual and only then exits
+with EXIT_REFRESH_FAILED.
 """
 import hashlib
 import os
 import re
 import sys
 import tempfile
+import traceback
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -29,6 +35,7 @@ SNAPSHOT_DAYS = 30  # keep the last 30 daily snapshots plus the first of each mo
 
 EXIT_WRITE_CONFLICT = 5
 EXIT_NO_REMOTE_DB = 6
+EXIT_REFRESH_FAILED = 7
 
 _SNAPSHOT_KEY = re.compile(re.escape(SNAPSHOT_PREFIX) + r"(\d{4}-\d{2}-\d{2})\.sqlite$")
 
@@ -120,9 +127,29 @@ def _report_changed(changed: bool) -> None:
             fh.write(f"db_changed={'true' if changed else 'false'}\n")
 
 
+def _finish(result: T, refreshed: bool) -> T:
+    if not refreshed:
+        print("the database was saved (and uploaded if it changed), but places and routes were not refreshed; "
+              "see the error above", file=sys.stderr)
+        raise SystemExit(EXIT_REFRESH_FAILED)
+    return result
+
+
 def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str, init_db: bool = False) -> T:
+    # Imported here, not at module level, like engine.open_for_write's rebuild: no import cycle.
+    from ingest.refresh import refresh_file
+
+    def try_refresh(path: str) -> bool:
+        try:
+            refresh_file(path)
+            return True
+        except Exception:
+            traceback.print_exc()
+            return False
+
     if not is_remote(archive):
-        return work(db_path)
+        result = work(db_path)
+        return _finish(result, try_refresh(db_path))
 
     store = archive.store
     tmp = None
@@ -141,11 +168,12 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
                 raise SystemExit(EXIT_NO_REMOTE_DB)
             before = _sha256(tmp)
             result = work(tmp)
+            refreshed = try_refresh(tmp)
             after = _sha256(tmp)
             if after is None or after == before:
                 if after is not None:
                     install(tmp, db_path)
-                return result
+                return _finish(result, refreshed)
             with open(tmp, "rb") as fh:
                 data = fh.read()
             try:
@@ -164,7 +192,7 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
             changed = True
             store.put(f"{SNAPSHOT_PREFIX}{today}.sqlite", data)
             _prune_snapshots(store)
-            return result
+            return _finish(result, refreshed)
         print(
             f"R2 kept rejecting the database upload ({WRITE_ATTEMPTS} attempts); another writer is busy. "
             "Nothing was uploaded: run again.",

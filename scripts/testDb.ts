@@ -1,4 +1,4 @@
-// Test helpers: a throwaway v2 database holding the tables and columns the
+// Test helpers: a throwaway v5 database holding the tables and columns the
 // display build reads (a subset of ingest/db.py's schema). Not used by the build.
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -13,7 +13,21 @@ export const POLY = polyline.encode([[46.0, 14.0], [46.001, 14.001], [46.002, 14
 
 const STREAM_COLS = Object.keys(CHANNEL_SCALES).map((c) => `${c} BLOB`).join(", ");
 
-export function withDb(setup: (db: Database.Database) => void, run: (path: string) => void) {
+/** The place and same-route tables (schema v5); an older database has none. */
+const GROUP_TABLES = `
+  CREATE TABLE places (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, name_source TEXT NOT NULL,
+    kind TEXT NOT NULL, ele REAL NOT NULL
+  );
+  CREATE TABLE route_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL, name_source TEXT NOT NULL);
+  CREATE TABLE activity_groups (activity_id TEXT PRIMARY KEY, place_id TEXT, route_id TEXT);
+`;
+
+export function withDb(
+  setup: (db: Database.Database) => void,
+  run: (path: string) => void,
+  { withoutGroupTables = false }: { withoutGroupTables?: boolean } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "build-tracks-"));
   const path = join(dir, "activities.sqlite");
   const db = new Database(path);
@@ -38,6 +52,7 @@ export function withDb(setup: (db: Database.Database) => void, run: (path: strin
       ${STREAM_COLS}
     );
   `);
+  if (!withoutGroupTables) db.exec(GROUP_TABLES);
   try {
     setup(db);
     db.close();
@@ -90,7 +105,38 @@ export function addSource(
   ).run(provider, pid, activityId, deletedAt);
 }
 
+export function addPlace(
+  db: Database.Database,
+  id: string,
+  name: string,
+  kind: "peak" | "pass" | "top" = "peak",
+  ele = 1000,
+) {
+  db.prepare("INSERT INTO places (id, name, name_source, kind, ele) VALUES (?, ?, 'osm', ?, ?)").run(
+    id,
+    name,
+    kind,
+    ele,
+  );
+}
 
+export function addRouteGroup(db: Database.Database, id: string, name: string) {
+  db.prepare("INSERT INTO route_groups (id, name, name_source) VALUES (?, ?, 'activity_names')").run(id, name);
+}
+
+/** An activity_groups row: the activity's place and same-route group ids, either NULL. */
+export function addActivityGroup(
+  db: Database.Database,
+  activityId: string,
+  placeId: string | null,
+  routeId: string | null,
+) {
+  db.prepare("INSERT INTO activity_groups (activity_id, place_id, route_id) VALUES (?, ?, ?)").run(
+    activityId,
+    placeId,
+    routeId,
+  );
+}
 
 /**
  * Port of ingest/codec.py encode, for building streams rows in tests only.

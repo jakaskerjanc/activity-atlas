@@ -2,11 +2,12 @@ import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AnalyticsView } from "./AnalyticsView";
-import { createActivityFilter, toggleType, visibleActivities } from "../activityFilter";
+import { createActivityFilter, togglePlace, toggleType, visibleActivities } from "../activityFilter";
 import { record } from "../testFixtures";
 import { cityComparisons } from "../cityMatch";
 import type { CityData } from "../cities";
 import { SIDE_PANEL_CLEARANCE } from "./layout";
+import type { Place } from "../types";
 
 const filter = createActivityFilter([record({ type: "Run" })]);
 
@@ -124,6 +125,31 @@ describe("AnalyticsView", () => {
     const empty = toggleType(filter, "Run");
     const html = render({ filter: empty, visible: visibleActivities(empty), onResetFilter: () => {} });
     expect(html).toContain("Reset filters");
+  });
+
+  test("an empty filter without a place offers only resetting", () => {
+    const empty = toggleType(filter, "Run");
+    const html = render({ filter: empty, visible: visibleActivities(empty), onResetFilter: () => {}, onClearPlace: () => {} });
+    expect(html).toContain("Switch on an activity type or widen the date range.");
+    expect(html).not.toContain("Clear place");
+  });
+
+  test("an empty filter with a place names it and offers clearing it before resetting", () => {
+    const slavnik: Place = { id: "p1", name: "Slavnik", ele: 1028, kind: "peak" };
+    const atSlavnik = togglePlace(createActivityFilter([record({ type: "Run", place: "p1" })]), "p1");
+    const empty = toggleType(atSlavnik, "Run");
+    const html = render({
+      filter: empty,
+      visible: visibleActivities(empty),
+      places: new Map([[slavnik.id, slavnik]]),
+      onResetFilter: () => {},
+      onClearPlace: () => {},
+    });
+    expect(html).toContain(
+      "No activities to Slavnik match these filters. Switch on an activity type, widen the date range, or clear the place.",
+    );
+    expect(html).toContain("Clear place");
+    expect(html.indexOf("Clear place")).toBeLessThan(html.indexOf("Reset filters"));
   });
 
   test("adds steps to the calendar only when there is step data", () => {

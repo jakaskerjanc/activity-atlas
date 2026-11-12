@@ -1,11 +1,14 @@
 import hashlib
 import os
+import warnings
 from datetime import date, timedelta
 
 import pytest
-from ingest import db, writer
+from ingest import db, engine, writer
 from ingest.archive import LocalArchive, RemoteArchive
 from ingest.objstore import MemoryStore
+from ingest.tests.test_grouping import A, N, _hike
+from ingest.tests.track_fixture import climb_alts, insert_activity
 
 TODAY = "2026-05-01"
 
@@ -240,3 +243,141 @@ def test_stale_journal_is_not_rolled_into_the_pulled_database(store, archive, db
             fh.write(b"stale")
     writer.run(db_path, archive, Work(), today=TODAY)
     assert not [s for s in ("-journal", "-wal", "-shm") if os.path.exists(db_path + s)]
+
+
+# --- the refresh after every write -----------------------------------------------------------------------------
+
+def _insert_hike(path, id_="hike1"):
+    conn = db.open_db(path)
+    insert_activity(conn, id_, "Hike", "2025-06-01T07:00:00+00:00", _hike(A, 0), alts=climb_alts(N, 300))
+    conn.commit()
+    conn.close()
+    return "inserted"
+
+
+def _read(data: bytes, tmp_path, sql: str) -> list[tuple]:
+    path = str(tmp_path / "inspect.sqlite")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    conn = db.connect(path)
+    try:
+        return [tuple(r) for r in conn.execute(sql)]
+    finally:
+        conn.close()
+
+
+def _boom(path, log=print):
+    raise RuntimeError("refresh boom")
+
+
+REFRESH_FAILED = "places and routes were not refreshed"
+
+
+def test_unchanged_run_still_uploads_nothing(store, archive, db_path, tmp_path):
+    etag = seed(store, tmp_path, "old")
+    assert writer.run(db_path, archive, lambda path: db.open_db(path).close(), today=TODAY) is None
+    assert store.head(writer.DB_KEY)["etag"] == etag
+    assert [k for k, _ in store.list("db/")] == [writer.DB_KEY]
+
+    assert writer.run(db_path, archive, _insert_hike, today=TODAY) == "inserted"
+    uploaded = store.get(writer.DB_KEY)[0]
+    assert _read(uploaded, tmp_path, "SELECT * FROM activity_groups") == [("hike1", "hike1", None)]
+    assert _read(uploaded, tmp_path, "SELECT id FROM places") == [("hike1",)]
+
+
+def test_refresh_failure_still_uploads_and_exits_7(store, archive, db_path, tmp_path, monkeypatch, capsys):
+    seed(store, tmp_path, "old")
+    monkeypatch.setattr("ingest.refresh.refresh_file", _boom)
+    out = tmp_path / "github_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    with pytest.raises(SystemExit) as exc:
+        writer.run(db_path, archive, _insert_hike, today=TODAY)
+    assert exc.value.code == writer.EXIT_REFRESH_FAILED == 7
+    for key in (writer.DB_KEY, f"db/snapshots/{TODAY}.sqlite"):
+        data = store.get(key)[0]
+        assert _read(data, tmp_path, "SELECT id FROM activities") == [("hike1",)]
+        assert _read(data, tmp_path, "SELECT * FROM activity_groups") == []
+    assert out.read_text() == "db_changed=true\n"
+    err = capsys.readouterr().err
+    assert "Traceback" in err and "refresh boom" in err and REFRESH_FAILED in err
+    assert err.index("refresh boom") < err.index(REFRESH_FAILED)
+
+
+def test_refresh_failure_after_a_lost_race_still_uploads_and_exits_7(store, archive, db_path, tmp_path,
+                                                                      monkeypatch, capsys):
+    seed(store, tmp_path, "old")
+    monkeypatch.setattr("ingest.refresh.refresh_file", _boom)
+    work = Work(store, tmp_path, race=lambda n: n == 1)
+    with pytest.raises(SystemExit) as exc:
+        writer.run(db_path, archive, work, today=TODAY)
+    assert exc.value.code == 7 and work.calls == 2
+    assert gear_names(store.get(writer.DB_KEY)[0], tmp_path) == ["attempt-2", "other-1"]
+    assert "redoing" in capsys.readouterr().err
+
+
+def test_refresh_failure_with_nothing_to_upload_exits_7(store, archive, db_path, tmp_path, monkeypatch):
+    etag = seed(store, tmp_path, "old")
+    monkeypatch.setattr("ingest.refresh.refresh_file", _boom)
+    with pytest.raises(SystemExit) as exc:
+        writer.run(db_path, archive, lambda path: None, today=TODAY)
+    assert exc.value.code == 7
+    assert store.head(writer.DB_KEY)["etag"] == etag
+    assert os.path.exists(db_path)
+
+
+def test_refresh_failure_local_keeps_work_and_exits_7(tmp_path, db_path, monkeypatch, capsys):
+    monkeypatch.setattr("ingest.refresh.refresh_file", _boom)
+    with pytest.raises(SystemExit) as exc:
+        writer.run(db_path, LocalArchive(str(tmp_path / "a")), _insert_hike, today=TODAY)
+    assert exc.value.code == 7
+    with open(db_path, "rb") as fh:
+        assert _read(fh.read(), tmp_path, "SELECT id FROM activities") == [("hike1",)]
+    err = capsys.readouterr().err
+    assert "refresh boom" in err and REFRESH_FAILED in err
+
+
+def test_local_run_refreshes(tmp_path, db_path):
+    os.makedirs(os.path.dirname(db_path))
+    assert writer.run(db_path, LocalArchive(str(tmp_path / "a")), _insert_hike, today=TODAY) == "inserted"
+    with open(db_path, "rb") as fh:
+        assert _read(fh.read(), tmp_path, "SELECT * FROM activity_groups") == [("hike1", "hike1", None)]
+
+
+def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_path):
+    """The first daily job after the upgrade: R2 holds a v4 database and the archive the records behind it,
+    among them a walk that climbs 106 m. The job opens the database as the fetchers do, which rebuilds it
+    to v5; the run's refresh then fills the group tables, and the upload carries both."""
+    from ingest.tests.test_rebuild import NOW, _imported
+    (tmp_path / "import").mkdir()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        dbp, local = _imported(tmp_path / "import")
+    for root, _, files in os.walk(local.root):          # the archive, under the same keys in R2
+        for name in files:
+            path = os.path.join(root, name)
+            with open(path, "rb") as fh:
+                store.put(os.path.relpath(path, local.root).replace(os.sep, "/"), fh.read())
+    conn = db.connect(dbp)
+    [walk] = [r[0] for r in conn.execute("SELECT id FROM activities WHERE type = 'Walk'")]
+    for table in ("activity_groups", "route_groups", "places", "group_overrides", "osm_points"):
+        conn.execute(f"DROP TABLE {table}")
+    conn.execute("PRAGMA user_version = 4")
+    conn.commit()
+    conn.close()
+    with open(dbp, "rb") as fh:
+        store.put(writer.DB_KEY, fh.read())
+
+    def work(path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            engine.open_for_write(path, archive, now=NOW).close()
+        return "fetched"
+
+    assert writer.run(db_path, archive, work, today=TODAY) == "fetched"
+    for key in (writer.DB_KEY, f"db/snapshots/{TODAY}.sqlite"):
+        data = store.get(key)[0]
+        assert _read(data, tmp_path, "PRAGMA user_version") == [(db.SCHEMA_VERSION,)] == [(5,)]
+        assert _read(data, tmp_path, "SELECT id, name, name_source, kind FROM places") == [
+            (walk, "Top at 410 m", "fallback", "top")]
+        assert _read(data, tmp_path, "SELECT * FROM activity_groups") == [(walk, walk, None)]
+        assert len(_read(data, tmp_path, "SELECT id FROM activities")) == 3

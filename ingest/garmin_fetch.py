@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import traceback
 import warnings
 import zipfile
 from datetime import date, datetime, timedelta, timezone
@@ -323,12 +324,15 @@ def main():
         # A fresh fetcher per attempt, so a redo after a lost upload race starts clean.
         # A failed run() has already committed what it fetched (run() closes its connection
         # on the way out), so hand the error back instead of raising: writer.run then
-        # uploads that progress, and main re-raises the error afterwards.
+        # uploads that progress, and main re-raises the error afterwards. The traceback is
+        # printed now too: if the refresh after the work fails, writer.run exits 7 before main
+        # can re-raise, and the fetch error would otherwise never be shown.
         try:
             return GarminFetcher(path, archive, key_file=args.api_key_file,
                                  wellness_since=args.wellness_since, wellness_until=args.wellness_until,
                                  client=client).run(), None
         except Exception as e:
+            traceback.print_exc()
             return None, e
     counts, error = writer.run(args.db, archive, work, today=date.today().isoformat())
     if error is not None:

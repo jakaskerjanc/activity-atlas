@@ -264,3 +264,65 @@ def test_put_export_same_day_same_name_never_overwrites(archive, tmp_path):
     # identical content still finds its existing key
     src.write_bytes(b"second")
     assert archive.put_export("strava", str(src), today="2026-10-27") == keys[1]
+
+
+def test_put_osm_dedupes_and_list_returns_newest(tmp_path):
+    a = LocalArchive(str(tmp_path))
+    assert a.put_osm("SI", b'{"elements":[]}', fetched_at="2026-11-09T10:00:00+00:00")
+    assert not a.put_osm("SI", b'{"elements":[]}', fetched_at="2026-11-09T11:00:00+00:00")
+    assert a.put_osm("SI", b'{"elements":[1]}', fetched_at="2026-11-10T10:00:00+00:00")
+    assert a.list_osm() == {"SI": b'{"elements":[1]}'}
+
+
+@pytest.mark.parametrize("bad", ["../x", "si", "SIX", "S", ""])
+def test_put_osm_rejects_unsafe_country(tmp_path, bad):
+    with pytest.raises(ValueError):
+        LocalArchive(str(tmp_path)).put_osm(bad, b"", fetched_at="2026-11-09T10:00:00+00:00")
+
+
+class _RecordingStore(MemoryStore):
+    def __init__(self):
+        super().__init__()
+        self.gets = []
+
+    def get(self, key):
+        self.gets.append(key)
+        return super().get(key)
+
+
+def test_remote_list_osm_fetches_only_newest_per_country(tmp_path):
+    store = _RecordingStore()
+    writer = RemoteArchive(store, str(tmp_path / "w"))
+    writer.put_osm("SI", b"si-old", fetched_at="2026-11-01T10:00:00+00:00")
+    writer.put_osm("SI", b"si-new", fetched_at="2026-11-09T10:00:00+00:00")
+    writer.put_osm("AT", b"at", fetched_at="2026-11-05T10:00:00+00:00")
+    old_key = [k for k, _ in store.list("osm/SI/") if k.startswith("osm/SI/20261101")][0]
+    store.gets.clear()
+
+    reader = RemoteArchive(store, str(tmp_path / "r"))
+    assert reader.list_osm() == {"SI": b"si-new", "AT": b"at"}
+    assert old_key not in store.gets and len(store.gets) == 2
+    assert not os.path.exists(reader._path(old_key))
+    store.gets.clear()
+    assert reader.list_osm() == {"SI": b"si-new", "AT": b"at"}
+    assert store.gets == []  # newest keys are cached
+
+
+def test_remote_put_osm_dedupes_against_store_not_cache(tmp_path):
+    store = MemoryStore()
+    a, b = RemoteArchive(store, str(tmp_path / "a")), RemoteArchive(store, str(tmp_path / "b"))
+    assert a.put_osm("SI", b"x", fetched_at="2026-11-09T10:00:00+00:00")
+    assert not b.put_osm("SI", b"x", fetched_at="2026-11-10T10:00:00+00:00")
+    assert len(store.list("osm/")) == 1
+
+
+@pytest.mark.parametrize("bad_key", ["osm/../x.json", "osm/SI/./x.json", "osm//x.json"])
+def test_remote_list_osm_rejects_unsafe_store_key(tmp_path, bad_key):
+    store = _RecordingStore()
+    store.put("osm/SI/20261109T100000Z-aaaaaaaaaaaa.json", b"{}")
+    store.put(bad_key, b"{}")
+    store.gets.clear()
+    with pytest.raises(ValueError, match="unsafe archive key from store"):
+        RemoteArchive(store, str(tmp_path / "cache")).list_osm()
+    assert store.gets == []
+    assert [p for p in tmp_path.rglob("*") if p.is_file()] == []

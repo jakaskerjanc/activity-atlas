@@ -14,6 +14,10 @@ from ingest.tests.test_garmin_import import _garmin_zip
 from ingest.tests.test_rebuild import _imported
 from ingest.tests.test_strava_import import HEADER, _row, _zip
 from ingest import matcher
+from ingest.refresh import refresh, refresh_file
+from ingest.tests.test_grouping import A, N, _loop_from
+from ingest.tests.test_refresh import _fill, _rows, build_db
+from ingest.tests.track_fixture import climb_alts, insert_activity, offset
 
 ID_RE = re.compile(r"^[a-z0-9]{10}$")
 
@@ -204,3 +208,211 @@ def test_split_redone_after_412_prints_one_line(tmp_path, monkeypatch, capsys):
     open(remote, "wb").write(store.get(writer.DB_KEY)[0])
     conn = db.connect(remote)
     assert _aid(conn, "garmin", "900001") == out.strip().split()[-1]
+
+
+# --- places and same routes: owner names and merges ---
+
+@pytest.fixture
+def conn():
+    c = db.connect(":memory:")
+    db.init_schema(c)
+    _fill(c)        # place h1 (h1, h2, h3, named "Slavnik"), place b1 (fallback name), route r1 (r1, r2)
+    refresh(c)
+    c.commit()
+    yield c
+    c.close()
+
+
+def _overrides(conn):
+    return {(r[0], r[1]): (r[2], r[3]) for r in conn.execute("SELECT * FROM group_overrides")}
+
+
+def test_name_place_then_refresh_uses_it(conn):
+    activity_cli.name_group(conn, "place", "h1", "Moj hrib")
+    activity_cli.name_group(conn, "route", "r1", "Track loop")
+    assert _overrides(conn) == {("place", "h1"): ("Moj hrib", None), ("route", "r1"): ("Track loop", None)}
+    refresh(conn)
+    assert _rows(conn, "places")["h1"][:2] == ("Moj hrib", "owner")
+    assert _rows(conn, "route_groups")["r1"] == ("Track loop", "owner")
+
+
+def test_empty_name_clears(conn):
+    activity_cli.name_group(conn, "place", "h1", "Moj hrib")
+    refresh(conn)
+    activity_cli.name_group(conn, "place", "h1", "")
+    assert _overrides(conn) == {}
+    refresh(conn)
+    assert _rows(conn, "places")["h1"][:2] == ("Slavnik", "activity_names")
+
+    # a row that still carries a merge keeps it; it goes once it has neither
+    activity_cli.name_group(conn, "place", "b1", "Grmada")
+    activity_cli.merge_place(conn, "b1", "h1")
+    activity_cli.unmerge_place(conn, "b1")
+    assert _overrides(conn) == {("place", "b1"): ("Grmada", None)}
+    activity_cli.merge_place(conn, "b1", "h1")
+    activity_cli.name_group(conn, "place", "b1", "")
+    assert _overrides(conn) == {("place", "b1"): (None, "h1")}
+    activity_cli.unmerge_place(conn, "b1")
+    assert _overrides(conn) == {}
+
+
+def test_orphaned_name_can_be_cleared(conn):
+    activity_cli.name_group(conn, "place", "h1", "Moj hrib")
+    refresh(conn)
+    conn.execute("UPDATE activities SET visible = 0 WHERE id = 'h1'")
+    assert refresh(conn)["orphaned_overrides"] == ["place h1"]
+    assert "h1" not in _rows(conn, "places")
+    with pytest.raises(ValueError):
+        activity_cli.name_group(conn, "place", "h1", "Still mine")   # no place h1 to name any more
+    activity_cli.name_group(conn, "place", "h1", "")
+    assert _overrides(conn) == {}
+    assert refresh(conn)["orphaned_overrides"] == []
+
+
+def test_naming_a_merged_place_names_the_target(conn):
+    activity_cli.merge_place(conn, "b1", "h1")
+    with pytest.raises(ValueError, match="place b1 is merged into h1; name h1 instead"):
+        activity_cli.name_group(conn, "place", "b1", "X")
+    refresh(conn)
+    with pytest.raises(ValueError, match="name h1 instead"):
+        activity_cli.name_group(conn, "place", "b1", "X")
+
+
+def test_merge_place_moves_activities_and_refuses_cycles(conn):
+    with pytest.raises(ValueError, match="itself"):
+        activity_cli.merge_place(conn, "h1", "h1")
+    with pytest.raises(ValueError, match="no place r1"):
+        activity_cli.merge_place(conn, "b1", "r1")
+    with pytest.raises(ValueError, match="no place nope"):
+        activity_cli.merge_place(conn, "nope", "h1")
+    activity_cli.merge_place(conn, "b1", "h1")
+    with pytest.raises(ValueError, match="cycle"):       # b1 is still in places until the refresh
+        activity_cli.merge_place(conn, "h1", "b1")
+    assert _overrides(conn) == {("place", "b1"): (None, "h1")}
+    result = refresh(conn)
+    assert result["places"] == 1 and result["orphaned_overrides"] == []
+    assert "b1" not in _rows(conn, "places")
+    assert _rows(conn, "activity_groups")["b1"] == ("h1", None)
+
+
+def test_unmerge_works_on_orphaned_merge(conn):
+    activity_cli.merge_place(conn, "b1", "h1")
+    refresh(conn)
+    conn.execute("UPDATE activities SET visible = 0 WHERE id IN ('h1', 'h2', 'h3')")
+    assert refresh(conn)["orphaned_overrides"] == ["place b1"]
+    activity_cli.unmerge_place(conn, "b1")
+    assert _overrides(conn) == {}
+    result = refresh(conn)
+    assert result["orphaned_overrides"] == [] and set(_rows(conn, "places")) == {"b1"}
+
+
+def test_unknown_group_raises(conn):
+    for call in (lambda: activity_cli.name_group(conn, "place", "nope", "X"),
+                 lambda: activity_cli.name_group(conn, "place", "nope", ""),
+                 lambda: activity_cli.name_group(conn, "route", "h1", "X"),     # a place, not a route
+                 lambda: activity_cli.name_group(conn, "route", "h1", ""),
+                 lambda: activity_cli.name_group(conn, "trail", "h1", "X"),
+                 lambda: activity_cli.unmerge_place(conn, "nope"),
+                 lambda: activity_cli.unmerge_place(conn, "h1")):              # a place with no merge
+        with pytest.raises(ValueError):
+            call()
+    assert _overrides(conn) == {}
+
+
+def test_list_places_fallback_first(conn):
+    places = activity_cli.list_places(conn)
+    assert [p["id"] for p in places] == ["b1", "h1"]      # b1 has the fallback name, h1 more activities
+    assert places[0]["name_source"] == "fallback" and places[0]["count"] == 1
+    assert places[1] == {"id": "h1", "name": "Slavnik", "name_source": "activity_names", "kind": "peak",
+                         "ele": 1028.0, "count": 3}
+
+
+def test_list_routes_uses_local_dates(conn):
+    # 23:30 UTC on 7 June is 8 June at UTC+1
+    insert_activity(conn, "r3", "Run", "2025-06-07T23:30:00+00:00", _loop_from(offset([A], 10, -5000)[0]),
+                    alts=climb_alts(N, 10))
+    refresh(conn)
+    [route] = activity_cli.list_routes(conn)
+    assert route == {"id": "r1", "type": "Run", "name": route["name"], "name_source": "auto", "count": 3,
+                     "first": "2025-06-05", "last": "2025-06-08"}
+
+
+def test_cli_name_place_then_list(tmp_path, monkeypatch, capsys):
+    path = build_db(tmp_path)
+    refresh_file(path)              # a write job's refresh fills the group tables; listing never refreshes
+    monkeypatch.setattr(sys, "argv", ["activity", "places", "--db", path])
+    activity_cli.main()
+    assert any(ln.startswith("h1 ") and "Slavnik" in ln for ln in capsys.readouterr().out.splitlines())
+    monkeypatch.setattr(sys, "argv", ["activity", "name-place", "h1", "Moj hrib", "--db", path])
+    activity_cli.main()
+    assert 'place h1 named "Moj hrib"' in capsys.readouterr().out
+    monkeypatch.setattr(sys, "argv", ["activity", "places", "--db", path])
+    activity_cli.main()
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["id", "name", "name_source", "kind", "ele", "count"]
+    row = next(ln for ln in lines if ln.startswith("h1 "))
+    assert "Moj hrib" in row and "owner" in row       # the run's refresh applied the name
+    assert lines[0].index("name_source") == row.index("owner")    # columns line up
+    monkeypatch.setattr(sys, "argv", ["activity", "routes", "--db", path])
+    activity_cli.main()
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split() == ["id", "type", "name", "name_source", "count", "first", "last"]
+    assert lines[1].startswith("r1 ") and lines[0].index("first") == lines[1].index("2025-06-05")
+
+
+def _no_refresh(monkeypatch):
+    def refuse(*a, **k):
+        raise AssertionError("a list must not refresh")
+    monkeypatch.setattr("ingest.refresh.refresh_file", refuse)
+    monkeypatch.setattr(writer, "run", refuse)
+
+
+def test_list_with_a_local_archive_reads_the_database_in_place(tmp_path, monkeypatch, capsys):
+    path = build_db(tmp_path)
+    refresh_file(path)
+    before = open(path, "rb").read()
+    _no_refresh(monkeypatch)
+    for cmd in ("places", "routes"):
+        monkeypatch.setattr(sys, "argv", ["activity", cmd, "--db", path, "--archive", f"file://{tmp_path}/arch"])
+        activity_cli.main()
+    out = capsys.readouterr().out
+    assert "Slavnik" in out and "r1 " in out
+    assert open(path, "rb").read() == before
+
+
+def test_list_without_group_tables_says_so(tmp_path, monkeypatch):
+    path = str(tmp_path / "v4.sqlite")
+    c = db.connect(path)
+    c.execute("CREATE TABLE activities (id TEXT)")
+    c.commit()
+    c.close()
+    _no_refresh(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["activity", "places", "--db", path, "--archive", f"file://{tmp_path}/arch"])
+    with pytest.raises(SystemExit, match="no places or routes yet"):
+        activity_cli.main()
+
+
+def test_list_through_r2_never_uploads(tmp_path, monkeypatch, capsys):
+    path = build_db(tmp_path)
+    refresh_file(path)
+    store = MemoryStore()
+    store.bucket = "bkt"
+    store.put(writer.DB_KEY, open(path, "rb").read())
+
+    def no_put(*a, **k):
+        raise AssertionError("a list must not upload")
+    monkeypatch.setattr(store, "put", no_put)
+    monkeypatch.setattr(store, "delete", no_put)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("R2_BUCKET", "bkt")
+    monkeypatch.delenv("ARCHIVE_URL", raising=False)
+    monkeypatch.setattr(archive_mod, "store_from_env", lambda: store)
+    _no_refresh(monkeypatch)
+    local = tmp_path / "data" / "local.sqlite"
+    for cmd in ("places", "routes"):
+        monkeypatch.setattr(sys, "argv", ["activity", cmd, "--db", str(local)])
+        activity_cli.main()
+    out = capsys.readouterr().out
+    assert "Slavnik" in out and "r1 " in out
+    assert not local.exists()                                   # nothing installed locally
+    assert [p.name for p in local.parent.iterdir()] == []       # and the temporary pull is gone

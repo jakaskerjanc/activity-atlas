@@ -5,7 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readDisplayFiles, writeDisplayFiles, defaultDbPath } from "./build-tracks.ts";
-import { addActivity, addDailyStats, addSource, addStreams, withDb } from "./testDb.ts";
+import {
+  addActivity,
+  addActivityGroup,
+  addDailyStats,
+  addPlace,
+  addRouteGroup,
+  addSource,
+  addStreams,
+  withDb,
+} from "./testDb.ts";
 
 test("routes keyed by id for visible routed activities", () => {
   withDb(
@@ -93,6 +102,7 @@ test("missing database yields empty files and a sync warning", () => {
   assert.deepEqual(files.activities, { v: 1, activities: [] });
   assert.equal(files.details.size, 0);
   assert.deepEqual(files.profiles, { v: 1, step: 100, profiles: {} });
+  assert.deepEqual(files.places, { v: 1, places: [], routes: [] });
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /sync/);
 });
@@ -113,6 +123,11 @@ test("writeDisplayFiles empties the output folder first", async () => {
       profiles: {},
     });
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "steps.json"), "utf8")), { v: 1, steps: [] });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "places.json"), "utf8")), {
+      v: 1,
+      places: [],
+      routes: [],
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -246,6 +261,20 @@ test("the committed demo database builds a complete site", () => {
   assert.ok(activities.activities.some((a) => a.channels.includes("power")));
 });
 
+test("the committed demo database lists places and routes", () => {
+  const demo = fileURLToPath(new URL("../data/demo/activities.sqlite", import.meta.url));
+  if (!existsSync(demo)) return; // a fork may remove the demo
+  const { places, activities } = readDisplayFiles(demo);
+  assert.ok(places.places.length > 0, "demo places");
+  assert.ok(places.routes.length > 0, "demo routes");
+  const placeIds = new Set(places.places.map((p) => p.id));
+  const routeIds = new Set(places.routes.map((r) => r.id));
+  const records = activities.activities;
+  assert.ok(records.some((a) => a.place));
+  assert.ok(records.every((a) => a.place === undefined || placeIds.has(a.place)));
+  assert.ok(records.every((a) => a.route === undefined || routeIds.has(a.route)));
+});
+
 test("steps: daily totals only, the newest (still counting) day left out", () => {
   withDb(
     (db) => {
@@ -286,5 +315,90 @@ test("steps: none without a daily_stats table or with only the fetch day", () =>
   withDb(
     (db) => addDailyStats(db, "2026-01-01", 12000),
     (path) => assert.deepEqual(readDisplayFiles(path).steps, { v: 1, steps: [] }),
+  );
+});
+
+/** Three places (one reached only by a hidden activity) and two route groups (two visible members, one). */
+function groupedDb(db: Parameters<Parameters<typeof withDb>[0]>[0]) {
+  addPlace(db, "p-slavnik", "Slavnik", "peak", 1028);
+  addPlace(db, "p-vrsic", "Vršič", "pass", 1611);
+  addPlace(db, "p-unvisited", "Hidden hill", "top", 400); // only a hidden activity reached it
+  addRouteGroup(db, "r-loop", "Slavnik loop");
+  addRouteGroup(db, "r-once", "Vršič climb");
+  addActivity(db, "a1", { start_time: "2026-08-01T06:30:00+00:00" });
+  addActivity(db, "a2", { start_time: "2026-08-02T06:30:00+00:00" });
+  addActivity(db, "a3", { start_time: "2026-08-03T06:30:00+00:00" });
+  addActivity(db, "a4", { start_time: "2026-08-04T06:30:00+00:00" });
+  addActivity(db, "hid", { start_time: "2026-08-05T06:30:00+00:00", visible: 0 });
+  addActivityGroup(db, "a1", "p-slavnik", "r-loop");
+  addActivityGroup(db, "a2", "p-slavnik", "r-loop");
+  addActivityGroup(db, "a3", "p-vrsic", "r-once");
+  // a4 has no activity_groups row.
+  addActivityGroup(db, "hid", "p-unvisited", "r-once");
+}
+
+test("places.json lists places with visible activities and routes with two or more", () => {
+  withDb(groupedDb, (path) => {
+    assert.deepEqual(readDisplayFiles(path).places, {
+      v: 1,
+      places: [
+        { id: "p-slavnik", name: "Slavnik", ele: 1028, kind: "peak" },
+        { id: "p-vrsic", name: "Vršič", ele: 1611, kind: "pass" },
+      ],
+      routes: [{ id: "r-loop", name: "Slavnik loop" }],
+    });
+  });
+});
+
+test("activity records carry place and route ids, left out when unknown", () => {
+  withDb(groupedDb, (path) => {
+    const byId = new Map(readDisplayFiles(path).activities.activities.map((a) => [a.id, a]));
+    assert.equal(byId.get("a1")!.place, "p-slavnik");
+    assert.equal(byId.get("a1")!.route, "r-loop");
+    assert.equal(byId.get("a2")!.route, "r-loop");
+    // a3's route has one visible member: its place stays, its route is left out.
+    assert.equal(byId.get("a3")!.place, "p-vrsic");
+    assert.ok(!("route" in byId.get("a3")!));
+    assert.ok(!("place" in byId.get("a4")!));
+    assert.ok(!("route" in byId.get("a4")!));
+    assert.ok(!byId.has("hid"));
+  });
+});
+
+test("a hidden activity does not count toward a route's two members", () => {
+  withDb(
+    (db) => {
+      addRouteGroup(db, "r1", "Loop");
+      addActivity(db, "seen");
+      addActivity(db, "unseen", { visible: 0 });
+      addActivityGroup(db, "seen", null, "r1");
+      addActivityGroup(db, "unseen", null, "r1");
+    },
+    (path) => {
+      const { places, activities } = readDisplayFiles(path);
+      assert.deepEqual(places.routes, []);
+      assert.ok(!("route" in activities.activities[0]));
+    },
+  );
+});
+
+test("places.json carries no coordinates", () => {
+  withDb(groupedDb, (path) => {
+    const json = JSON.stringify(readDisplayFiles(path).places);
+    for (const key of ["lat", "lon", "lng"]) assert.ok(!json.includes(`"${key}"`), key);
+  });
+});
+
+test("a database without group tables builds an empty places.json", () => {
+  withDb(
+    (db) => addActivity(db, "aaa"),
+    (path) => {
+      const { places, activities } = readDisplayFiles(path);
+      assert.deepEqual(places, { v: 1, places: [], routes: [] });
+      const [a] = activities.activities;
+      assert.ok(!("place" in a));
+      assert.ok(!("route" in a));
+    },
+    { withoutGroupTables: true },
   );
 });

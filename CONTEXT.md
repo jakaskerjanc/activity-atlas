@@ -17,7 +17,7 @@ _Avoid_: sport, category
 ### Filtering
 
 **Activity filter**:
-The user's current choice of which activities are shown: a type selection plus a date range.
+The user's current choice of which activities are shown: a type selection, a date range and an optional place selection.
 _Avoid_: activity window, view, selection
 
 **Type selection**:
@@ -28,6 +28,14 @@ _Avoid_: enabled types, type filter
 An inclusive span of whole calendar months (UTC) that an activity's start must fall within. Clicking a month in the ridgeline narrows it to that month (isolating the month); clicking the month again restores the range it had before.
 _Avoid_: date window, time window
 
+**Place**:
+Where activities went, found from their highest points and named automatically.
+_Avoid_: summit, destination, tag
+
+**Place selection**:
+The place part of the activity filter; one at a time.
+_Avoid_: place filter
+
 **Visible activities**:
 The activities that pass the activity filter.
 _Avoid_: filtered features, shown set
@@ -36,7 +44,7 @@ _Avoid_: filtered features, shown set
 The one fixed color an activity type has everywhere it is colored: the map's Type color mode, the swatches in the type selection list (which double as the map's legend in that mode), and the analytics charts. It never depends on which other types exist or are switched on, and no type uses the accent orange (that means the app and the selected activity).
 
 **Type count**:
-How many activities of a type fall inside the date range, regardless of whether that type is switched on.
+How many activities of a type fall inside the date range and the selected place, regardless of whether that type is switched on.
 
 ### Interaction
 
@@ -51,6 +59,13 @@ _Avoid_: streams (the full-resolution database data), track
 **Cursor**:
 The one point along the selected activity that the charts and the map marker share; set by hovering either.
 _Avoid_: hover (that is route-level, see hoverId), playhead
+
+**Same route**:
+Activities that followed the same track, in either direction.
+_Avoid_: matched activities, segment
+
+**Turnaround**:
+A flat route's farthest point from its start, which names it.
 
 **Color mode**:
 How the map colors routes: Plain (the accent), Type (type color), Recency, Grade, Speed, or Heat.
