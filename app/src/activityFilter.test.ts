@@ -7,6 +7,7 @@ import {
   MIN_LISTED_TYPE_ACTIVITIES,
   onlyMonth,
   placeCounts,
+  placeTotals,
   revealActivity,
   setFromMonth,
   setToMonth,
@@ -313,6 +314,12 @@ describe("place selection", () => {
     const f = toggleType(setFromMonth(base, month(2024, 2)), "Ride");
     expect(placeCounts(f)).toEqual({ [SLAVNIK]: 1, [SMARNA]: 2 });
     expect(placeCounts(togglePlace(f, SLAVNIK))).toEqual(placeCounts(f));
+  });
+
+  test("placeTotals count every activity per place, whatever the filter", () => {
+    const f = togglePlace(toggleType(setFromMonth(base, month(2024, 4)), "Hike"), SMARNA);
+    expect(placeTotals(f)).toEqual(placeTotals(base));
+    expect(placeTotals(base)).toEqual({ [SLAVNIK]: 3, [SMARNA]: 2 });
   });
 
   test("typeCounts follow the place and dates but ignore the types", () => {

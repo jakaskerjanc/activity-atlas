@@ -64,11 +64,17 @@ export interface PlaceRow {
   selected: boolean;
 }
 
+/** Fewest activities (over all data) a place needs to be listed without a search. */
+export const MIN_LISTED_PLACE_ACTIVITIES = 2;
+
 /**
  * The places list's rows. Places with no activities (a missing key in `counts`) drop
  * out unless selected; the rest go by count, most first, then by name. A search shows
- * every match. Otherwise the first PLACES_SHOWN show (all when expanded), with the
- * selected place appended when it falls past them; `more` is how many are hidden.
+ * every match. Otherwise places visited fewer than MIN_LISTED_PLACE_ACTIVITIES times in
+ * all the data (`totals`, when given) are left out unless selected, since one-off tops
+ * would only clutter the list; then the first PLACES_SHOWN show (all when expanded),
+ * with the selected place appended when it falls past them; `more` is how many are
+ * hidden behind `+ N more`.
  */
 export function listedPlaces(
   places: readonly Place[],
@@ -76,15 +82,19 @@ export function listedPlaces(
   selected: string | null,
   query: string,
   expanded: boolean,
+  totals?: Record<string, number>,
 ): { rows: PlaceRow[]; more: number } {
-  const all = places
+  const matching = places
     .map((place) => ({ place, count: counts[place.id] ?? 0, selected: place.id === selected }))
     .filter((row) => row.count > 0 || row.selected)
     .sort((a, b) => b.count - a.count || a.place.name.localeCompare(b.place.name, "sl"));
   const q = normalizeName(query.trim());
   if (q !== "") {
-    return { rows: all.filter((row) => normalizeName(row.place.name).includes(q)), more: 0 };
+    return { rows: matching.filter((row) => normalizeName(row.place.name).includes(q)), more: 0 };
   }
+  const all = totals
+    ? matching.filter((row) => row.selected || (totals[row.place.id] ?? 0) >= MIN_LISTED_PLACE_ACTIVITIES)
+    : matching;
   if (expanded) return { rows: all, more: 0 };
   const rows = all.slice(0, PLACES_SHOWN);
   const pick = all.slice(PLACES_SHOWN).find((row) => row.selected);

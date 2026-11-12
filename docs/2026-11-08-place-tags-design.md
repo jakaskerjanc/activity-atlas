@@ -340,6 +340,9 @@ includes passes such as ⋈ Preval pod Toškim čelom.
   - the count, right-aligned in the type list's count style
 - **Order:** by count, then by name. The first 8 rows show, then "+ N more"
   opens the full list in place, and "Show fewer" closes it.
+- **Places visited once** (one activity in all the data, whatever the filter)
+  are left out of the list, expanded or not (owner, 2026-11-12). A search
+  finds them, and a selected one always shows.
 - **Search** matches anywhere in the name and ignores case and accents, so
   "smarna" finds Šmarna gora and "vrsic" finds Vršič. While a search is
   typed, every match shows, not just the first 8.

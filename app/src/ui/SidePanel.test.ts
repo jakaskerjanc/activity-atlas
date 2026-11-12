@@ -85,7 +85,7 @@ describe("SidePanel type list", () => {
   });
 
   test("SidePanel passes places through to the filter section", () => {
-    const filter = createActivityFilter([record({ place: "p1" })]);
+    const filter = createActivityFilter([record({ id: "a", place: "p1" }), record({ id: "b", place: "p1" })]);
     const places: Place[] = [{ id: "p1", name: "Slavnik", ele: 1028, kind: "peak" }];
     const html = render({ filter, places });
     expect(html).toMatch(/Activity types.*Places.*Slavnik.*Date range/);

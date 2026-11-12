@@ -11,6 +11,7 @@ import type { Place } from "../types";
 
 const slavnik: Place = { id: "p1", name: "Slavnik", ele: 1028, kind: "peak" };
 const vrsic: Place = { id: "p2", name: "Vršič", ele: 1611, kind: "pass" };
+const oneOff: Place = { id: "p3", name: "Lisec", ele: 744, kind: "peak" };
 
 const render = (filter: ReturnType<typeof createActivityFilter>, places: readonly Place[]) =>
   renderToStaticMarkup(createElement(PlacesSection, { filter, places, onChange: () => {} }));
@@ -26,16 +27,20 @@ describe("PlacesSection", () => {
       record({ id: "b", place: "p1" }),
       record({ id: "c", place: "p1" }),
       record({ id: "d", place: "p2" }),
+      record({ id: "e", place: "p2" }),
+      record({ id: "f", place: "p3" }),
     ]);
-    const html = render(filter, [slavnik, vrsic]);
+    const html = render(filter, [slavnik, vrsic, oneOff]);
     expect(html).toContain("Places");
     expect(html).toMatch(/<label[^>]*>Search places<\/label>/);
     // One button per place: name, height, then the count last; most activities first.
     const row = (name: string, ele: string, count: number) =>
       new RegExp(`<button[^>]*aria-pressed="false"[^>]*>(?:(?!</button>).)*${name}(?:(?!</button>).)*${ele}(?:(?!</button>).)*>${count}</span></button>`);
     expect(html).toMatch(row("Slavnik", "1,028 m", 3));
-    expect(html).toMatch(row("Vršič", "1,611 m", 1));
+    expect(html).toMatch(row("Vršič", "1,611 m", 2));
     expect(html.indexOf("Slavnik")).toBeLessThan(html.indexOf("Vršič"));
+    // A place visited once is left out until searched for.
+    expect(html).not.toContain("Lisec");
     expect(html).not.toContain('aria-pressed="true"');
     const picked = render(togglePlace(filter, "p1"), [slavnik, vrsic]);
     expect(picked).toMatch(/aria-pressed="true"[^>]*>(?:(?!<\/button>).)*Slavnik/);
@@ -49,7 +54,9 @@ describe("PlacesSection", () => {
       ele: 500 + i,
       kind: "top",
     }));
-    const filter = createActivityFilter(places.map((p, i) => record({ id: `a${i}`, place: p.id })));
+    const filter = createActivityFilter(
+      places.flatMap((p, i) => [record({ id: `a${i}`, place: p.id }), record({ id: `b${i}`, place: p.id })]),
+    );
     const html = render(filter, places);
     expect(html.match(/aria-pressed=/g)).toHaveLength(8);
     expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>\+ 3 more<\/button>/);

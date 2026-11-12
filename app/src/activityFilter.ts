@@ -197,6 +197,15 @@ export function typeCounts(filter: ActivityFilter): Record<string, number> {
   return counts;
 }
 
+/** Activities per place over all the data, whatever the filter. */
+export function placeTotals(filter: ActivityFilter): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const a of filter.activities) {
+    if (a.place !== undefined) counts[a.place] = (counts[a.place] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /**
  * Activities per place that pass the type selection and the date range. Ignores the
  * selected place, so the other places still show what picking them would bring.

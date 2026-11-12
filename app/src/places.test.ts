@@ -142,6 +142,22 @@ describe("the places list", () => {
     expect(listed.more).toBe(3);
   });
 
+  test("places visited once in all the data are left out unless searched for or selected", () => {
+    const counts = { [slavnik.id]: 3, [vrsic.id]: 1, [smarna.id]: 1 };
+    // Šmarna gora has 1 activity under this filter but 4 in all; Vršič only ever 1.
+    const totals = { [slavnik.id]: 30, [vrsic.id]: 1, [smarna.id]: 4 };
+    const listed = listedPlaces(ps, counts, null, "", false, totals);
+    expect(names(listed)).toEqual(["Slavnik", "Šmarna gora"]);
+    expect(listed.more).toBe(0);
+    expect(names(listedPlaces(ps, counts, null, "", true, totals))).toEqual(["Slavnik", "Šmarna gora"]);
+    expect(names(listedPlaces(ps, counts, null, "vrsic", false, totals))).toEqual(["Vršič"]);
+    expect(names(listedPlaces(ps, counts, vrsic.id, "", false, totals))).toEqual([
+      "Slavnik",
+      "Šmarna gora",
+      "Vršič",
+    ]);
+  });
+
   test("a selected place among the first 8 is marked in place", () => {
     const listed = listedPlaces(many, manyCounts, "m:1", "", false);
     expect(listed.rows).toHaveLength(PLACES_SHOWN);

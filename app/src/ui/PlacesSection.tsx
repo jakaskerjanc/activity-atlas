@@ -7,7 +7,7 @@ import { useId, useMemo, useState, type CSSProperties } from "react";
 import { FS, MONO, R, sectionLabel } from "./theme";
 import { countStyle, divider, rowStyle } from "./filterStyles";
 import { PeakIcon, SaddleIcon } from "./icons";
-import { placeCounts, togglePlace, type ActivityFilter } from "../activityFilter";
+import { placeCounts, placeTotals, togglePlace, type ActivityFilter } from "../activityFilter";
 import { listedPlaces, PLACES_SHOWN, type PlaceRow } from "../places";
 import { formatMeters } from "../format";
 import type { Place } from "../types";
@@ -26,9 +26,10 @@ export function PlacesSection({ filter, places, onChange }: Props) {
   const listId = useId();
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => placeCounts(filter), [filter]);
+  const totals = useMemo(() => placeTotals(filter), [filter.activities]);
   const { rows, more } = useMemo(
-    () => listedPlaces(places, counts, filter.place, query, expanded),
-    [places, counts, filter.place, query, expanded],
+    () => listedPlaces(places, counts, filter.place, query, expanded, totals),
+    [places, counts, filter.place, query, expanded, totals],
   );
   if (places.length === 0) return null;
   const searching = query.trim() !== "";
