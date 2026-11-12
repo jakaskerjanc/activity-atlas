@@ -8,10 +8,12 @@ import { SidePanel, shownLine } from "./SidePanel";
 import { createActivityFilter } from "../activityFilter";
 import { record } from "../testFixtures";
 import { typeColor } from "../colors";
+import type { Place } from "../types";
 
 const props = {
   filter: createActivityFilter([record()]),
   onFilterChange: () => {},
+  places: [] as readonly Place[],
   shownCount: 1,
   colorMode: "recency" as const,
   colorDomain: {
@@ -94,6 +96,14 @@ describe("SidePanel type list", () => {
     const runs = createActivityFilter(Array.from({ length: 5 }, (_, i) => record({ id: `r${i}` })));
     expect(render({ filter: runs, colorMode: "type" as never })).toContain(`background:${typeColor("Run")}`);
     expect(render({ filter: runs })).toContain("background:var(--accent)");
+  });
+
+  test("SidePanel passes places through to the filter section", () => {
+    const filter = createActivityFilter([record({ id: "a", place: "p1" }), record({ id: "b", place: "p1" })]);
+    const places: Place[] = [{ id: "p1", name: "Slavnik", ele: 1028, kind: "peak" }];
+    const html = render({ filter, places });
+    expect(html).toMatch(/Activity types.*Places.*Slavnik.*Date range/);
+    expect(render({ filter, places: [] })).not.toContain("Search places");
   });
 
   test("toggles say whether they are on", () => {

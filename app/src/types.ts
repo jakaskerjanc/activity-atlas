@@ -49,6 +49,10 @@ export interface ActivityRecord {
   sources: ActivitySource[];
   /** activity/<id>.json exists */
   detail?: true;
+  /** place id (an activity id), when the activity climbed to a place */
+  place?: string;
+  /** same-route group id (an activity id), when the group has ≥ 2 visible activities */
+  route?: string;
 }
 
 /** Root of routes.json: Google polylines (precision 5, simplified) keyed by activity id. */
@@ -86,6 +90,11 @@ export interface StepsFile {
   start?: string;
   steps: (number | null)[];
 }
+
+export interface Place { id: string; name: string; ele: number; kind: "peak" | "pass" | "top" }
+export interface RouteName { id: string; name: string }
+/** Root of places.json: places reached and named same-route groups. No coordinates. */
+export interface PlacesFile { v: 1; places: Place[]; routes: RouteName[] }
 
 /** activity/<id>.json: downsampled samples; every array is as long as `t`. */
 export interface DetailFile {

@@ -16,7 +16,9 @@ import {
   createActivityFilter,
   activeIsolation,
   filterExpression,
+  revealActivity,
   toggleMonth,
+  togglePlace,
   visibleActivities,
   visibleFeatures,
   type ActivityFilter,
@@ -25,6 +27,8 @@ import {
 import type {
   ActivitiesFile,
   ActivityFeatureCollection,
+  Place,
+  PlacesFile,
   Profile,
   RoutesFile,
   Theme,
@@ -37,6 +41,8 @@ import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
 import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
+import { GroupRows } from "./ui/GroupRows";
+import { placeLine, routeTable } from "./routeGroup";
 import { buildProfile } from "./profile";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
@@ -48,6 +54,7 @@ import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
+import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle } from "./places";
 
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
@@ -69,6 +76,18 @@ async function fetchJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: ${r.status} ${r.statusText}`);
   return (await r.json()) as T;
+}
+
+const NO_PLACES: PlacesFile = { v: 1, places: [], routes: [] };
+
+/** places.json, checked. Optional: a failed fetch shows no places rather than no site. */
+async function fetchPlaces(): Promise<PlacesFile> {
+  try {
+    return checkPlacesFile(await fetchJson<unknown>(PLACES_URL));
+  } catch (e) {
+    console.warn(`Couldn't load places: ${String(e)}; showing no places`);
+    return NO_PLACES;
+  }
 }
 
 // Initial theme: a saved choice wins, else follow the OS. Kept in sync with the
@@ -116,6 +135,28 @@ export default function App() {
 
   // Which activities are shown. null until data loads.
   const [filter, setFilter] = useState<ActivityFilter | null>(null);
+  // Bumped when a pick sets a place (not when one is cleared), so the map flies to it.
+  const [placeFlyEpoch, setPlaceFlyEpoch] = useState(0);
+  // Picking a place in the list also drops the selected activity, so the place's
+  // activities aren't dimmed behind it. (The place row on an activity uses pickPlace,
+  // which keeps that activity selected.)
+  const changeFilter = (next: ActivityFilter) => {
+    if (next.place !== null && next.place !== filter?.place) {
+      setPlaceFlyEpoch((n) => n + 1);
+      setSelectedId(null);
+    }
+    setFilter(next);
+  };
+  // The places and same-route groups the activities belong to (places.json).
+  const [placesFile, setPlacesFile] = useState<PlacesFile>(NO_PLACES);
+  const placeMap = useMemo(
+    () => new Map<string, Place>(placesFile.places.map((p) => [p.id, p])),
+    [placesFile],
+  );
+  const routeMap = useMemo(
+    () => new Map<string, string>(placesFile.routes.map((r) => [r.id, r.name])),
+    [placesFile],
+  );
   // A month isolated from the ridgeline and the range it replaced, for the second click.
   const [isolation, setIsolation] = useState<MonthIsolation | null>(null);
   const pickMonth = (month: number) => {
@@ -142,10 +183,15 @@ export default function App() {
   const [replayEpoch, setReplayEpoch] = useState(0);
 
   useEffect(() => {
-    Promise.all([fetchJson<RoutesFile>(ROUTES_URL), fetchJson<ActivitiesFile>(ACTIVITIES_URL)])
-      .then(([routes, activities]) => {
+    Promise.all([
+      fetchJson<RoutesFile>(ROUTES_URL),
+      fetchJson<ActivitiesFile>(ACTIVITIES_URL),
+      fetchPlaces(),
+    ])
+      .then(([routes, activities, places]) => {
         const decoded = joinActivities(routes, activities);
         setData(decoded);
+        setPlacesFile(places);
         // Over every record, routed or not: the analytics page reads them all, and the
         // map draws the ones with a route (visibleFeatures).
         setFilter(createActivityFilter(activities.activities));
@@ -401,7 +447,46 @@ export default function App() {
     [selectedDetail, cursor, selectedShown],
   );
 
-  const panelBody = useMemo(() => {
+  // The selected activity's place and same-route rows. The route table is open while
+  // the selection stays on the route it was opened on, so stepping through its rows
+  // keeps it open and a new route never shows it open, not even for a frame. Leaving the
+  // route forgets it (set during render, not in an effect), so coming back finds it shut.
+  const [openRoute, setOpenRoute] = useState<string | null>(null);
+  const selectedRoute = selectedFeature?.properties.route ?? null;
+  if (openRoute !== null && openRoute !== selectedRoute) setOpenRoute(null);
+  const routeOpen = openRoute !== null && openRoute === selectedRoute;
+  const selectedPlaceLine = useMemo(
+    () => (selectedFeature && filter ? placeLine(selectedFeature.properties, filter, placeMap) : null),
+    [selectedFeature, filter, placeMap],
+  );
+  const selectedRouteTable = useMemo(
+    () => (selectedFeature && filter ? routeTable(selectedFeature.properties, filter, routeMap) : null),
+    [selectedFeature, filter, routeMap],
+  );
+  // While the route table is open, the map highlights its routes the filter shows.
+  const groupIds = useMemo(
+    () =>
+      routeOpen && selectedRouteTable
+        ? selectedRouteTable.rows.filter((r) => !r.outside).map((r) => r.id)
+        : null,
+    [routeOpen, selectedRouteTable],
+  );
+  // Like picking the place in the list, except that it never clears it: the row sets
+  // the place (if it isn't already) and flies there, keeping this activity selected.
+  const pickPlace = (id: string) => {
+    if (!filter) return;
+    if (filter.place !== id) setFilter(togglePlace(filter, id));
+    setPlaceFlyEpoch((n) => n + 1);
+  };
+  // A table row outside the filter first widens the filter just enough to show it
+  // (revealActivity leaves a row inside it as it is).
+  const selectRouteMate = (id: string) => {
+    const mate = filter?.activities.find((a) => a.id === id);
+    if (filter && mate) changeFilter(revealActivity(filter, mate));
+    selectActivity(id);
+  };
+
+  const charts = useMemo(() => {
     if (!selectedFeature) {
       return undefined;
     }
@@ -418,6 +503,21 @@ export default function App() {
     }
     return <p style={statusLine}>{detailMessage(detailState, profile != null)}</p>;
   }, [selectedFeature, selectedDetail, profile, cursor, detailState, shownCity]);
+  // The place and route rows above the charts. Outside the memo: their handlers read
+  // the current filter and panel layout.
+  const panelBody = selectedFeature ? (
+    <>
+      <GroupRows
+        place={selectedPlaceLine}
+        route={selectedRouteTable}
+        open={routeOpen}
+        onToggle={() => setOpenRoute(routeOpen ? null : selectedRoute)}
+        onPickPlace={pickPlace}
+        onSelect={selectRouteMate}
+      />
+      {charts}
+    </>
+  ) : undefined;
 
   // InfoPanel content: selected activity, else the shown city route, else aggregate totals.
   const { title, subtitle, cards, links } = useMemo<{
@@ -445,12 +545,12 @@ export default function App() {
       };
     }
     return {
-      title: "All activities",
+      title: filter ? placeTitle(filter, placeMap) : "All activities",
       subtitle: filter ? `${formatMonthShort(filter.fromMonth)} – ${formatMonthShort(filter.toMonth)}` : "",
       cards: totalCards(visible),
       links: [],
     };
-  }, [selectedFeature, shownCity, cities, visible, filter?.fromMonth, filter?.toMonth]);
+  }, [selectedFeature, shownCity, cities, visible, filter, placeMap]);
 
   // Nothing passes the filter: say so, and offer the way back.
   const resetFilter = () => {
@@ -458,15 +558,36 @@ export default function App() {
     setFilter(createActivityFilter(filter.activities));
     setIsolation(null);
   };
+  // Clear just the picked place; changeFilter never flies when the place goes.
+  const clearPlace = () => {
+    if (filter?.place != null) changeFilter(togglePlace(filter, filter.place));
+  };
+  // With a place picked, the notice names it and offers clearing just the place.
+  const empty =
+    filter && visible.length === 0 && !selectedFeature && !shownCity ? emptyNoticeFor(filter, placeMap) : null;
+  const canClearPlace = empty?.clearPlace === true;
   const emptyNotice =
-    filter && visible.length === 0 && !selectedFeature && !shownCity ? (
+    filter && empty ? (
       <div style={{ padding: "4px 0 2px" }}>
         <p style={{ margin: "0 0 12px", fontSize: FS.sm + 0.5, lineHeight: 1.5, color: "var(--text-soft)" }}>
-          No activities match these filters. Switch on an activity type or widen the date range.
+          {empty.text}
         </p>
-        <button type="button" className="ctl-accent" style={primaryButton} onClick={resetFilter}>
-          Reset filters
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {canClearPlace && (
+            <button type="button" className="ctl-accent" style={primaryButton} onClick={clearPlace}>
+              Clear place
+            </button>
+          )}
+          {/* Second to Clear place when that is offered: the narrower way back. */}
+          <button
+            type="button"
+            className={canClearPlace ? "ctl" : "ctl-accent"}
+            style={canClearPlace ? { ...secondaryButton, height: 36 } : primaryButton}
+            onClick={resetFilter}
+          >
+            Reset filters
+          </button>
+        </div>
       </div>
     ) : undefined;
 
@@ -495,7 +616,8 @@ export default function App() {
       {filter && (
         <SidePanel
           filter={filter}
-          onFilterChange={setFilter}
+          onFilterChange={changeFilter}
+          places={placesFile.places}
           shownCount={visible.length}
           colorMode={colorMode}
           colorDomain={colorDomain}
@@ -527,6 +649,8 @@ export default function App() {
           comparisons={comparisons}
           onShowCity={showCity}
           onResetFilter={resetFilter}
+          places={placeMap}
+          onClearPlace={clearPlace}
           theme={theme}
         />
       )}
@@ -550,7 +674,7 @@ export default function App() {
           />
         ) : (
           <InfoPanel
-            title={emptyNotice ? "Nothing to show" : title}
+            title={empty && !canClearPlace ? "Nothing to show" : title}
             titleNode={
               !selectedFeature && shownCity && cities.status === "ready" ? (
                 <RouteTitle from={cities.data.origin.name} to={shownCity.pick.city.name} />
@@ -614,6 +738,7 @@ export default function App() {
                   colorDomain={colorDomain}
                   grade={grade}
                   hoverId={hoverId}
+                  groupIds={groupIds}
                   selectedId={selectedId}
                   onHover={setHoverId}
                   onSelect={selectActivity}
@@ -622,6 +747,7 @@ export default function App() {
                   replayFrame={replayFrame}
                   replayTimeline={timeline}
                   replayEpoch={replayEpoch}
+                  placeFlyEpoch={placeFlyEpoch}
                   onReplayReady={onReplayReady}
                   insets={insets}
                   cursorPoint={cursorPoint}

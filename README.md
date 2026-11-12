@@ -15,6 +15,8 @@ on built-in demo data until you import your own.
   elevation, speed or heat, and a replay of your history.
 - **Activity view:** elevation, heart-rate and pace charts, with a marker that
   follows them along the route.
+- **Places:** pick a place to see every activity that went there, and the
+  other times on the same route.
 - **Analytics:** totals, consistency, an activity calendar with your daily
   steps, the hours of the day you're out, climbing by month, overlaid
   elevation profiles, and your distance as a trip to a city.

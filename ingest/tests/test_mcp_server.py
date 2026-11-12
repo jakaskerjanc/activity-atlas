@@ -14,7 +14,7 @@ from ingest.mcp_server.server import ServerContext, build_server
 from ingest.tests.mcp_fixture import build_fixture_db
 
 TOOLS = {"guide", "sync", "list_activities", "get_activity", "summarize", "activity_samples", "wellness",
-         "wellness_series", "find_place", "activities_near", "query"}
+         "wellness_series", "find_place", "activities_near", "query", "places", "same_route"}
 
 
 @pytest.fixture
@@ -41,6 +41,46 @@ def test_lists_all_tools(ctx):
     assert read_only == TOOLS - {"sync", "find_place"}
 
 
+def tool_names(ctx):
+    return {t.name for t in asyncio.run(build_server(ctx).list_tools())}
+
+
+def test_tools_registered(ctx):
+    assert {"places", "same_route"} <= tool_names(ctx)
+
+
+def test_place_filter_and_group_tools(ctx):
+    assert [r["id"] for r in call(ctx, "list_activities", {"place": "Slavnik"})["data"]["rows"]] == [
+        "slavnik2", "slavnik1"]
+    assert call(ctx, "summarize", {"place": "grmada", "period": "all"})["data"]["rows"][0]["count"] == 2
+    assert call(ctx, "places", {})["data"]["places"][0]["name"] == "Slavnik"
+    r = call(ctx, "same_route", {"activity_id": "slavnik2"})
+    assert r["data"]["route"]["id"] == "slavnik1" and "as_of" in r
+
+
+def test_unknown_place_is_a_tool_error(ctx):
+    with pytest.raises(ToolError, match="places tool"):
+        asyncio.run(build_server(ctx).call_tool("list_activities", {"place": "Nowhere"}))
+
+
+def test_v4_database_group_tools_are_tool_errors(ctx):  # review focus 5
+    import sqlite3
+    ctx.db.close()
+    conn = sqlite3.connect(ctx.db.path)
+    for table in ("places", "route_groups", "activity_groups"):
+        conn.execute(f"DROP TABLE {table}")
+    conn.commit()
+    conn.close()
+    ctx.db.reopen()
+    server = build_server(ctx)
+    for name, args in [("places", {}), ("same_route", {"activity_id": "run1"}),
+                       ("list_activities", {"place": "Slavnik"}), ("summarize", {"place": "Slavnik"})]:
+        with pytest.raises(ToolError, match="no places yet"):
+            asyncio.run(server.call_tool(name, args))
+    assert call(ctx, "list_activities", {})["data"]["total"] == 11
+    assert call(ctx, "summarize", {"period": "all", "by_type": False})["data"]["rows"][0]["count"] == 11
+
+
 def test_every_result_has_as_of_and_counted(ctx):
     r = call(ctx, "summarize", {"types": ["Run"], "period": "year"})
     assert {"data", "counted", "as_of"} <= set(r)
@@ -59,7 +99,7 @@ def test_near_with_place(ctx):
 
 
 def test_query_tool(ctx):
-    assert call(ctx, "query", {"sql": "select count(*) from activities"})["data"]["rows"] == [[7]]
+    assert call(ctx, "query", {"sql": "select count(*) from activities"})["data"]["rows"] == [[12]]
 
 
 def test_expected_errors_reach_the_model(ctx):

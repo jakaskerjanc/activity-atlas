@@ -1,4 +1,4 @@
-"""The v2 SQLite schema. Everything is derived from the archive except the
+"""The v5 SQLite schema. Everything is derived from the archive except the
 identity columns of activity_sources (provider, provider_activity_id,
 activity_id, pinned, deleted_at) and activity_overrides, which a rebuild
 carries over.
@@ -6,13 +6,20 @@ carries over.
 Streams and laps are keyed by activity-file hash, so the identical FIT that
 Strava and Garmin both hold is stored once and switching an activity's winner
 needs no archive access.
+
+Places and same-route groups (schema v5): osm_points holds named OSM features
+loaded from the archive's per-country snapshots; places and route_groups hold
+the groups, activity_groups maps each activity to its place and route, and
+group_overrides holds the owner's names and merges. Everything but
+group_overrides is derived and recomputed by a refresh; a rebuild carries
+group_overrides over.
 """
 import os
 import sqlite3
 
 from .codec import CHANNEL_SCALES
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class SchemaMismatch(Exception):
@@ -192,6 +199,45 @@ CREATE TABLE raw_files (
   original_name TEXT,
   size INTEGER,
   fetched_at TEXT
+);
+
+CREATE TABLE osm_points (
+  osm_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  lat REAL NOT NULL,
+  lon REAL NOT NULL,
+  ele REAL,
+  country TEXT NOT NULL
+);
+CREATE INDEX idx_osm_points_lat ON osm_points(lat);
+
+CREATE TABLE places (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  ele REAL NOT NULL
+);
+
+CREATE TABLE route_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_source TEXT NOT NULL
+);
+
+CREATE TABLE activity_groups (
+  activity_id TEXT PRIMARY KEY,
+  place_id TEXT,
+  route_id TEXT
+);
+
+CREATE TABLE group_overrides (
+  kind TEXT NOT NULL,
+  group_id TEXT NOT NULL,
+  name TEXT,
+  merge_into TEXT,
+  PRIMARY KEY (kind, group_id)
 );
 """
 

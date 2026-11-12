@@ -444,6 +444,27 @@ def test_auth_error_mid_run_exits_3(monkeypatch, tmp_path, capsys):
     assert "Personal API key rejected" in capsys.readouterr().err
 
 
+def test_handed_back_error_is_printed_when_caught(monkeypatch, tmp_path, capsys):
+    class FakeFetcher:
+        def __init__(self, *args, **kwargs): pass
+        def authenticate(self): pass
+        def run(self): raise GarminApiError("list page 3 failed", status=500)
+
+    seen = {}
+
+    def fake_run(db_path, archive, work, **kw):
+        result = work(db_path)
+        seen["err"] = capsys.readouterr().err      # what is on stderr before writer.run returns
+        return result
+
+    monkeypatch.setattr(gf, "GarminFetcher", FakeFetcher)
+    monkeypatch.setattr(gf.writer, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["garmin_fetch", "--db", str(tmp_path / "db.sqlite")])
+    with pytest.raises(GarminApiError):
+        gf.main()
+    assert "Traceback" in seen["err"] and "list page 3 failed" in seen["err"]
+
+
 def test_wellness_auth_error_keeps_activities(tmp_path):
     client = FakeClient(_list(), _downloads())
     client.wellness[WELLNESS_PATH] = GarminAuthError("401")

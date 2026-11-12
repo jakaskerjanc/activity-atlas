@@ -31,11 +31,11 @@ class ServerContext:
 
 
 def _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
-            has_hr, has_gps, include_hidden) -> ActivityFilter:
+            has_hr, has_gps, include_hidden, place) -> ActivityFilter:
     return ActivityFilter(types=types, date_from=date_from, date_to=date_to, name_contains=name_contains,
                           min_distance_m=min_distance_m, max_distance_m=max_distance_m,
                           min_moving_s=min_moving_s, has_hr=has_hr, has_gps=has_gps,
-                          include_hidden=include_hidden)
+                          include_hidden=include_hidden, place=place)
 
 
 def build_server(ctx: ServerContext) -> MCPServer:
@@ -71,14 +71,15 @@ def build_server(ctx: ServerContext) -> MCPServer:
                         date_to: str | None = None, name_contains: str | None = None,
                         min_distance_m: float | None = None, max_distance_m: float | None = None,
                         min_moving_s: float | None = None, has_hr: bool | None = None,
-                        has_gps: bool | None = None, include_hidden: bool = False, sort: str = "date_desc",
-                        limit: int = 200, offset: int = 0) -> dict:
+                        has_gps: bool | None = None, include_hidden: bool = False, place: str | None = None,
+                        sort: str = "date_desc", limit: int = 200, offset: int = 0) -> dict:
         """List activities matching filters. Dates are inclusive local YYYY-MM-DD. types are exact
-        activity types (e.g. ["Run"]); no grouping. sort: date_desc, date_asc, distance_desc, moving_desc,
-        gain_desc. Rows: id, date, type, name, distance_km, moving_min, pace_min_km, speed_kmh, gain_m,
-        avg_hr; unknown values are null."""
+        activity types (e.g. ["Run"]); no grouping. place: a place id or name from the places tool (case
+        and accents ignored). sort: date_desc, date_asc, distance_desc, moving_desc, gain_desc. Rows: id,
+        date, type, name, distance_km, moving_min, pace_min_km, speed_kmh, gain_m, avg_hr; unknown values
+        are null."""
         f = _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
-                    has_hr, has_gps, include_hidden)
+                    has_hr, has_gps, include_hidden, place)
         return run(lambda: activities.list_activities(ctx.db, f, sort, limit, offset))
 
     @server.tool(annotations=READ_ONLY)
@@ -91,13 +92,29 @@ def build_server(ctx: ServerContext) -> MCPServer:
                   name_contains: str | None = None, min_distance_m: float | None = None,
                   max_distance_m: float | None = None, min_moving_s: float | None = None,
                   has_hr: bool | None = None, has_gps: bool | None = None, include_hidden: bool = False,
-                  period: str = "year", by_type: bool = True) -> dict:
+                  place: str | None = None, period: str = "year", by_type: bool = True) -> dict:
         """Totals and averages per period (week, month, year, all) and per type: count, distance, moving
         and elapsed time, elevation gain, pace/speed (total moving time / total distance), avg HR (weighted
-        by moving time), with how many activities each figure is based on. Use this for trends."""
+        by moving time), with how many activities each figure is based on. Use this for trends. place: a
+        place id or name from the places tool (case and accents ignored)."""
         f = _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
-                    has_hr, has_gps, include_hidden)
+                    has_hr, has_gps, include_hidden, place)
         return run(lambda: activities.summarize(ctx.db, f, period, by_type))
+
+    @server.tool(annotations=READ_ONLY)
+    def places() -> dict:
+        """The places the owner has reached (summits and passes, found from the tracks), with id, name,
+        how the name was chosen (owner, activity_names, osm, fallback), kind, elevation and how many
+        activities reached each, most visited first. Pass an id or name to the place filter of
+        list_activities or summarize."""
+        return run(lambda: activities.places(ctx.db))
+
+    @server.tool(annotations=READ_ONLY)
+    def same_route(activity_id: str) -> dict:
+        """Every activity on the same route as this one (same type, similar distance, the same line on the
+        map), newest first and including this one, with the route's id and name. route is null when the
+        activity shares its route with no other."""
+        return run(lambda: activities.same_route(ctx.db, activity_id))
 
     @server.tool(annotations=READ_ONLY)
     def activity_samples(activity_id: str, channels: list[str] | None = None, every_s: float | None = None,
@@ -125,7 +142,8 @@ def build_server(ctx: ServerContext) -> MCPServer:
     @server.tool(annotations=OPEN_WORLD)
     def find_place(query: str) -> dict:
         """Look up a place name in OpenStreetMap (only the name leaves the machine; cached). Returns up to
-        5 candidates with kind, coordinates, elevation and country. Use before activities_near."""
+        5 candidates with kind, coordinates, elevation and country. Use before activities_near. For a
+        summit or pass the owner has reached, the places tool and the place filter come first."""
         return run(lambda: ctx.places.find(query))
 
     @server.tool(annotations=READ_ONLY)

@@ -23,6 +23,7 @@
     "import:strava": "${PYTHON_BIN:-python3} -m ingest.strava_import",
     "import:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_import",
     "fetch:garmin": "${PYTHON_BIN:-python3} -m ingest.garmin_fetch",
+    "places:update": "${PYTHON_BIN:-python3} -m ingest.osm",
     "rebuild": "${PYTHON_BIN:-python3} -m ingest.rebuild",
     "sync": "${PYTHON_BIN:-python3} -m ingest.sync",
     "activity": "${PYTHON_BIN:-python3} -m ingest.activity_cli",

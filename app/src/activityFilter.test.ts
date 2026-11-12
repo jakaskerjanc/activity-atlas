@@ -6,9 +6,13 @@ import {
   listedTypes,
   MIN_LISTED_TYPE_ACTIVITIES,
   onlyMonth,
+  placeCounts,
+  placeTotals,
+  revealActivity,
   setFromMonth,
   setToMonth,
   toggleMonth,
+  togglePlace,
   toggleType,
   typeCounts,
   typesByCount,
@@ -250,5 +254,132 @@ describe("isolating a month", () => {
     const [again, next] = toggleMonth(widened, month(2024, 4), memory);
     expect([again.fromMonth, again.toMonth]).toEqual([month(2024, 4), month(2024, 4)]);
     expect(next).toEqual({ month: month(2024, 4), fromMonth: month(2024, 3), toMonth: month(2024, 4) });
+  });
+});
+
+describe("place selection", () => {
+  // Two places (ids are activity ids), and a run that reached none.
+  const SLAVNIK = "g:100";
+  const SMARNA = "g:200";
+  const slavnikHike = record({ id: "g:11", type: "Hike", ts: at("2024-01-10T08:00:00Z"), place: SLAVNIK });
+  const slavnikHike2 = record({ id: "g:12", type: "Hike", ts: at("2024-05-20T08:00:00Z"), place: SLAVNIK });
+  const slavnikRide = record({ id: "s:13", type: "Ride", ts: at("2024-03-05T08:00:00Z"), place: SLAVNIK });
+  const smarnaHike = record({ id: "g:14", type: "Hike", ts: at("2024-03-10T08:00:00Z"), place: SMARNA });
+  const flatRun = record({ id: "s:15", type: "Run", ts: at("2024-02-01T08:00:00Z") });
+  const smarnaRun = record({ id: "s:16", type: "Run", ts: at("2024-04-01T08:00:00Z"), place: SMARNA });
+  const placed = [slavnikHike, slavnikHike2, slavnikRide, smarnaHike, flatRun, smarnaRun];
+  const base = createActivityFilter(placed);
+
+  test("togglePlace sets, then clears on the same id, and keeps types and dates", () => {
+    expect(base.place).toBeNull();
+    const f = toggleType(setFromMonth(base, month(2024, 2)), "Ride");
+    const picked = togglePlace(f, SLAVNIK);
+    expect(picked.place).toBe(SLAVNIK);
+    expect(togglePlace(picked, SMARNA).place).toBe(SMARNA);
+    const cleared = togglePlace(picked, SLAVNIK);
+    expect(cleared.place).toBeNull();
+    for (const g of [picked, cleared]) {
+      expect(g.types).toBe(f.types);
+      expect([g.fromMonth, g.toMonth]).toEqual([f.fromMonth, f.toMonth]);
+    }
+  });
+
+  test("visibleActivities and visibleFeatures keep only the place's activities", () => {
+    // Replay plays visibleFeatures, so it replays only the place's routes.
+    const f = togglePlace(base, SLAVNIK);
+    expect(visibleActivities(f)).toEqual([slavnikHike, slavnikHike2, slavnikRide]);
+    const features = placed.map((r) => activity(r));
+    expect(visibleFeatures(f, features).map((x) => x.properties.id)).toEqual(["g:11", "g:12", "s:13"]);
+  });
+
+  test("filterExpression matches visibleFeatures with a place set", () => {
+    const features = placed.map((r) => activity(r));
+    const filters = [
+      togglePlace(base, SLAVNIK),
+      togglePlace(toggleType(base, "Hike"), SMARNA),
+      togglePlace(setToMonth(base, month(2024, 3)), SLAVNIK),
+    ];
+    for (const f of filters) {
+      const drawn = featureFilter(filterExpression(f));
+      const visible = new Set(visibleFeatures(f, features));
+      for (const x of features) {
+        const onMap = drawn.filter({ zoom: 0 }, { type: 2, properties: x.properties, geometry: [] });
+        expect(onMap, `${f.place} ${x.properties.id}`).toBe(visible.has(x));
+      }
+    }
+  });
+
+  test("placeCounts follow types and dates but ignore the place", () => {
+    expect(placeCounts(base)).toEqual({ [SLAVNIK]: 3, [SMARNA]: 2 });
+    const f = toggleType(setFromMonth(base, month(2024, 2)), "Ride");
+    expect(placeCounts(f)).toEqual({ [SLAVNIK]: 1, [SMARNA]: 2 });
+    expect(placeCounts(togglePlace(f, SLAVNIK))).toEqual(placeCounts(f));
+  });
+
+  test("placeTotals count every activity per place, whatever the filter", () => {
+    const f = togglePlace(toggleType(setFromMonth(base, month(2024, 4)), "Hike"), SMARNA);
+    expect(placeTotals(f)).toEqual(placeTotals(base));
+    expect(placeTotals(base)).toEqual({ [SLAVNIK]: 3, [SMARNA]: 2 });
+  });
+
+  test("typeCounts follow the place and dates but ignore the types", () => {
+    const f = toggleType(togglePlace(base, SLAVNIK), "Hike");
+    const counts = typeCounts(f);
+    expect(counts.Hike).toBe(2);
+    expect(counts.Ride).toBe(1);
+    expect(counts.Run ?? 0).toBe(0);
+    expect(typeCounts(setFromMonth(f, month(2024, 4)))).toEqual({ Hike: 1 });
+  });
+
+  test("a selected place outside the date range leaves nothing visible", () => {
+    // February holds only the run that reached no place.
+    const f = togglePlace(setToMonth(setFromMonth(base, month(2024, 2)), month(2024, 2)), SLAVNIK);
+    expect(f.place).toBe(SLAVNIK);
+    expect(visibleActivities(f)).toEqual([]);
+    expect(visibleFeatures(f, placed.map((r) => activity(r)))).toEqual([]);
+    expect(typeCounts(f)).toEqual({});
+    expect(placeCounts(f)).toEqual({});
+    const drawn = featureFilter(filterExpression(f));
+    const onMap = (a: (typeof placed)[number]) =>
+      drawn.filter({ zoom: 0 }, { type: 2, properties: a, geometry: [] });
+    expect(placed.some(onMap)).toBe(false);
+  });
+
+  test("toggleMonth (the ridgeline click) keeps the place", () => {
+    const f = togglePlace(base, SLAVNIK);
+    const [isolated, memory] = toggleMonth(f, month(2024, 3), null);
+    expect(isolated.place).toBe(SLAVNIK);
+    expect(visibleActivities(isolated)).toEqual([slavnikRide]);
+    const [restored] = toggleMonth(isolated, month(2024, 3), memory);
+    expect(restored.place).toBe(SLAVNIK);
+  });
+
+  test("revealActivity widens dates, turns the type on, clears a different place", () => {
+    // Slavnik picked, hikes off, March to April only.
+    const marchToApril = setToMonth(setFromMonth(base, month(2024, 3)), month(2024, 4));
+    const f = toggleType(togglePlace(marchToApril, SLAVNIK), "Hike");
+
+    const later = revealActivity(f, slavnikHike2);
+    expect(later.types.has("Hike")).toBe(true);
+    expect([later.fromMonth, later.toMonth]).toEqual([month(2024, 3), month(2024, 5)]);
+    expect(later.place).toBe(SLAVNIK);
+    expect(visibleActivities(later)).toContain(slavnikHike2);
+
+    const earlier = revealActivity(f, flatRun);
+    expect([earlier.fromMonth, earlier.toMonth]).toEqual([month(2024, 2), month(2024, 4)]);
+    expect(earlier.place).toBeNull();
+    expect(earlier.types).toEqual(f.types);
+    expect(visibleActivities(earlier)).toContain(flatRun);
+
+    const elsewhere = revealActivity(f, smarnaHike);
+    expect(elsewhere.place).toBeNull();
+    expect([elsewhere.fromMonth, elsewhere.toMonth]).toEqual([f.fromMonth, f.toMonth]);
+    expect(visibleActivities(elsewhere)).toContain(smarnaHike);
+  });
+
+  test("revealActivity returns the same filter when the activity already passes", () => {
+    const f = togglePlace(base, SLAVNIK);
+    expect(revealActivity(f, slavnikRide)).toBe(f);
+    expect(revealActivity(base, flatRun)).toBe(base);
   });
 });

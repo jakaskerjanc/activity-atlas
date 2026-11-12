@@ -11,12 +11,17 @@ moving time, local calendar years") and mention `as_of` when recency matters.
 
 - Totals, averages and trends by week/month/year and type → `summarize`.
 - Finding activities → `list_activities` (filters: types, local date range,
-  name, distance, moving time, has HR/GPS).
+  name, distance, moving time, has HR/GPS, place).
 - One activity in full (laps, HR zones, gear, Strava/Garmin links) →
   `get_activity`; its samples along the route → `activity_samples`.
-- Places: first `find_place` to turn a name into coordinates (confirm with the
-  user when several candidates fit), then `activities_near`. Use coordinates
-  you already know only when you are sure of them.
+- Summits and passes the owner has reached ("how often have I been up
+  Slavnik?") → `places` lists them with counts, then
+  `list_activities(place=…)` or `summarize(place=…)`.
+- "Other times on this route" → `same_route` with an activity id.
+- Anywhere else (a town, a lake, a point the owner may only have passed): first
+  `find_place` to turn a name into coordinates (confirm with the user when
+  several candidates fit), then `activities_near`. Use coordinates you already
+  know only when you are sure of them.
 - Daily wellness (resting HR, HRV, sleep, steps, stress, body battery,
   respiration, weight) → `wellness`; one day's all-day series → `wellness_series`.
 - Anything else → `query` (read-only SQL). Prefer the tools above when they
@@ -41,6 +46,19 @@ moving time, local calendar years") and mention `as_of` when recency matters.
   are never treated as 0.
 - No hidden thresholds: a minimum distance or duration is a parameter you set,
   and it appears in `counted.rules`.
+- Places are found from the tracks: an activity whose highest point is at
+  least 50 m above its start reaches a place, and tops within 500 m of a
+  place's first top join it.
+  Place names are automatic (an OSM peak or pass, words repeated in the
+  activity names, or "Top at … m") unless the owner named it; `name_source`
+  says which. The `place` filter takes a place id or a name, with case and
+  accents ignored ("smarna gora" matches "Šmarna gora"); a name that several
+  places share matches them all, and `counted.rules` says so. Places group
+  visible activities only, so with `include_hidden` the place filter still
+  finds no hidden ones (`counted.rules` says so too). For summits the owner
+  has reached, prefer it over `find_place` + `activities_near`.
+- Same-route groups hold visible activities of one type with a similar
+  distance that follow the same line. Their names are automatic too.
 
 ## Units
 
@@ -56,6 +74,10 @@ kg, respiration breaths/min, HRV ms, stress 0–100, lat/lon degrees.
 - `laps`: joined by `laps.file_sha256 = activities.streams_sha256`.
 - `activity_gear`, `gear`: gear per activity.
 - `daily_stats`: one row per local date of wellness numbers.
+- `places` (`id`, `name`, `name_source`, `kind`, `ele`) and `route_groups`
+  (`id`, `name`, `name_source`): a group's id is its first activity's id.
+- `activity_groups`: `activity_id` → `place_id` and `route_id` (either can be
+  NULL).
 - `streams`, `daily_series`: compressed sample blobs; SQL cannot read them,
   use `activity_samples` / `wellness_series`.
 - `daily_stats.raw`, `activity_sources.summary_json` and
@@ -70,3 +92,5 @@ kg, respiration breaths/min, HRV ms, stress 0–100, lat/lon degrees.
 - Pulse ox is off on the watch, so SpO2 is mostly empty.
 - New activities arrive once a day (the daily Garmin fetch, around 04:17 UTC),
   so something recorded in the last hours may not be in the data yet.
+- A database written before places existed has none until the next write
+  job; until then `places`, `same_route` and the `place` filter say so.

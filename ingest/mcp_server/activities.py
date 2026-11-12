@@ -1,8 +1,8 @@
-"""Activity tools: list, get, summarize."""
+"""Activity tools: list, get, summarize, and the places and same-route groups."""
 import json
 
 from .database import Database
-from .filters import LOCAL_DATE, ActivityFilter, where_sql
+from .filters import LOCAL_DATE, NO_PLACES_YET, ActivityFilter, has_group_tables, resolve_place, where_sql
 
 SORTS = {
     "date_desc": "a.start_time DESC",
@@ -44,20 +44,13 @@ def counted(rules: list[str], included: int, excluded: dict | None = None) -> di
     return {"rules": rules, "included": included, "excluded": {k: v for k, v in (excluded or {}).items() if v}}
 
 
-def list_activities(db: Database, f: ActivityFilter, sort: str = "date_desc", limit: int = 200,
-                    offset: int = 0) -> dict:
-    if sort not in SORTS:
-        raise ValueError(f"sort must be one of {', '.join(SORTS)}")
-    where, params, rules = where_sql(f)
-    limit = max(1, min(limit, MAX_LIST_ROWS))
-    total = db.conn.execute(f"SELECT count(*) FROM activities a WHERE {where}", params).fetchone()[0]
-    rows = db.conn.execute(
-        f"SELECT a.id, {LOCAL_DATE} AS date_local, a.type, a.name, a.distance, a.moving_time, "
-        f"a.elevation_gain, a.avg_hr FROM activities a WHERE {where} ORDER BY {SORTS[sort]} "
-        "LIMIT ? OFFSET ?",
-        params + [limit, offset],
-    ).fetchall()
-    out = [{
+_ROW_COLUMNS = (f"a.id, {LOCAL_DATE} AS date_local, a.type, a.name, a.distance, a.moving_time, "
+                "a.elevation_gain, a.avg_hr")
+
+
+def _row(r) -> dict:
+    """One activity as list_activities and same_route return it."""
+    return {
         "id": r["id"], "date_local": r["date_local"], "type": r["type"], "name": r["name"],
         "distance_km": None if r["distance"] is None else round(r["distance"] / 1000, 2),
         "moving_min": None if r["moving_time"] is None else round(r["moving_time"] / 60, 1),
@@ -65,7 +58,22 @@ def list_activities(db: Database, f: ActivityFilter, sort: str = "date_desc", li
         "speed_kmh": speed_kmh(r["moving_time"], r["distance"]),
         "gain_m": _round(r["elevation_gain"], 0),
         "avg_hr": _round(r["avg_hr"], 0),
-    } for r in rows]
+    }
+
+
+def list_activities(db: Database, f: ActivityFilter, sort: str = "date_desc", limit: int = 200,
+                    offset: int = 0) -> dict:
+    if sort not in SORTS:
+        raise ValueError(f"sort must be one of {', '.join(SORTS)}")
+    f = resolve_place(db.conn, f)
+    where, params, rules = where_sql(f)
+    limit = max(1, min(limit, MAX_LIST_ROWS))
+    total = db.conn.execute(f"SELECT count(*) FROM activities a WHERE {where}", params).fetchone()[0]
+    rows = db.conn.execute(
+        f"SELECT {_ROW_COLUMNS} FROM activities a WHERE {where} ORDER BY {SORTS[sort]} LIMIT ? OFFSET ?",
+        params + [limit, offset],
+    ).fetchall()
+    out = [_row(r) for r in rows]
     return {
         "data": {"rows": out, "total": total, "offset": offset, "truncated": offset + len(out) < total},
         "counted": counted(rules, total),
@@ -117,6 +125,7 @@ _HR_OK = "a.avg_hr IS NOT NULL AND a.moving_time > 0"
 def summarize(db: Database, f: ActivityFilter, period: str = "year", by_type: bool = True) -> dict:
     if period not in PERIOD_KEYS:
         raise ValueError(f"period must be one of {', '.join(PERIOD_KEYS)}")
+    f = resolve_place(db.conn, f)
     where, params, rules = where_sql(f)
     group = "period, a.type" if by_type else "period"
     rows = db.conn.execute(
@@ -159,3 +168,44 @@ def summarize(db: Database, f: ActivityFilter, period: str = "year", by_type: bo
         "no avg HR or moving time (HR)": sum(r["n"] - r["hr_n"] for r in rows),
     }
     return {"data": {"period": period, "rows": out}, "counted": counted(rules + SUMMARY_RULES, total, excluded)}
+
+
+def places(db: Database) -> dict:
+    """Every place (a summit or pass the owner has reached), with how many visible activities reached it."""
+    if not has_group_tables(db.conn):
+        raise ValueError(NO_PLACES_YET)
+    rows = db.conn.execute(
+        "SELECT p.id, p.name, p.name_source, p.kind, p.ele, count(a.id) AS count FROM places p "
+        "LEFT JOIN activity_groups g ON g.place_id = p.id "
+        "LEFT JOIN activities a ON a.id = g.activity_id AND a.visible = 1 "
+        "GROUP BY p.id ORDER BY count DESC, p.name, p.id"
+    ).fetchall()
+    out = [dict(r) for r in rows]
+    return {"data": {"places": out}, "counted": counted(["visible activities only"], len(out))}
+
+
+def same_route(db: Database, activity_id: str) -> dict:
+    """The activity's same-route group and its activities, newest first, the given one included."""
+    if not has_group_tables(db.conn):
+        raise ValueError(NO_PLACES_YET)
+    if db.conn.execute("SELECT 1 FROM activities WHERE id = ?", (activity_id,)).fetchone() is None:
+        raise ValueError(f"no activity {activity_id}")
+    route = db.conn.execute(
+        "SELECT r.id, r.name FROM activity_groups g JOIN route_groups r ON r.id = g.route_id "
+        "WHERE g.activity_id = ?", (activity_id,),
+    ).fetchone()
+    if route is None:
+        where, params = "a.id = ?", [activity_id]
+        rules = [f"{activity_id} is in no same-route group"]
+    else:
+        where = ("(a.visible = 1 OR a.id = ?) "
+                 "AND a.id IN (SELECT activity_id FROM activity_groups WHERE route_id = ?)")
+        params = [activity_id, route["id"]]
+        rules = ["visible activities only", f"same route as {activity_id}"]
+    rows = db.conn.execute(
+        f"SELECT {_ROW_COLUMNS} FROM activities a WHERE {where} ORDER BY a.start_time DESC, a.id", params,
+    ).fetchall()
+    return {
+        "data": {"route": None if route is None else dict(route), "activities": [_row(r) for r in rows]},
+        "counted": counted(rules, len(rows)),
+    }

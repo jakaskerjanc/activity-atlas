@@ -75,6 +75,28 @@ def build_fixture_db(path: str) -> str:
     _insert_activity(conn, "hike1", "Hike", "2024-09-10T00:12:00+00:00", name="Triglav Sunrise",
                      distance=12000, moving=18000, gain=1500, track=hike_track, offset=7200)
 
+    # Places and a same-route group, as a refresh would leave them. Place and route ids are the
+    # anchor activity's id. Two hikes to Slavnik form one route; two different places are both
+    # named "Grmada".
+    hikes = [
+        ("slavnik1", "2024-05-04T07:00:00+00:00", "Slavnik", 9000, "slavnik1", "slavnik1"),
+        ("slavnik2", "2024-06-08T07:00:00+00:00", "Slavnik again", 9100, "slavnik1", "slavnik1"),
+        ("smarna1", "2024-07-06T07:00:00+00:00", "Šmarna gora", 6000, "smarna1", None),
+        ("grmada1", "2024-08-03T07:00:00+00:00", "Polhograjska Grmada", 7000, "grmada1", None),
+        ("grmada2", "2024-08-17T07:00:00+00:00", "Grmada nad Kamnikom", 8000, "grmada2", None),
+    ]
+    for id_, start, name, dist, place_id, route_id in hikes:
+        _insert_activity(conn, id_, "Hike", start, name=name, distance=dist, moving=dist * 0.9, gain=600,
+                         offset=7200)
+        conn.execute("INSERT INTO activity_groups (activity_id, place_id, route_id) VALUES (?, ?, ?)",
+                     (id_, place_id, route_id))
+    conn.executemany("INSERT INTO places (id, name, name_source, kind, ele) VALUES (?, ?, ?, 'peak', ?)", [
+        ("slavnik1", "Slavnik", "osm", 1028), ("smarna1", "Šmarna gora", "osm", 669),
+        ("grmada1", "Grmada", "osm", 898), ("grmada2", "Grmada", "osm", 1040),
+    ])
+    conn.execute("INSERT INTO route_groups (id, name, name_source) "
+                 "VALUES ('slavnik1', 'Slavnik out-and-back', 'auto')")
+
     conn.execute(
         "INSERT INTO activity_sources (provider, provider_activity_id, activity_id, url, summary_json, reported) "
         "VALUES ('strava', '111', 'run1', 'https://www.strava.com/activities/111', ?, ?)",

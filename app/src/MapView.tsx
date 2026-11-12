@@ -21,6 +21,7 @@ import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./
 import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
+import { activeTrackIds } from "./activeTracks";
 import { formatDate, formatKm, typeLabel } from "./format";
 import { typeColor } from "./colors";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
@@ -126,6 +127,8 @@ interface Props {
   /** The routes as grade runs, once the route profiles load; drawn in Grade mode. */
   grade: GradeRoutes | null;
   hoverId: string | null;
+  /** The open route table's routes (inside the filter), highlighted together; null when closed. */
+  groupIds: readonly string[] | null;
   selectedId: string | null;
   onHover: (id: string | null) => void;
   onSelect: (id: string) => void;
@@ -138,6 +141,8 @@ interface Props {
   replayTimeline: ReplayStep[];
   /** Signals replay just became active — used to fit the camera to the visible activities once. */
   replayEpoch: number;
+  /** Bumped when a place is picked: fly to the densest cluster of the visible routes. */
+  placeFlyEpoch: number;
   /** Called once the entry fit-to-cluster fly-to settles, so playback starts after the pan. */
   onReplayReady: () => void;
   /** Screen space the panels cover at each edge; fitted routes stay clear of it. */
@@ -181,7 +186,7 @@ const prefersReducedMotion = () =>
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export function MapView(props: Props) {
-  const { data, mapFilter, colorMode, colorDomain, hoverId, selectedId } = props;
+  const { data, mapFilter, colorMode, colorDomain, hoverId, groupIds, selectedId } = props;
   const { replaying, replayFrame, replayEpoch } = props;
   const routeData = routesFor(props);
 
@@ -199,7 +204,8 @@ export function MapView(props: Props) {
   const fadeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
-  const syncedActiveRef = useRef<string | null>(null);
+  // The ids whose `active` feature-state is set, so a change writes only the difference.
+  const syncedActiveRef = useRef<ReadonlySet<string>>(new Set());
   // The drawing route whose line-gradient is set (null: none), so frames only rewrite
   // it when the route changes.
   const gradientKeyRef = useRef<string | null>(null);
@@ -225,12 +231,12 @@ export function MapView(props: Props) {
     live: boolean;
   }>({ timeline: null, done: 0, drawingId: null, live: false });
 
-  /** Single source of truth for the highlighted track: hover beats selection, and
-   * replay suspends highlighting. Both the base-layer dimming and the feature-state
-   * highlight read this, so they can never disagree. */
-  function currentActiveId(): string | null {
-    const p = propsRef.current;
-    return p.replaying ? null : (p.hoverId ?? p.selectedId);
+  /** Single source of truth for the highlighted tracks (activeTrackIds): hover beats
+   * an open route group, which beats the selection, and replay suspends highlighting.
+   * Both the base-layer dimming and the feature-state highlight read this, so they can
+   * never disagree. */
+  function currentActiveIds(): string[] {
+    return activeTrackIds(propsRef.current);
   }
 
   /** Fit padding for the current canvas + panel state. Recomputed at fit time so a
@@ -279,7 +285,7 @@ export function MapView(props: Props) {
     // In replay the base layers carry the accumulated (completed) routes at their
     // resting look — hover/select highlighting and the fade are both suspended.
     const p = propsRef.current;
-    const active = currentActiveId() != null || (!p.replaying && p.cityRoute != null);
+    const active = currentActiveIds().length > 0 || (!p.replaying && p.cityRoute != null);
     // A selection (or a shown city route) mutes the routes to grey, so the one that
     // matters stands apart; a mere hover only dims them.
     const selected = !p.replaying && (p.selectedId != null || p.cityRoute != null);
@@ -315,19 +321,20 @@ export function MapView(props: Props) {
     map.setPaintProperty(CORE_ID, "line-color", color);
   }
 
-  /** Move the `active` feature-state to the hovered/selected track. This is the
-   * only write a hover triggers, and it never causes a source relayout. */
+  /** Move the `active` feature-state to the highlighted tracks: off for the ids that
+   * left, on for the ids that joined (all of them when forced). These are the only
+   * writes a hover or a route table toggle triggers, and they never cause a source
+   * relayout. */
   function syncFeatureState(force = false) {
     const map = mapRef.current;
     if (!map || !map.getSource(SOURCE_ID)) return;
-    const next = currentActiveId();
+    const next = new Set(currentActiveIds());
     const prev = syncedActiveRef.current;
-    if (!force && prev === next) return;
-    if (prev != null && prev !== next) {
-      map.setFeatureState({ source: SOURCE_ID, id: prev }, { active: false });
+    for (const id of prev) {
+      if (!next.has(id)) map.setFeatureState({ source: SOURCE_ID, id }, { active: false });
     }
-    if (next != null) {
-      map.setFeatureState({ source: SOURCE_ID, id: next }, { active: true });
+    for (const id of next) {
+      if (force || !prev.has(id)) map.setFeatureState({ source: SOURCE_ID, id }, { active: true });
     }
     syncedActiveRef.current = next;
   }
@@ -663,7 +670,7 @@ export function MapView(props: Props) {
         paint: { "line-color": ACCENT, "line-width": 2.6, "line-opacity": 0 },
       });
     }
-    // Hover/select highlight layers — one feature at a time, gated by feature-state.
+    // Hover/select highlight layers — the active tracks (activeTrackIds), gated by feature-state.
     if (!map.getLayer(HOVER_GLOW_ID)) {
       map.addLayer({
         id: HOVER_GLOW_ID,
@@ -888,7 +895,7 @@ export function MapView(props: Props) {
       applyRoutes();
       applyActiveRoutes();
       mutedRef.current = null;
-      syncedActiveRef.current = null;
+      syncedActiveRef.current = new Set();
       replayMapRef.current = { timeline: null, done: 0, drawingId: null, live: false };
       syncFeatureState(true);
       fadeRef.current = 1;
@@ -939,7 +946,7 @@ export function MapView(props: Props) {
   useEffect(() => {
     applyPaint();
     if (replaying) hideTip();
-  }, [hoverId, selectedId, replaying]);
+  }, [hoverId, groupIds, selectedId, replaying]);
 
   // The muted selection grey and the type colors differ per theme.
   useEffect(() => {
@@ -952,7 +959,7 @@ export function MapView(props: Props) {
   useEffect(() => {
     if (!loadedRef.current) return;
     syncFeatureState();
-  }, [hoverId, selectedId, replaying]);
+  }, [hoverId, groupIds, selectedId, replaying]);
 
   // Move (or hide) the cursor marker.
   useEffect(() => {
@@ -1017,6 +1024,26 @@ export function MapView(props: Props) {
       map.off("moveend", ready);
     };
   }, [replaying, replayEpoch]);
+
+  // A picked place: fly to where its routes cluster, with replay's easing. Clearing a
+  // place doesn't bump the epoch, so the camera stays; nothing visible leaves it be too.
+  // Reads `visible` from propsRef, as above: the epoch is the only trigger. While
+  // replaying, replay drives the camera (and follows the new filter), so no fly.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current || props.placeFlyEpoch === 0) return;
+    if (propsRef.current.replaying) return;
+    const box = densestClusterBounds(propsRef.current.visible);
+    if (!box) return;
+    const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), 12);
+    if (!camera) return;
+    map.flyTo({
+      ...camera,
+      duration: 900,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+      essential: true,
+    });
+  }, [props.placeFlyEpoch]);
 
   // Smoothly fly to + fit the whole selected track into the area the panels leave free.
   // Refits when that area changes (the phone's sheet grows once the charts load, or is

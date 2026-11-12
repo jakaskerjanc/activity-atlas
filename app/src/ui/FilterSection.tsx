@@ -1,13 +1,16 @@
 // Filter controls: activity-type toggles (most activities first, with live counts; rare
-// types left out) + date-range sliders. Rendered as a section inside the SidePanel.
+// types left out), the places list (PlacesSection) and date-range sliders. Rendered as a
+// section inside the SidePanel.
 // In the map's Type color mode each toggle's swatch takes its type's route color, so the
 // list doubles as the map's legend.
 
 import { useMemo, type CSSProperties } from "react";
-import { FS, MONO, R, sectionLabel } from "./theme";
+import { FS, sectionLabel } from "./theme";
+import { countStyle, divider, rowStyle } from "./filterStyles";
+import { PlacesSection } from "./PlacesSection";
 import { formatMonth, formatMonthShort, typeLabel } from "../format";
 import { typeColor, type ColorMode } from "../colors";
-import type { Theme } from "../types";
+import type { Place, Theme } from "../types";
 import {
   setFromMonth,
   setToMonth,
@@ -20,12 +23,14 @@ import {
 interface Props {
   filter: ActivityFilter;
   onChange: (filter: ActivityFilter) => void;
+  /** The places the activities reach (places.json); none hides the places list. */
+  places: readonly Place[];
   /** In Type mode the swatches show each type's route color. */
   colorMode?: ColorMode;
   theme?: Theme;
 }
 
-export function FilterSection({ filter, onChange, colorMode, theme = "dark" }: Props) {
+export function FilterSection({ filter, onChange, places, colorMode, theme = "dark" }: Props) {
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
   const types = useMemo(() => listedTypes(filter), [filter]);
@@ -53,6 +58,8 @@ export function FilterSection({ filter, onChange, colorMode, theme = "dark" }: P
           );
         })}
       </div>
+
+      <PlacesSection filter={filter} places={places} onChange={onChange} />
 
       <hr style={divider} />
 
@@ -137,13 +144,6 @@ function DualRange({
   );
 }
 
-const btnReset: CSSProperties = {
-  appearance: "none",
-  border: "none",
-  font: "inherit",
-  cursor: "pointer",
-};
-
 /** A checkmark drawn in the swatch, so on/off never rests on color alone. */
 function Check() {
   return (
@@ -151,35 +151,6 @@ function Check() {
       <path d="M5 12.5l4.5 4.5L19 7.5" />
     </svg>
   );
-}
-
-const divider: CSSProperties = {
-  border: 0,
-  height: 1,
-  background: "var(--divider)",
-  margin: "16px 0",
-};
-
-// The row's padding hangs outside the column (ROW_BLEED), so the swatch and the count
-// line up with the section labels and the slider; only the hover fill reaches past them.
-export const ROW_BLEED = 10;
-
-function rowStyle(on: boolean): CSSProperties {
-  return {
-    ...btnReset,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    width: `calc(100% + ${2 * ROW_BLEED}px)`,
-    margin: `0 -${ROW_BLEED}px`,
-    height: 34,
-    padding: `0 ${ROW_BLEED}px`,
-    borderRadius: R.sm,
-    backgroundColor: "transparent",
-    color: on ? "var(--text)" : "var(--text-dim)",
-    fontSize: FS.md - 0.5,
-    fontWeight: 500,
-  };
 }
 
 function dotStyle(on: boolean, color: string): CSSProperties {
@@ -194,14 +165,6 @@ function dotStyle(on: boolean, color: string): CSSProperties {
     boxSizing: "border-box",
     background: on ? color : "transparent",
     border: on ? "none" : "1.5px solid var(--border-empty)",
-  };
-}
-
-function countStyle(on: boolean): CSSProperties {
-  return {
-    fontFamily: MONO,
-    fontSize: FS.xs + 0.5,
-    color: on ? "var(--text-muted)" : "var(--text-faint)",
   };
 }
 

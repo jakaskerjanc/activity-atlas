@@ -48,6 +48,10 @@ def test_demo_build_is_a_complete_deterministic_database(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM activity_sources").fetchone()[0] == 6
         assert conn.execute("SELECT COUNT(*) FROM activity_sources WHERE provider='strava'").fetchone()[0] == 6
         assert conn.execute("SELECT COUNT(*) FROM gear WHERE name LIKE 'Demo%'").fetchone()[0] >= 2
+        runs = [r[0] for r in conn.execute("SELECT id FROM activities WHERE type='Run' ORDER BY start_time")]
+        assert [tuple(r) for r in conn.execute("SELECT activity_id, route_id FROM activity_groups "
+                                               "WHERE route_id IS NOT NULL ORDER BY activity_id")] == [
+            (runs[0], runs[0]), (runs[1], runs[0])]
     finally:
         conn.close()
 
