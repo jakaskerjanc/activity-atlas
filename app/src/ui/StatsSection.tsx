@@ -32,8 +32,25 @@ export function StatGrid({ cards, compact = false, columns }: Props) {
           style={{ background: "var(--stat-cell-bg)", padding: compact ? "10px 10px 9px" : "12px 14px 11px", minWidth: 0 }}
         >
           <div style={{ ...value, ...(c.accent ? accent : null), fontSize: compact ? 16 : FS.xl }}>
-            {c.value}
-            {c.unit && <span style={unit}>{c.unit}</span>}
+            {c.parts ? (
+              // Durations: each number's letter set as a unit, tight to its number.
+              <>
+                <span className="sr-only">{c.value}</span>
+                <span aria-hidden="true">
+                  {c.parts.map((p, i) => (
+                    <span key={i} style={i > 0 ? { marginLeft: ".3em" } : undefined}>
+                      {p.value}
+                      <span style={partUnit}>{p.unit}</span>
+                    </span>
+                  ))}
+                </span>
+              </>
+            ) : (
+              <>
+                {c.value}
+                {c.unit && <span style={unit}>{c.unit}</span>}
+              </>
+            )}
           </div>
           <div style={label}>{c.label}</div>
         </div>
@@ -84,6 +101,9 @@ const unit: CSSProperties = {
   color: "var(--text-muted)",
   letterSpacing: 0,
 };
+
+// A duration's h / m: the unit style, without the gap a word unit takes.
+const partUnit: CSSProperties = { ...unit, marginLeft: 1 };
 
 const label: CSSProperties = {
   marginTop: 4,

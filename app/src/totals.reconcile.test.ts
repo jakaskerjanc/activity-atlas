@@ -45,12 +45,14 @@ const LABELS = ["Activities", "Distance", "Elevation gain", "Moving time"];
 /** The value shown above each total card's label, in LABELS order. */
 function totalsIn(html: string): string[] {
   return LABELS.map((label) => {
-    // The value, then an optional small unit, then the label.
+    // The value div right before the label: a value and an optional small unit, or a
+    // duration in parts with its whole text for screen readers.
     const m = html.match(
-      new RegExp(`>([^<>]*)(?:<span[^>]*>[^<]*</span>)?</div><div style="[^"]*">${label}</div>`),
+      new RegExp(`<div style="[^"]*">((?:(?!</div>|<div).)*)</div><div style="[^"]*">${label}</div>`),
     );
     expect(m, `${label} card`).not.toBeNull();
-    return m![1];
+    const whole = m![1].match(/class="sr-only">([^<]*)</);
+    return whole ? whole[1] : m![1].replace(/<span.*$/, "");
   });
 }
 

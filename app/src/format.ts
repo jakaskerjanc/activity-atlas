@@ -28,6 +28,19 @@ export function formatDuration(seconds: number | undefined): string {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
+/**
+ * A duration as number/unit pairs, so the letters can be set like any other unit:
+ * 5933 s -> [{ "1", "h" }, { "39", "m" }]. Same rounding as formatDuration; undefined
+ * when unknown.
+ */
+export function durationParts(seconds: number | undefined): { value: string; unit: string }[] | undefined {
+  if (seconds == null) return undefined;
+  const total = Math.round(seconds / 60);
+  const h = Math.floor(total / 60);
+  const m = { value: String(total % 60), unit: "m" };
+  return h ? [{ value: String(h), unit: "h" }, m] : [m];
+}
+
 /** min:sec per km, e.g. "5:06". Dash when either input is unknown or distance is zero. */
 export function pacePerKm(meters: number | undefined, seconds: number | undefined): string {
   if (meters == null || seconds == null || meters <= 0) return DASH;

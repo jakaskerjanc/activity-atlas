@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   formatKm,
   formatDuration,
+  durationParts,
   pacePerKm,
   speedKmh,
   formatMeters,
@@ -41,6 +42,20 @@ describe("formatDuration", () => {
   });
   test("zero", () => {
     expect(formatDuration(0)).toBe("0m");
+  });
+});
+
+describe("durationParts", () => {
+  test("matches formatDuration, split into values and units", () => {
+    expect(durationParts(5933)).toEqual([
+      { value: "1", unit: "h" },
+      { value: "39", unit: "m" },
+    ]);
+    expect(durationParts(2849)).toEqual([{ value: "47", unit: "m" }]);
+    expect(durationParts(5933)!.map((p) => p.value + p.unit).join(" ")).toBe(formatDuration(5933));
+  });
+  test("unknown is undefined", () => {
+    expect(durationParts(undefined)).toBeUndefined();
   });
 });
 
