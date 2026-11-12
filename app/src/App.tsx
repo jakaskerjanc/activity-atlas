@@ -137,8 +137,14 @@ export default function App() {
   const [filter, setFilter] = useState<ActivityFilter | null>(null);
   // Bumped when a pick sets a place (not when one is cleared), so the map flies to it.
   const [placeFlyEpoch, setPlaceFlyEpoch] = useState(0);
+  // Picking a place in the list also drops the selected activity, so the place's
+  // activities aren't dimmed behind it. (The place row on an activity uses pickPlace,
+  // which keeps that activity selected.)
   const changeFilter = (next: ActivityFilter) => {
-    if (next.place !== null && next.place !== filter?.place) setPlaceFlyEpoch((n) => n + 1);
+    if (next.place !== null && next.place !== filter?.place) {
+      setPlaceFlyEpoch((n) => n + 1);
+      setSelectedId(null);
+    }
     setFilter(next);
   };
   // The places and same-route groups the activities belong to (places.json).
