@@ -207,7 +207,7 @@ export function AnalyticsView({
                     title="Climbing by month"
                     subtitle={
                       isolation
-                        ? `Showing ${formatMonth(isolation.month)} only. Click it again for ${formatMonth(isolation.fromMonth)} — ${formatMonth(isolation.toMonth)}.`
+                        ? `Showing ${formatMonth(isolation.month)} only. Click it again for ${formatMonth(isolation.fromMonth)} – ${formatMonth(isolation.toMonth)}.`
                         : "Elevation gain per day. Select a month to show only it."
                     }
                   />

@@ -526,7 +526,8 @@ export function MapView(props: Props) {
   }
 
   /**
-   * Name the activity under the pointer: a dot (the type's color in Type mode), name, then type, date and distance.
+   * Name the activity under the pointer: a dot (the type's color in Type mode), the name,
+   * then "Ride on <date> · <km> km", worded like the panel's subtitle.
    * Grade runs carry only the id, so the details come from `data`.
    */
   function showTip(id: string, x: number, y: number) {
@@ -562,7 +563,7 @@ export function MapView(props: Props) {
       name.append(dot, label);
       const meta = document.createElement("div");
       meta.className = "route-tip__meta";
-      meta.textContent = `${typeLabel(p.type)} · ${formatDate(p.ts)}${dist}`;
+      meta.textContent = `${typeLabel(p.type)} on ${formatDate(p.ts)}${dist}`;
       tip.append(name, meta);
     }
     // Beside the pointer, flipped to stay inside the map.

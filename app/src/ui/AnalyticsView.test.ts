@@ -92,7 +92,7 @@ describe("AnalyticsView", () => {
     const html = render({
       isolation: { month, fromMonth: month - 5, toMonth: month },
     });
-    expect(html).toContain("Showing August 2024 only. Click it again for March 2024 — August 2024.");
+    expect(html).toContain("Showing August 2024 only. Click it again for March 2024 – August 2024.");
     expect(html).toContain('aria-pressed="true"');
   });
 
