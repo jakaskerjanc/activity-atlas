@@ -158,11 +158,17 @@
   --panel-blur: blur(10px) saturate(150%);
   --stat-cell-bg: rgba(12, 13, 18, 0.42);
 }
+/* Light glass is thicker than dark: white over green terrain and orange routes only
+   lightens them, so below ~60% they still read through the 10-11px muted text. */
 :root[data-theme="light"][data-view="map"] {
-  --panel-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.18));
+  --panel-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.62));
   --panel-border: rgba(255, 255, 255, 0.55);
   --panel-blur: blur(10px) saturate(190%) brightness(1.05);
-  --stat-cell-bg: rgba(255, 255, 255, 0.34);
+  --stat-cell-bg: rgba(255, 255, 255, 0.55);
+  /* The header fade holds full strength over the wordmark's line before fading, so map
+     labels don't show through it. */
+  --header-fade: rgba(238, 240, 244, 0.97);
+  --header-fade-hold: 45%;
 }
 
 html,
