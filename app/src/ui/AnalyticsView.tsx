@@ -143,10 +143,10 @@ export function AnalyticsView({
       style={{ ["--analytics-left" as string]: `${left}px` }}
     >
       <div className="analytics__column">
-        <h1 style={heading}>Analytics</h1>
+        <h1 className="analytics__intro" style={heading}>Analytics</h1>
         {filter && (
           <>
-            <p style={lede}>
+            <p className="analytics__intro" style={lede}>
               {visible.length.toLocaleString("en-US")} {visible.length === 1 ? "activity" : "activities"}
               {" from "}
               {formatMonthShort(filter.fromMonth)} to {formatMonthShort(filter.toMonth)}

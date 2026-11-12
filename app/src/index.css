@@ -452,8 +452,13 @@ input[type="range"].range-dual::-moz-range-thumb {
   }
 }
 @media (max-width: 760px) {
+  /* A little more air under the header, and the title and lede inset towards the cards'
+     content, which sits 20px inside the cards. */
   .analytics {
-    padding: 72px 12px 32px;
+    padding: 80px 12px 32px;
+  }
+  .analytics__intro {
+    padding-left: 8px;
   }
   .analytics__grid {
     gap: var(--sp-3);
