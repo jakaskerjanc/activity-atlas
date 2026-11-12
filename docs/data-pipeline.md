@@ -119,6 +119,7 @@ deleted activity never leaves a stale file behind.
 | `activities.json` | Every visible activity's numbers. |
 | `activity/<id>.json` | One activity's samples, fetched only when it is opened. |
 | `profiles.json` | Elevation profiles, fetched only by the Analytics page. |
+| `places.json` | Places reached (name, height, peak or pass) and named same-route groups. No coordinates. Empty without the group tables. |
 | `steps.json` | Daily step totals, fetched only by the Analytics page. The newest day (still being counted when it was fetched) is left out. Empty without step data. |
 
 An unknown value is left out, never written as `0`. Daily step totals are the
