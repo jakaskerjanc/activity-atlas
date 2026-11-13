@@ -75,7 +75,7 @@ describe("coverage", () => {
   });
 
   test("activityCards dashes missing values", () => {
-    const cards = activityCards(feature({ distance: undefined, elevation_gain: undefined }));
+    const cards = activityCards(feature({ distance: undefined, elevation_gain: undefined }).properties);
     expect(cards[0].value).toBe("—");
     expect(cards[2].value).toBe("—");
     expect(cards[3]).toEqual({ value: "—", unit: "/km", label: "Pace" });
@@ -107,7 +107,7 @@ describe("totalCards", () => {
 describe("activityCards", () => {
   test("foot-based activity shows pace per km", () => {
     const cards = activityCards(
-      feature({ type: "Run", distance: 10000, moving_time: 3000, elevation_gain: 76 }),
+      feature({ type: "Run", distance: 10000, moving_time: 3000, elevation_gain: 76 }).properties,
     );
     expect(cards).toEqual([
       { value: "10.0", unit: "km", label: "Distance", accent: true },
@@ -119,7 +119,7 @@ describe("activityCards", () => {
 
   test("wheel-based activity shows speed km/h", () => {
     const cards = activityCards(
-      feature({ type: "Ride", distance: 30000, moving_time: 3600, elevation_gain: 400 }),
+      feature({ type: "Ride", distance: 30000, moving_time: 3600, elevation_gain: 400 }).properties,
     );
     expect(cards[3]).toEqual({ value: "30.0", unit: "km/h", label: "Speed" });
   });

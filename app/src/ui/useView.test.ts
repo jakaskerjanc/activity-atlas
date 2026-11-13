@@ -6,6 +6,10 @@ describe("viewFromHash", () => {
     expect(viewFromHash("#analytics")).toBe("analytics");
   });
 
+  test("#activities opens the activities list", () => {
+    expect(viewFromHash("#activities")).toBe("activities");
+  });
+
   test("no hash, or one it doesn't know, falls back to the map", () => {
     expect(viewFromHash("")).toBe("map");
     expect(viewFromHash("#")).toBe("map");

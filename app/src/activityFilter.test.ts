@@ -8,7 +8,9 @@ import {
   onlyMonth,
   placeCounts,
   placeTotals,
+  isVisible,
   revealActivity,
+  revealActivities,
   setFromMonth,
   setToMonth,
   toggleMonth,
@@ -381,5 +383,15 @@ describe("place selection", () => {
     const f = togglePlace(base, SLAVNIK);
     expect(revealActivity(f, slavnikRide)).toBe(f);
     expect(revealActivity(base, flatRun)).toBe(base);
+  });
+});
+
+describe("revealActivities", () => {
+  test("widens the filter to show every one of them", () => {
+    const run = record({ id: "a", type: "Run", ts: 1723975135 });
+    const swim = record({ id: "b", type: "Swim", ts: 1600000000 });
+    const f = revealActivities(createActivityFilter([run, swim]), [swim]);
+    expect(isVisible(f, swim)).toBe(true);
+    expect(isVisible(f, run)).toBe(true);
   });
 });

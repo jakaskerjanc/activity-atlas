@@ -75,6 +75,23 @@ export function ChartIcon({ size = 15 }: P) {
   );
 }
 
+export function ListIcon({ size = 15 }: P) {
+  return (
+    <svg {...iconProps(size)}>
+      <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </svg>
+  );
+}
+
+export function SearchIcon({ size = 16 }: P) {
+  return (
+    <svg {...iconProps(size)}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4 4" />
+    </svg>
+  );
+}
+
 export function SunIcon({ size = 17 }: P) {
   return (
     <svg {...iconProps(size)}>

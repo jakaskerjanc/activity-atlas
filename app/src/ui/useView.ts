@@ -1,15 +1,20 @@
-// Which page is open: the map or analytics. Kept in the URL hash so a reload, a shared
+// Which page is open: the map, analytics or the activities list. Kept in the URL hash so a reload, a shared
 // link, and the browser's back/forward buttons all land on the same page.
 
 import { useEffect, useState } from "react";
 
-export type View = "map" | "analytics";
+export type View = "map" | "analytics" | "activities";
 
-const ANALYTICS_HASH = "#analytics";
+/** The hash of each page but the map, which is the bare URL. */
+const HASHES: Record<Exclude<View, "map">, string> = {
+  analytics: "#analytics",
+  activities: "#activities",
+};
 
 /** The page a location hash points at. Anything unrecognized is the map. */
 export function viewFromHash(hash: string): View {
-  return hash === ANALYTICS_HASH ? "analytics" : "map";
+  for (const [view, h] of Object.entries(HASHES)) if (hash === h) return view as View;
+  return "map";
 }
 
 export function useView(): [View, (view: View) => void] {
@@ -27,7 +32,7 @@ export function useView(): [View, (view: View) => void] {
     // The map is the bare URL, so its links stay clean. pushState doesn't fire popstate,
     // hence the explicit setView.
     const { pathname, search } = window.location;
-    window.history.pushState(null, "", next === "map" ? pathname + search : ANALYTICS_HASH);
+    window.history.pushState(null, "", next === "map" ? pathname + search : HASHES[next]);
     setView(next);
   };
 

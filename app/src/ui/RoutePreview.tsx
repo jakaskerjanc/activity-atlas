@@ -13,6 +13,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { homeCamera, projector } from "../homeCamera";
 import { ACCENT } from "../colors";
+import { routePath, ROUTE_GLOW, ROUTE_LINE } from "../routePath";
 import type { Insets } from "./layout";
 import type { ActivityFeature } from "../types";
 
@@ -162,22 +163,10 @@ export function routesSvg(
   const camera = homeCamera(features, width, height, insets);
   if (!camera) return null;
   const project = projector(camera, width, height);
-  const minStep2 = MIN_STEP_PX * MIN_STEP_PX;
   const parts: string[] = [];
   for (const f of features) {
-    const cs = f.geometry.coordinates;
-    if (cs.length < 2) continue;
-    let [lx, ly] = project(cs[0][0], cs[0][1]);
-    let d = `M${lx.toFixed(1)} ${ly.toFixed(1)}`;
-    for (let i = 1; i < cs.length; i++) {
-      const [x, y] = project(cs[i][0], cs[i][1]);
-      const last = i === cs.length - 1;
-      if (!last && (x - lx) ** 2 + (y - ly) ** 2 < minStep2) continue;
-      d += `L${x.toFixed(1)} ${y.toFixed(1)}`;
-      lx = x;
-      ly = y;
-    }
-    parts.push(d);
+    const path = routePath(f.geometry.coordinates, project, MIN_STEP_PX);
+    if (path) parts.push(path.d);
   }
   if (parts.length === 0) return null;
   const d = parts.join("");
@@ -188,8 +177,8 @@ export function routesSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${h}" viewBox="0 ${top} ${width} ${h}">` +
     `<defs><path id="r" d="${d}"/></defs>` +
     `<g fill="none" stroke="${ACCENT}" stroke-linecap="round" stroke-linejoin="round">` +
-    `<use href="#r" xlink:href="#r" stroke-width="6" stroke-opacity="0.2"/>` +
-    `<use href="#r" xlink:href="#r" stroke-width="2.6" stroke-opacity="0.85"/>` +
+    `<use href="#r" xlink:href="#r" stroke-width="${ROUTE_GLOW.width}" stroke-opacity="${ROUTE_GLOW.opacity}"/>` +
+    `<use href="#r" xlink:href="#r" stroke-width="${ROUTE_LINE.width}" stroke-opacity="${ROUTE_LINE.opacity}"/>` +
     `</g></svg>`;
   return { markup, top, width, height: h };
 }

@@ -1,11 +1,11 @@
-// Top bar: the Activity Atlas wordmark, the Filters toggle, the Map / Analytics page
-// switch, and the light/dark theme toggle. Overlays both pages: over the map it fades
-// into the map; over the scrolling analytics page it is opaque, so content never runs
+// Top bar: the Activity Atlas wordmark, the Filters toggle, the Map / Analytics /
+// Activities page switch, and the light/dark theme toggle. Overlays every page: over the
+// map it fades into the map; over the scrolling pages it is opaque, so content never runs
 // under the wordmark.
 
 import type { ComponentType, CSSProperties } from "react";
 import { FS, R } from "./theme";
-import { ChartIcon, FiltersIcon, MapIcon, MoonIcon, SunIcon } from "./icons";
+import { ChartIcon, FiltersIcon, ListIcon, MapIcon, MoonIcon, SunIcon } from "./icons";
 import { HEADER_HEIGHT } from "./layout";
 import type { Theme } from "../types";
 import type { View } from "./useView";
@@ -34,7 +34,7 @@ export function Header({
   onToggleFilters,
 }: Props) {
   const next = theme === "dark" ? "light" : "dark";
-  const solid = view === "analytics";
+  const solid = view !== "map";
   return (
     <header
       style={{
@@ -142,9 +142,10 @@ const chromeBtn: CSSProperties = {
 const VIEWS: { view: View; label: string; Icon: ComponentType }[] = [
   { view: "map", label: "Map", Icon: MapIcon },
   { view: "analytics", label: "Analytics", Icon: ChartIcon },
+  { view: "activities", label: "Activities", Icon: ListIcon },
 ];
 
-// Segmented control for the two pages. On a phone the labels drop (see
+// Segmented control for the pages. On a phone the labels drop (see
 // .view-switch-label in index.css) and the aria-labels carry the names.
 function ViewSwitch({
   view,

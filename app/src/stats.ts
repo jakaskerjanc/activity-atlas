@@ -1,6 +1,6 @@
 // Pure stat view-models for the right panel. No React / Mapbox deps.
 
-import type { ActivityFeature, ActivityRecord } from "./types";
+import type { ActivityRecord } from "./types";
 import {
   formatKm,
   formatDuration,
@@ -84,9 +84,8 @@ export function totalCards(activities: readonly ActivityRecord[]): StatCard[] {
   ];
 }
 
-/** Four cards for a single selected activity. Unknown values read "—". */
-export function activityCards(feature: ActivityFeature): StatCard[] {
-  const p = feature.properties;
+/** Four cards for a single activity. Unknown values read "—". */
+export function activityCards(p: ActivityRecord): StatCard[] {
   const foot = isFootBased(p.type);
   return [
     { value: formatKm(p.distance), unit: "km", label: "Distance", accent: true },
