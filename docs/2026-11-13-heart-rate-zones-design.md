@@ -118,11 +118,11 @@ fitness change. The card does not try to correct it.
 - Section `zones`, "Heart-rate zones", after Active hours, full width.
 - Subtitle names the limits: "Time in each zone, from heart rate. Zone 1
   starts at 100 bpm, zone 5 at 179 bpm (your watch's current zones)."
-- **Distribution:** a donut of the six bands (2 px gaps), the total hours with
-  heart rate in the middle, and beside it a row per band: swatch, name, bpm
-  range, hours, percentage. The rows double as the legend and the table view.
-  Hovering a segment or a row highlights both and puts that band's share in
-  the middle.
+- **Distribution:** one horizontal strip split into the six bands (2 px
+  gaps), and under it a row per band: swatch, name, bpm range, hours,
+  percentage. The rows double as the legend and the table view. Hovering a
+  segment or a row highlights both: the row gets a tint, the other segments
+  dim.
 - **By month:** one bar per month (UTC months, like the date range), the six
   bands stacked with below zone 1 at the bottom. A toggle switches the scale
   between **Hours** (height is time with heart rate) and **Share** (every
@@ -134,9 +134,9 @@ fitness change. The card does not try to correct it.
   have zones: "No visible activity has heart-rate zones."
 
 *(Changed after the owner's review on 2026-11-13: the leading empty months
-went, the counted note went, the Hours / Share toggle and the donut were
-added. The donut replaced a thin 100% strip, which would have shown the same
-split twice.)*
+went, the counted note went, the Hours / Share toggle and the strip–row hover
+were added. A donut was tried in place of the strip and reverted at the
+owner's request.)*
 
 ### Colors (my call)
 

@@ -1,6 +1,7 @@
 // Heart-rate zones: how the visible activities' time with heart rate splits across the
-// bands (below zone 1, zones 1 to 5). A donut of the whole split beside a row per band
-// that is both the legend and the table (name, bpm range, hours, share), then one stacked
+// bands (below zone 1, zones 1 to 5). A strip of the whole split above a row per band
+// that is both the legend and the table (name, bpm range, hours, share); hovering a
+// segment or a row highlights both. Then one stacked
 // bar per month from the first month with zone time, in hours or as each month's own
 // 100%, below zone 1 at the bottom. Colors are one violet ramp, ordered with the zones
 // (--zone-0 … --zone-5 in index.css).
@@ -32,9 +33,31 @@ export function HeartRateZones({
   const [scale, setScale] = useState<BarScale>("hours");
   return (
     <>
-      <div style={overview}>
-        <ZoneDonut seconds={seconds} total={total} bands={bands} hovered={hovered} onHover={setHovered} />
-        <ul style={{ ...rows, gridTemplateColumns: `repeat(${compact ? 2 : 3}, minmax(0, 1fr))` }}>
+      <div
+        role="img"
+        aria-label={`Time in heart-rate zones: ${bands
+          .map((b, i) => `${b.label} ${formatShare(seconds[i], total)}`)
+          .join(", ")}`}
+        style={strip}
+        onPointerLeave={() => setHovered(null)}
+      >
+        {BANDS.map((i) =>
+          seconds[i] > 0 ? (
+            <div
+              key={i}
+              onPointerEnter={() => setHovered(i)}
+              style={{
+                flex: `${seconds[i]} 1 0`,
+                minWidth: 2,
+                background: zoneColor(i),
+                opacity: hovered == null || hovered === i ? 1 : 0.45,
+                transition: "opacity 120ms",
+              }}
+            />
+          ) : null,
+        )}
+      </div>
+      <ul style={rows}>
           {bands.map((b, i) => (
             <li
               key={i}
@@ -53,7 +76,6 @@ export function HeartRateZones({
             </li>
           ))}
         </ul>
-      </div>
       {summary.months.length > 1 && (
         <>
           <div style={barsHeader}>
@@ -82,81 +104,6 @@ export function HeartRateZones({
         </>
       )}
     </>
-  );
-}
-
-const DONUT = 168;
-/** Ring centre-line radius and thickness. */
-const RING_R = 68;
-const RING_W = 24;
-
-/**
- * The whole split as a ring, zone 1 onwards clockwise from the top. Hovering a segment
- * (or its row) puts that band's time and share in the middle; otherwise it holds the total.
- */
-function ZoneDonut({
-  seconds,
-  total,
-  bands,
-  hovered,
-  onHover,
-}: {
-  seconds: number[];
-  total: number;
-  bands: ZoneBand[];
-  hovered: number | null;
-  onHover: (band: number | null) => void;
-}) {
-  const circ = 2 * Math.PI * RING_R;
-  const shown = BANDS.filter((b) => seconds[b] > 0);
-  // A surface gap between segments, except when one band is the whole ring.
-  const gap = shown.length > 1 ? GAP : 0;
-  let start = 0;
-  const segs = shown.map((b) => {
-    const len = (seconds[b] / total) * circ;
-    const seg = { band: b, start, len };
-    start += len;
-    return seg;
-  });
-  const focus = hovered != null && seconds[hovered] > 0 ? hovered : null;
-  return (
-    <svg
-      width={DONUT}
-      height={DONUT}
-      viewBox={`0 0 ${DONUT} ${DONUT}`}
-      role="img"
-      aria-label={`Time in heart-rate zones: ${bands.map((b, i) => `${b.label} ${formatShare(seconds[i], total)}`).join(", ")}`}
-      style={{ display: "block", flex: "none" }}
-      onPointerLeave={() => onHover(null)}
-    >
-      <g transform={`rotate(-90 ${DONUT / 2} ${DONUT / 2})`}>
-        {segs.map(({ band, start, len }) => {
-          const drawn = Math.max(0.5, len - gap);
-          return (
-            <circle
-              key={band}
-              cx={DONUT / 2}
-              cy={DONUT / 2}
-              r={RING_R}
-              fill="none"
-              stroke={zoneColor(band)}
-              strokeWidth={focus === band ? RING_W + 6 : RING_W}
-              strokeDasharray={`${drawn} ${circ - drawn}`}
-              strokeDashoffset={-start}
-              opacity={focus == null || focus === band ? 1 : 0.45}
-              onPointerEnter={() => onHover(band)}
-              style={{ transition: "opacity 120ms, stroke-width 120ms" }}
-            />
-          );
-        })}
-      </g>
-      <text x={DONUT / 2} y={DONUT / 2 - 2} textAnchor="middle" style={donutValue}>
-        {focus == null ? formatHours(total) : formatShare(seconds[focus], total)}
-      </text>
-      <text x={DONUT / 2} y={DONUT / 2 + 15} textAnchor="middle" style={donutNote}>
-        {focus == null ? "with heart rate" : bands[focus].label}
-      </text>
-    </svg>
   );
 }
 
@@ -313,21 +260,13 @@ function MonthBars({
   );
 }
 
-const overview: CSSProperties = {
+const strip: CSSProperties = {
   display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: "16px 28px",
+  gap: GAP,
+  height: 16,
+  borderRadius: 4,
+  overflow: "hidden",
 };
-
-const donutValue: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: 18,
-  fontWeight: 600,
-  fill: "var(--text-strong)",
-};
-const donutNote: CSSProperties = { fontSize: FS.xs, fill: "var(--text-muted)" };
 
 const barsHeader: CSSProperties = {
   display: "flex",
@@ -338,10 +277,10 @@ const barsHeader: CSSProperties = {
 };
 
 const rows: CSSProperties = {
-  flex: "1 1 300px",
   listStyle: "none",
-  margin: 0,
+  margin: "10px -8px 0",
   padding: 0,
+  gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))",
   display: "grid",
   gap: "4px 8px",
 };

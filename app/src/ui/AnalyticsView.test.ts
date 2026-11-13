@@ -56,8 +56,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain("Zone 1 starts at 100 bpm, zone 5 at 179 bpm");
     expect(html).toContain("119–139 bpm");
     expect(html).toContain("30 min · 50%");
-    expect(html).toContain(">1.0 h<");
-    expect(html).toContain(">with heart rate<");
+    expect(html).toContain('aria-label="Time in heart-rate zones: Below zone 1 17%, Zone 1 33%, Zone 2 50%');
     expect(html).not.toContain("have heart-rate zones");
   });
 
