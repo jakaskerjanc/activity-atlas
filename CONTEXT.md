@@ -76,9 +76,17 @@ _Avoid_: heatmap (that suggests blurred density blobs)
 
 ### Pages
 
-**Map** / **Analytics**:
-The two pages. Both show the visible activities, under one shared activity filter.
+**Map** / **Analytics** / **Activities**:
+The three pages. All show the visible activities, under one shared activity filter.
 _Avoid_: tab, screen, dashboard
+
+**Activity search**:
+The Activities page's search box: it narrows the visible activities to those whose name, type, place, same-route name or start date contain every word typed (case and accents ignored). It is not part of the activity filter, so the map and analytics don't follow it; matches the filter hides are offered as a way to widen it.
+_Avoid_: search filter
+
+**Activity preview**:
+The quick look under a row of the Activities page, opened by clicking it: the route on a still map image, the activity's stat cards and elevation chart (the map panel's own), and "Show on map".
+_Avoid_: details, expanded row
 
 **Active day**:
 A calendar day (UTC, like the date range) with at least one visible activity.

@@ -168,6 +168,11 @@ export function revealActivity(filter: ActivityFilter, a: ActivityRecord): Activ
   };
 }
 
+/** revealActivity for each of `list` in turn: the narrowest widening that shows them all. */
+export function revealActivities(filter: ActivityFilter, list: readonly ActivityRecord[]): ActivityFilter {
+  return list.reduce(revealActivity, filter);
+}
+
 /** The activities that pass the filter. Both pages count and total these. */
 export function visibleActivities(filter: ActivityFilter): ActivityRecord[] {
   return filter.activities.filter(passes(filter));

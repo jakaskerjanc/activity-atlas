@@ -25,3 +25,11 @@ describe("Header page switch", () => {
     expect(render("map")).toContain('class="view-switch-label"');
   });
 });
+
+describe("Header on the activities page", () => {
+  test("has an Activities tab, and an opaque bar like analytics", () => {
+    const html = render("activities");
+    expect(html).toMatch(/aria-pressed="true"[^>]*aria-label="Activities"/);
+    expect(html).toContain("background:var(--bg)");
+  });
+});

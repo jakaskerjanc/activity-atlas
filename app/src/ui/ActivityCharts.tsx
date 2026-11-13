@@ -30,6 +30,10 @@ interface Props {
   type: string;
   cursor: number | null;
   onCursor: (i: number | null) => void;
+  /** Only these charts (the Activities page's preview shows elevation alone); default all. */
+  kinds?: readonly ChartKind[];
+  /** Whether hovering the route on a map also moves the cursor, for the hint. Default true. */
+  routeLinked?: boolean;
 }
 
 const HEIGHT: Record<ChartKind, number> = { elevation: 104, hr: 72, pace: 72, speed: 72, cadence: 64 };
@@ -71,7 +75,7 @@ function tickLabel(kind: ChartKind, v: number): string {
   return kind === "pace" ? formatPace(v) : String(Math.round(v));
 }
 
-export function ActivityCharts({ detail, profile, type, cursor, onCursor }: Props) {
+export function ActivityCharts({ detail, profile, type, cursor, onCursor, kinds, routeLinked = true }: Props) {
   const [ref, width] = useElementWidth<HTMLDivElement>(FALLBACK_WIDTH);
   const canHover = useMediaQuery("(hover: hover)");
   const { x } = profile;
@@ -106,7 +110,13 @@ export function ActivityCharts({ detail, profile, type, cursor, onCursor }: Prop
     <div ref={ref} style={{ marginTop: 14 }}>
       <div style={captionRow}>
         <span style={{ fontWeight: 600, color: cursor == null ? "var(--text-soft)" : "var(--accent-text)" }}>{where}</span>
-        <span>{canHover ? "Hover the charts or the route" : "Touch a chart to read a point"}</span>
+        <span>
+          {canHover
+            ? routeLinked
+              ? "Hover the charts or the route"
+              : "Hover the chart"
+            : "Touch a chart to read a point"}
+        </span>
       </div>
       <div style={readoutRow} aria-live="polite">
         {items.map((it, i) => (
@@ -117,7 +127,9 @@ export function ActivityCharts({ detail, profile, type, cursor, onCursor }: Prop
         ))}
       </div>
 
-      {profile.charts.map((c) => (
+      {profile.charts
+        .filter((c) => !kinds || kinds.includes(c.kind))
+        .map((c) => (
         <Chart
           key={c.kind}
           series={c}

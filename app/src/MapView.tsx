@@ -24,22 +24,13 @@ import { nearestSample } from "./routeCursor";
 import { activeTrackIds } from "./activeTracks";
 import { formatDate, formatKm, typeLabel } from "./format";
 import { typeColor } from "./colors";
+import { HAS_TOKEN, MAPBOX_TOKEN, STYLE_URL } from "./mapStyle";
 import type { ActivityFeature, ActivityFeatureCollection, DetailFile, Theme } from "./types";
 
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
-/** Without a token mapboxgl.Map throws on construction and takes the whole app
- * down with it. Skip the map instead, so the panels and Analytics still work
- * (e.g. a fresh fork showing the demo data). Every effect below
- * already no-ops while mapRef is null. */
-const HAS_TOKEN = Boolean(import.meta.env.VITE_MAPBOX_TOKEN);
+mapboxgl.accessToken = MAPBOX_TOKEN ?? "";
+// Without a token (HAS_TOKEN) the map is skipped; every effect below already no-ops
+// while mapRef is null.
 
-/** Base map that reads well under each theme's panels. Light uses the toned streets
- * style (roads/parks/water) so the translucent liquid-glass panels have real color
- * to refract; dark stays the muted dark base. */
-const STYLE_URL: Record<Theme, string> = {
-  dark: "mapbox://styles/mapbox/dark-v11",
-  light: "mapbox://styles/jkyy/cmrxclplz00ji01qk9apa184q",
-};
 
 const SOURCE_ID = "activities";
 // Whole routes for the drawing route in replay: line-trim-offset trims each feature on
@@ -515,6 +506,30 @@ export function MapView(props: Props) {
   }
 
   /** Fly to the whole city route, clear of the panels. */
+  /** Fly to and fit the selected activity's whole route (no-op without one or before load). */
+  function fitSelected() {
+    const map = mapRef.current;
+    const p = propsRef.current;
+    if (!map || !loadedRef.current || p.selectedId == null || !p.data) return;
+    const feature = p.data.features.find((f) => f.properties.id === p.selectedId);
+    if (!feature) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const c of feature.geometry.coordinates) {
+      bounds.extend(c as [number, number]);
+    }
+    const camera = cameraFor(bounds, 15);
+    if (!camera) return;
+    // Always animate (user-requested), even under prefers-reduced-motion, via essential.
+    // curve < 1.42 keeps the zoom-out arc gentle; easeOutCubic for a soft landing.
+    map.flyTo({
+      ...camera,
+      duration: 1400,
+      curve: 1.2,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+      essential: true,
+    });
+  }
+
   function fitCityRoute() {
     const map = mapRef.current;
     const route = propsRef.current.cityRoute;
@@ -821,8 +836,10 @@ export function MapView(props: Props) {
         frameHome();
         startFade();
       }
-      // A city route asked for before the map was ready.
+      // A city route or an activity (picked on the Activities page) asked for before the
+      // map was ready.
       fitCityRoute();
+      fitSelected();
     });
 
     // Hover highlighting (glow is the wider hit target). Suspended during replay.
@@ -1050,25 +1067,7 @@ export function MapView(props: Props) {
   // opened), so the route never ends up under a panel.
   const fitKey = insetsKey(props.insets);
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !loadedRef.current || selectedId == null || !data) return;
-    const feature = data.features.find((f) => f.properties.id === selectedId);
-    if (!feature) return;
-    const bounds = new mapboxgl.LngLatBounds();
-    for (const c of feature.geometry.coordinates) {
-      bounds.extend(c as [number, number]);
-    }
-    const camera = cameraFor(bounds, 15);
-    if (!camera) return;
-    // Always animate (user-requested), even under prefers-reduced-motion, via essential.
-    // curve < 1.42 keeps the zoom-out arc gentle; easeOutCubic for a soft landing.
-    map.flyTo({
-      ...camera,
-      duration: 1400,
-      curve: 1.2,
-      easing: (t) => 1 - Math.pow(1 - t, 3),
-      essential: true,
-    });
+    fitSelected();
   }, [selectedId, data, fitKey]);
 
   if (!HAS_TOKEN) {

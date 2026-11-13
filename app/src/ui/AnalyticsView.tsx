@@ -281,7 +281,7 @@ export function AnalyticsView({
  * The page when nothing is visible: the map's empty notice (emptyNotice's text), with
  * "Clear place" first when a place is picked, then "Reset filters".
  */
-function EmptyPage({
+export function EmptyPage({
   notice,
   onClearPlace,
   onResetFilter,

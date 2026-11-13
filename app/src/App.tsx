@@ -10,6 +10,8 @@ import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
 import { ReplayBar } from "./ui/ReplayBar";
 import { AnalyticsView, ANALYTICS_SECTIONS } from "./ui/AnalyticsView";
+import { ActivitiesView } from "./ui/ActivitiesView";
+import { DEFAULT_SORT, type SearchNames, type Sort } from "./activitySearch";
 import { useView } from "./ui/useView";
 import { RoutePreview } from "./ui/RoutePreview";
 import {
@@ -17,6 +19,7 @@ import {
   activeIsolation,
   filterExpression,
   revealActivity,
+  revealActivities,
   toggleMonth,
   togglePlace,
   visibleActivities,
@@ -158,6 +161,11 @@ export default function App() {
     () => new Map<string, string>(placesFile.routes.map((r) => [r.id, r.name])),
     [placesFile],
   );
+  const searchNames = useMemo<SearchNames>(() => ({ places: placeMap, routes: routeMap }), [placeMap, routeMap]);
+  // The Activities page's search and sort. Held here, so a trip to the map and back
+  // finds the list as it was left.
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
   // A month isolated from the ridgeline and the range it replaced, for the second click.
   const [isolation, setIsolation] = useState<MonthIsolation | null>(null);
   const pickMonth = (month: number) => {
@@ -277,6 +285,11 @@ export default function App() {
     if (!panels.mobile) panels.expandBottom();
     else panels.closeSide();
   };
+  // A row on the Activities page: show that activity on the map.
+  const openOnMap = (id: string) => {
+    selectActivity(id);
+    setView("map");
+  };
   // A click on empty map clears both.
   const deselect = () => {
     setSelectedId(null);
@@ -358,7 +371,7 @@ export default function App() {
     setProgress(Math.min(1, Math.max(0, g)));
   };
 
-  // Analytics hides the replay transport and covers the map, so leave replay and drop the
+  // The other pages hide the replay transport and cover the map, so leave replay and drop the
   // hover and the chart cursor (the map won't see the pointer leave). An effect, so
   // back/forward counts too.
   useEffect(() => {
@@ -420,6 +433,13 @@ export default function App() {
   const replayCurrent = replayFrame
     ? { ts: replayFrame.ts, index: replayFrame.index, name: namesById.get(replayFrame.id) ?? "" }
     : null;
+
+  // The routes the map can draw, by id: the list's previews sketch them, and only these
+  // can be shown on the map.
+  const routeCoords = useMemo(
+    () => new Map((data?.features ?? []).map((f) => [f.properties.id, f.geometry.coordinates as [number, number][]])),
+    [data],
+  );
 
   const selectedFeature = useMemo(
     () =>
@@ -533,7 +553,7 @@ export default function App() {
       return {
         title: p.name,
         subtitle: `${typeLabel(p.type)} on ${formatDate(p.ts)}`,
-        cards: activityCards(selectedFeature),
+        cards: activityCards(p),
         links: activityLinks(p.sources),
       };
     }
@@ -654,6 +674,26 @@ export default function App() {
           places={placeMap}
           onClearPlace={clearPlace}
           zoneLimits={zoneLimits}
+          theme={theme}
+        />
+      )}
+
+      {view === "activities" && (
+        <ActivitiesView
+          filter={filter}
+          visible={visible}
+          names={searchNames}
+          routes={routeCoords}
+          query={query}
+          onQueryChange={setQuery}
+          sort={sort}
+          onSortChange={setSort}
+          onOpen={openOnMap}
+          onReveal={(list) => filter && changeFilter(revealActivities(filter, list))}
+          sidePanelExpanded={!panels.sideCollapsed}
+          mobile={panels.mobile}
+          onResetFilter={resetFilter}
+          onClearPlace={clearPlace}
           theme={theme}
         />
       )}
