@@ -18,8 +18,6 @@ export interface ActivityRow {
   elevation_loss: number | null;
   avg_hr: number | null;
   max_hr: number | null;
-  /** JSON array text */
-  hr_zone_seconds: string | null;
   has_gps: number;
   has_hr: number;
   has_altitude: number;
@@ -56,12 +54,6 @@ function elevation(v: number | null, hasAltitude: boolean): number | undefined {
   return v;
 }
 
-function hrZones(text: string | null, hasHr: boolean): number[] | undefined {
-  if (!hasHr || text == null) return undefined;
-  const zones = JSON.parse(text) as number[];
-  return Array.isArray(zones) && zones.some((s) => s > 0) ? zones : undefined;
-}
-
 /** The activity's place and same-route group ids; either is absent when unknown. */
 export type Groups = Pick<ActivityRecord, "place" | "route">;
 
@@ -70,6 +62,8 @@ export function toRecord(
   sources: ActivitySource[],
   hasDetail: boolean,
   groups: Groups = {},
+  /** Seconds per heart-rate band against the reference limits (zones.ts); absent when unknown. */
+  hrZones?: number[],
 ): ActivityRecord {
   const hasAlt = row.has_altitude === 1;
   const optional: Partial<ActivityRecord> = {
@@ -81,7 +75,7 @@ export function toRecord(
     elevation_loss: elevation(row.elevation_loss, hasAlt),
     avg_hr: positive(row.avg_hr),
     max_hr: positive(row.max_hr),
-    hr_zones: hrZones(row.hr_zone_seconds, row.has_hr === 1),
+    hr_zones: hrZones,
   };
   const rec: ActivityRecord = {
     id: row.id,

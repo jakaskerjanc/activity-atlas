@@ -100,6 +100,7 @@ function initialTheme(): Theme {
 
 export default function App() {
   const [data, setData] = useState<ActivityFeatureCollection | null>(null);
+  const [zoneLimits, setZoneLimits] = useState<number[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
 
@@ -192,6 +193,7 @@ export default function App() {
         const decoded = joinActivities(routes, activities);
         setData(decoded);
         setPlacesFile(places);
+        setZoneLimits(activities.hr_zone_limits);
         // Over every record, routed or not: the analytics page reads them all, and the
         // map draws the ones with a route (visibleFeatures).
         setFilter(createActivityFilter(activities.activities));
@@ -651,6 +653,7 @@ export default function App() {
           onResetFilter={resetFilter}
           places={placeMap}
           onClearPlace={clearPlace}
+          zoneLimits={zoneLimits}
           theme={theme}
         />
       )}

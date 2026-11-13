@@ -153,6 +153,52 @@ test("writes a detail file and sets detail for an activity with streams", () => 
   );
 });
 
+test("heart-rate zones are recomputed from the stream against the reference limits", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "watch", {
+        start_time: "2026-09-01T06:00:00+00:00",
+        hr_zone_limits: "[100,120,140,160,180,200]",
+        hr_zone_seconds: "[1,1,1,1,1,1,1]",
+        streams_sha256: "sha1",
+      });
+      addStreams(db, "sha1", { time: [0, 10, 20, 30], hr: [90, 130, 190, 190] });
+      // Before the watch: stored zones from factory limits, ignored.
+      addActivity(db, "early", {
+        start_time: "2024-06-01T06:00:00+00:00",
+        hr_zone_limits: "[128,153,179,204,230]",
+        hr_zone_seconds: "[600,0,0,0,0,0]",
+        calculated: '["hr_zone_seconds"]',
+        streams_sha256: "sha2",
+      });
+      addStreams(db, "sha2", { time: [0, 5, 10], hr: [150, 150, 150] });
+      addActivity(db, "nohr", { start_time: "2025-01-01T06:00:00+00:00", has_hr: 0 });
+    },
+    (path) => {
+      const { activities } = readDisplayFiles(path);
+      assert.deepEqual(activities.hr_zone_limits, [100, 120, 140, 160, 180]);
+      const byId = Object.fromEntries(activities.activities.map((a) => [a.id, a]));
+      assert.deepEqual(byId.watch.hr_zones, [10, 0, 10, 0, 0, 10]);
+      assert.deepEqual(byId.early.hr_zones, [0, 0, 0, 10, 0, 0]);
+      assert.ok(!("hr_zones" in byId.nohr));
+    },
+  );
+});
+
+test("no reference limits: no activity has zones, and the file has no limits", () => {
+  withDb(
+    (db) => {
+      addActivity(db, "run", { streams_sha256: "sha1" });
+      addStreams(db, "sha1", { time: [0, 10], hr: [140, 140] });
+    },
+    (path) => {
+      const { activities } = readDisplayFiles(path);
+      assert.ok(!("hr_zone_limits" in activities));
+      assert.ok(!("hr_zones" in activities.activities[0]));
+    },
+  );
+});
+
 test("a route profile for an activity with distance and altitude, none without", () => {
   const time = Array.from({ length: 100 }, (_, i) => i);
   withDb(

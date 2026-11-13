@@ -82,6 +82,15 @@
   --heat-3: #e45a2b;
   --heat-4: #ffb08a;
 
+  /* Heart-rate zones: below zone 1 is neutral grey, zones 1-5 one violet ramp, dark to
+     light so zone 5 has the most contrast. Never the accent orange. */
+  --zone-0: #3d4049;
+  --zone-1: #5a358c;
+  --zone-2: #7a4aba;
+  --zone-3: #9867e1;
+  --zone-4: #b790f7;
+  --zone-5: #d4bcff;
+
   --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.6);
   --vignette-bg: radial-gradient(
     120% 90% at 60% 40%,
@@ -137,6 +146,14 @@
   --heat-2: #ea6840;
   --heat-3: #ce4617;
   --heat-4: #a73204;
+
+  /* Heart-rate zones: the same violet, light to dark on light. */
+  --zone-0: #b9bcc4;
+  --zone-1: #ae8ee6;
+  --zone-2: #9769dc;
+  --zone-3: #7f47c7;
+  --zone-4: #6529a9;
+  --zone-5: #4a177f;
 
   --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.1);
   --vignette-bg: radial-gradient(

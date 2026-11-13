@@ -113,6 +113,14 @@ _Avoid_: steps heatmap
 The Analytics clock of time out in each local hour of the day: each visible activity counts in every hour from its local start through its elapsed time, wrapping past midnight.
 _Avoid_: activity clock, listening clock
 
+**Heart-rate zones** (card):
+The Analytics card of how the visible activities' time with heart rate splits across six bands (below zone 1, then zones 1 to 5): a strip and a row per band with hours and share, then one stacked bar per month from the first month with zone time, in hours or as each month's share. Activities without zones are left out.
+_Avoid_: intensity, training load
+
+**Reference limits**:
+The one set of heart-rate zone limits every activity's zones are measured against: those of the newest activity whose watch reported its zones. The zones are recomputed from each heart-rate stream at build time, so time in a zone compares across the whole history; the watch's own per-activity zones are not shown.
+_Avoid_: zone settings, thresholds
+
 **Ridgeline**:
 The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each day's gain is a narrow peak inside that day, so a ridge never shows climbing on a day without any. Each row is labelled with the month's summed elevation gain.
 _Avoid_: joyplot
