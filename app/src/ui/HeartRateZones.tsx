@@ -1,11 +1,12 @@
 // Heart-rate zones: how the visible activities' time with heart rate splits across the
-// bands (below zone 1, zones 1 to 5). A strip of the whole split, a row per band that
-// is both the legend and the table (name, bpm range, hours, share), then one stacked
-// bar per month of the date range in hours, below zone 1 at the bottom. Colors are one
-// violet ramp, ordered with the zones (--zone-0 … --zone-5 in index.css).
+// bands (below zone 1, zones 1 to 5). A donut of the whole split beside a row per band
+// that is both the legend and the table (name, bpm range, hours, share), then one stacked
+// bar per month from the first month with zone time, in hours or as each month's own
+// 100%, below zone 1 at the bottom. Colors are one violet ramp, ordered with the zones
+// (--zone-0 … --zone-5 in index.css).
 
 import { useState, type CSSProperties, type PointerEvent } from "react";
-import { FS, MONO } from "./theme";
+import { FS, MONO, pillStyle } from "./theme";
 import { useElementWidth } from "./useElementWidth";
 import { formatMonth } from "../format";
 import { niceTicks } from "../profile";
@@ -13,6 +14,9 @@ import { formatHours, formatShare, ZONE_BANDS, type ZoneBand, type ZoneSummary }
 
 const zoneColor = (i: number) => `var(--zone-${i})`;
 const BANDS = Array.from({ length: ZONE_BANDS }, (_, i) => i);
+
+/** The monthly bars' scale: hours out, or each month as its own 100%. */
+export type BarScale = "hours" | "share";
 
 export function HeartRateZones({
   summary,
@@ -23,49 +27,136 @@ export function HeartRateZones({
   bands: ZoneBand[];
   compact?: boolean;
 }) {
-  const { seconds, total, counted, missing } = summary;
+  const { seconds, total } = summary;
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [scale, setScale] = useState<BarScale>("hours");
   return (
     <>
-      <div
-        role="img"
-        aria-label={`Time in heart-rate zones: ${bands
-          .map((b, i) => `${b.label} ${formatShare(seconds[i], total)}`)
-          .join(", ")}`}
-        style={strip}
-      >
-        {BANDS.map((i) =>
-          seconds[i] > 0 ? (
-            <div key={i} style={{ flex: `${seconds[i]} 1 0`, minWidth: 2, background: zoneColor(i) }} />
-          ) : null,
-        )}
-      </div>
-      <ul style={rows}>
-        {bands.map((b, i) => (
-          <li key={i} style={row}>
-            <span style={{ ...swatch, background: zoneColor(i) }} aria-hidden />
-            <span style={rowText}>
-              <span style={rowLabel}>{b.label}</span>
-              <span style={rowRange}>{b.range}</span>
-              <span style={rowValue}>
-                {formatHours(seconds[i])} · {formatShare(seconds[i], total)}
+      <div style={overview}>
+        <ZoneDonut seconds={seconds} total={total} bands={bands} hovered={hovered} onHover={setHovered} />
+        <ul style={{ ...rows, gridTemplateColumns: `repeat(${compact ? 2 : 3}, minmax(0, 1fr))` }}>
+          {bands.map((b, i) => (
+            <li
+              key={i}
+              style={{ ...row, background: hovered === i ? "var(--control-hover)" : undefined }}
+              onPointerEnter={() => setHovered(i)}
+              onPointerLeave={() => setHovered(null)}
+            >
+              <span style={{ ...swatch, background: zoneColor(i) }} aria-hidden />
+              <span style={rowText}>
+                <span style={rowLabel}>{b.label}</span>
+                <span style={rowRange}>{b.range}</span>
+                <span style={rowValue}>
+                  {formatHours(seconds[i])} · {formatShare(seconds[i], total)}
+                </span>
               </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
       {summary.months.length > 1 && (
         <>
-          <h3 style={subheading}>By month</h3>
-          <MonthBars summary={summary} bands={bands} compact={compact} />
+          <div style={barsHeader}>
+            <h3 style={subheading}>By month</h3>
+            <div role="group" aria-label="Bar scale" style={{ display: "flex", gap: 6 }}>
+              {(
+                [
+                  ["hours", "Hours"],
+                  ["share", "Share"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={scale === value ? undefined : "ctl"}
+                  aria-pressed={scale === value}
+                  onClick={() => setScale(value)}
+                  style={pillStyle(scale === value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <MonthBars summary={summary} bands={bands} scale={scale} compact={compact} />
         </>
       )}
-      {missing > 0 && (
-        <p style={footnote}>
-          {counted} of {counted + missing} activities have heart-rate zones; the other {missing}{" "}
-          {missing === 1 ? "isn't" : "aren't"} counted.
-        </p>
-      )}
     </>
+  );
+}
+
+const DONUT = 168;
+/** Ring centre-line radius and thickness. */
+const RING_R = 68;
+const RING_W = 24;
+
+/**
+ * The whole split as a ring, zone 1 onwards clockwise from the top. Hovering a segment
+ * (or its row) puts that band's time and share in the middle; otherwise it holds the total.
+ */
+function ZoneDonut({
+  seconds,
+  total,
+  bands,
+  hovered,
+  onHover,
+}: {
+  seconds: number[];
+  total: number;
+  bands: ZoneBand[];
+  hovered: number | null;
+  onHover: (band: number | null) => void;
+}) {
+  const circ = 2 * Math.PI * RING_R;
+  const shown = BANDS.filter((b) => seconds[b] > 0);
+  // A surface gap between segments, except when one band is the whole ring.
+  const gap = shown.length > 1 ? GAP : 0;
+  let start = 0;
+  const segs = shown.map((b) => {
+    const len = (seconds[b] / total) * circ;
+    const seg = { band: b, start, len };
+    start += len;
+    return seg;
+  });
+  const focus = hovered != null && seconds[hovered] > 0 ? hovered : null;
+  return (
+    <svg
+      width={DONUT}
+      height={DONUT}
+      viewBox={`0 0 ${DONUT} ${DONUT}`}
+      role="img"
+      aria-label={`Time in heart-rate zones: ${bands.map((b, i) => `${b.label} ${formatShare(seconds[i], total)}`).join(", ")}`}
+      style={{ display: "block", flex: "none" }}
+      onPointerLeave={() => onHover(null)}
+    >
+      <g transform={`rotate(-90 ${DONUT / 2} ${DONUT / 2})`}>
+        {segs.map(({ band, start, len }) => {
+          const drawn = Math.max(0.5, len - gap);
+          return (
+            <circle
+              key={band}
+              cx={DONUT / 2}
+              cy={DONUT / 2}
+              r={RING_R}
+              fill="none"
+              stroke={zoneColor(band)}
+              strokeWidth={focus === band ? RING_W + 6 : RING_W}
+              strokeDasharray={`${drawn} ${circ - drawn}`}
+              strokeDashoffset={-start}
+              opacity={focus == null || focus === band ? 1 : 0.45}
+              onPointerEnter={() => onHover(band)}
+              style={{ transition: "opacity 120ms, stroke-width 120ms" }}
+            />
+          );
+        })}
+      </g>
+      <text x={DONUT / 2} y={DONUT / 2 - 2} textAnchor="middle" style={donutValue}>
+        {focus == null ? formatHours(total) : formatShare(seconds[focus], total)}
+      </text>
+      <text x={DONUT / 2} y={DONUT / 2 + 15} textAnchor="middle" style={donutNote}>
+        {focus == null ? "with heart rate" : bands[focus].label}
+      </text>
+    </svg>
   );
 }
 
@@ -74,18 +165,32 @@ const X_AXIS_H = 20;
 /** Gap between stacked segments, and between bars at most. */
 const GAP = 2;
 
-function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: ZoneBand[]; compact: boolean }) {
+function MonthBars({
+  summary,
+  bands,
+  scale,
+  compact,
+}: {
+  summary: ZoneSummary;
+  bands: ZoneBand[];
+  scale: BarScale;
+  compact: boolean;
+}) {
   const [boxRef, width] = useElementWidth<HTMLDivElement>(720);
   const [hover, setHover] = useState<number | null>(null);
   const { months } = summary;
   const plotW = Math.max(60, width - Y_AXIS_W);
   const plotH = compact ? 150 : 190;
+  const share = scale === "share";
+  // Each month's height in the chart's unit: hours, or 100 (%) for any month with time.
+  const value = (m: { total: number }) => (share ? (m.total > 0 ? 100 : 0) : m.total / 3600);
   const maxH = Math.max(...months.map((m) => m.total)) / 3600;
-  const ticks = maxH > 0 ? niceTicks(0, maxH, 3) : [0];
-  const top = Math.max(maxH, ticks[ticks.length - 1]) || 1;
+  const ticks = share ? [0, 50, 100] : maxH > 0 ? niceTicks(0, maxH, 3) : [0];
+  const top = share ? 100 : Math.max(maxH, ticks[ticks.length - 1]) || 1;
+  const unit = share ? "%" : " h";
   const slot = plotW / months.length;
   const barW = Math.max(1, slot - Math.min(slot * 0.3, 6));
-  const yOf = (h: number) => plotH - (h / top) * plotH;
+  const yOf = (v: number) => plotH - (v / top) * plotH;
   // A label under January (the year) and under the first month; every month's short name
   // as well when the range is a year or less.
   const short = months.length <= 12;
@@ -106,7 +211,7 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
         width={width}
         height={plotH + X_AXIS_H}
         role="img"
-        aria-label={`Hours in each heart-rate zone per month, ${formatMonth(months[0].month)} to ${formatMonth(months[months.length - 1].month)}`}
+        aria-label={`${share ? "Share of time" : "Hours"} in each heart-rate zone per month, ${formatMonth(months[0].month)} to ${formatMonth(months[months.length - 1].month)}`}
         onPointerMove={track}
         onPointerDown={track}
         style={{ display: "block", overflow: "visible" }}
@@ -116,7 +221,8 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
             <g key={t}>
               <line x1={0} x2={plotW} y1={yOf(t)} y2={yOf(t)} style={gridLine} />
               <text x={-8} y={yOf(t) + 3.5} textAnchor="end" style={axisText}>
-                {t} h
+                {t}
+                {unit}
               </text>
             </g>
           ))}
@@ -124,7 +230,8 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
             const x = slot * i + (slot - barW) / 2;
             let y = plotH;
             const segs = BANDS.flatMap((b) => {
-              const h = (m.seconds[b] / 3600 / top) * plotH;
+              const v = share ? (100 * m.seconds[b]) / m.total : m.seconds[b] / 3600;
+              const h = (v / top) * plotH;
               if (h <= 0) return [];
               y -= h;
               // The gap comes off the segment's top, so the stack keeps its true height.
@@ -155,9 +262,9 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
           {hover != null && (
             <rect
               x={slot * hover + (slot - barW) / 2 - 2}
-              y={yOf(months[hover].total / 3600) - 2}
+              y={yOf(value(months[hover])) - 2}
               width={barW + 4}
-              height={plotH - yOf(months[hover].total / 3600) + 2}
+              height={plotH - yOf(value(months[hover])) + 2}
               rx={3}
               style={outline}
             />
@@ -172,7 +279,7 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
           style={{
             ...tooltip,
             left: Math.min(Math.max(tipLeft, 90), width - 90),
-            top: yOf(hovered.total / 3600),
+            top: yOf(value(hovered)),
           }}
         >
           <div style={tipValue}>{formatMonth(hovered.month)}</div>
@@ -206,24 +313,47 @@ function MonthBars({ summary, bands, compact }: { summary: ZoneSummary; bands: Z
   );
 }
 
-const strip: CSSProperties = {
+const overview: CSSProperties = {
   display: "flex",
-  gap: GAP,
-  height: 16,
-  borderRadius: 4,
-  overflow: "hidden",
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "16px 28px",
+};
+
+const donutValue: CSSProperties = {
+  fontFamily: MONO,
+  fontSize: 18,
+  fontWeight: 600,
+  fill: "var(--text-strong)",
+};
+const donutNote: CSSProperties = { fontSize: FS.xs, fill: "var(--text-muted)" };
+
+const barsHeader: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  margin: "22px 0 10px",
 };
 
 const rows: CSSProperties = {
+  flex: "1 1 300px",
   listStyle: "none",
-  margin: "14px 0 0",
+  margin: 0,
   padding: 0,
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))",
-  gap: "12px 16px",
+  gap: "4px 8px",
 };
 
-const row: CSSProperties = { display: "flex", gap: 8, alignItems: "flex-start" };
+const row: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  alignItems: "flex-start",
+  padding: "5px 8px",
+  borderRadius: 8,
+  transition: "background 120ms",
+};
 
 const swatch: CSSProperties = {
   display: "inline-block",
@@ -240,7 +370,7 @@ const rowRange: CSSProperties = { fontSize: FS.xs, color: "var(--text-muted)" };
 const rowValue: CSSProperties = { fontFamily: MONO, fontSize: FS.sm, color: "var(--text-strong)" };
 
 const subheading: CSSProperties = {
-  margin: "22px 0 10px",
+  margin: 0,
   fontSize: FS.xs,
   fontWeight: 600,
   letterSpacing: ".06em",
@@ -284,9 +414,3 @@ const tipNote: CSSProperties = { fontSize: FS.xs + 0.5, color: "var(--text-muted
 const tipTable: CSSProperties = { borderCollapse: "collapse", marginTop: 4 };
 const tipCell: CSSProperties = { fontSize: FS.xs + 0.5, color: "var(--text)", padding: "1px 0 1px 6px" };
 const tipNum: CSSProperties = { fontFamily: MONO, textAlign: "right", paddingLeft: 10 };
-
-const footnote: CSSProperties = {
-  margin: "14px 0 0",
-  fontSize: FS.xs + 0.5,
-  color: "var(--text-muted)",
-};

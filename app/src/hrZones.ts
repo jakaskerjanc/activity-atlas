@@ -42,7 +42,10 @@ export interface ZoneSummary {
   /** Seconds in each band over every counted activity. */
   seconds: number[];
   total: number;
-  /** One entry per month from fromMonth to toMonth, empty months included. */
+  /**
+   * One entry per month from the first month with zone time to toMonth: months before
+   * that are left off, empty months after it are kept (a gap is a real gap).
+   */
   months: ZoneMonth[];
   /** Activities with zones. */
   counted: number;
@@ -82,6 +85,8 @@ export function zoneSummary(
     });
     if (month) month.activities += 1;
   }
+  const first = months.findIndex((m) => m.total > 0);
+  out.months = first < 0 ? [] : months.slice(first);
   return out;
 }
 

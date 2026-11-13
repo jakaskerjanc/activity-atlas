@@ -19,28 +19,30 @@ describe("zoneBands", () => {
 });
 
 describe("zoneSummary", () => {
-  const sep = Date.UTC(2024, 8, 3) / 1000;
-
-  test("adds the bands over the activities and per month of the range, empty months included", () => {
+  test("adds the bands over the activities and per month, from the first month with zone time", () => {
     const s = zoneSummary(
       [
         record({ id: "a", hr_zones: [60, 120, 0, 0, 0, 0] }),
         record({ id: "b", hr_zones: [0, 0, 300, 60, 0, 0] }),
-        record({ id: "c", ts: sep, hr_zones: [0, 0, 0, 0, 30, 30] }),
+        record({ id: "c", ts: Date.UTC(2024, 9, 3) / 1000, hr_zones: [0, 0, 0, 0, 30, 30] }),
+        // Before any zone time: its month is left off, not drawn empty.
+        record({ id: "early", ts: Date.UTC(2024, 5, 3) / 1000 }),
       ],
-      AUG_2024 - 1,
-      AUG_2024 + 1,
+      AUG_2024 - 3,
+      AUG_2024 + 3,
     );
     expect(s.seconds).toEqual([60, 120, 300, 60, 30, 30]);
     expect(s.total).toBe(600);
     expect(s.counted).toBe(3);
-    expect(s.missing).toBe(0);
+    expect(s.missing).toBe(1);
+    // Aug onwards; the empty Sep between stays, and so do the empty months after Oct.
     expect(s.months.map((m) => [m.month - AUG_2024, m.total, m.activities])).toEqual([
-      [-1, 0, 0],
       [0, 540, 2],
-      [1, 60, 1],
+      [1, 0, 0],
+      [2, 60, 1],
+      [3, 0, 0],
     ]);
-    expect(s.months[1].seconds).toEqual([60, 120, 300, 60, 0, 0]);
+    expect(s.months[0].seconds).toEqual([60, 120, 300, 60, 0, 0]);
   });
 
   test("leaves out and counts activities without zones, never as 0", () => {
@@ -58,6 +60,10 @@ describe("zoneSummary", () => {
     expect(s.missing).toBe(3);
     expect(s.total).toBe(600);
     expect(s.months[0].activities).toBe(1);
+  });
+
+  test("no months without any zone time", () => {
+    expect(zoneSummary([record()], AUG_2024 - 2, AUG_2024).months).toEqual([]);
   });
 });
 

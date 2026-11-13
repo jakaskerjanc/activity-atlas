@@ -114,7 +114,7 @@ The Analytics clock of time out in each local hour of the day: each visible acti
 _Avoid_: activity clock, listening clock
 
 **Heart-rate zones** (card):
-The Analytics card of how the visible activities' time with heart rate splits across six bands (below zone 1, then zones 1 to 5): a strip and a row per band with hours and share, then one stacked bar per month of the date range. Activities without zones are left out and counted.
+The Analytics card of how the visible activities' time with heart rate splits across six bands (below zone 1, then zones 1 to 5): a donut and a row per band with hours and share, then one stacked bar per month from the first month with zone time, in hours or as each month's share. Activities without zones are left out.
 _Avoid_: intensity, training load
 
 **Reference limits**:

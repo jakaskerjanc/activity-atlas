@@ -46,7 +46,7 @@ describe("AnalyticsView", () => {
     expect(html).toContain("Select a month to show only it.");
   });
 
-  test("shows the heart-rate zones with their bpm ranges, and who wasn't counted", () => {
+  test("shows the heart-rate zones with their bpm ranges, leaving out activities without zones", () => {
     const zoned = createActivityFilter([
       record({ id: "a", hr_zones: [600, 1200, 1800, 0, 0, 0] }),
       record({ id: "b" }),
@@ -56,7 +56,9 @@ describe("AnalyticsView", () => {
     expect(html).toContain("Zone 1 starts at 100 bpm, zone 5 at 179 bpm");
     expect(html).toContain("119–139 bpm");
     expect(html).toContain("30 min · 50%");
-    expect(html).toContain("1 of 2 activities have heart-rate zones; the other 1 isn&#x27;t counted.");
+    expect(html).toContain(">1.0 h<");
+    expect(html).toContain(">with heart rate<");
+    expect(html).not.toContain("have heart-rate zones");
   });
 
   test("says so when no visible activity has heart-rate zones", () => {

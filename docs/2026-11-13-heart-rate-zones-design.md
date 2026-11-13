@@ -79,7 +79,7 @@ fitness change. The card does not try to correct it.
 - A distribution of time across the six bands for the visible activities,
   with hours and percentages.
 - A month-by-month view of the same bands.
-- Says how many activities were counted when some have no zones.
+- Activities without zones are left out, never counted as 0.
 
 ## Non-goals
 
@@ -118,16 +118,25 @@ fitness change. The card does not try to correct it.
 - Section `zones`, "Heart-rate zones", after Active hours, full width.
 - Subtitle names the limits: "Time in each zone, from heart rate. Zone 1
   starts at 100 bpm, zone 5 at 179 bpm (your watch's current zones)."
-- **Distribution:** one horizontal strip split into the six bands (2 px gaps),
-  and under it a row per band: swatch, name, bpm range, hours, percentage.
-  The rows double as the legend and the table view.
-- **By month:** one bar per month of the date range (UTC months, like the date
-  range), height in hours, the six bands stacked with below zone 1 at the
-  bottom. Hovering a month shows its total and each band's hours and share.
-  Axis: a few hour gridlines, year labels under January (and the first month).
-- **Counted:** "503 of 531 activities have heart-rate zones; the other 28
-  aren't counted." Only shown when some lack zones. None have zones: "No
-  visible activity has heart-rate zones."
+- **Distribution:** a donut of the six bands (2 px gaps), the total hours with
+  heart rate in the middle, and beside it a row per band: swatch, name, bpm
+  range, hours, percentage. The rows double as the legend and the table view.
+  Hovering a segment or a row highlights both and puts that band's share in
+  the middle.
+- **By month:** one bar per month (UTC months, like the date range), the six
+  bands stacked with below zone 1 at the bottom. A toggle switches the scale
+  between **Hours** (height is time with heart rate) and **Share** (every
+  month is its own 100%). The bars start at the first month with zone time;
+  empty months after it stay, as gaps. Hovering a month shows its total and
+  each band's hours and share. Axis: a few gridlines, year labels under
+  January (and the first month, unless January is too close).
+- **No count note.** Activities without zones are left out silently. None
+  have zones: "No visible activity has heart-rate zones."
+
+*(Changed after the owner's review on 2026-11-13: the leading empty months
+went, the counted note went, the Hours / Share toggle and the donut were
+added. The donut replaced a thin 100% strip, which would have shown the same
+split twice.)*
 
 ### Colors (my call)
 
