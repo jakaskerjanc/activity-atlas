@@ -8,7 +8,6 @@ function row(over: Partial<ActivityRow> = {}): UsableRow {
     start_time: "2026-08-01T06:30:00+00:00", start_local: "2026-08-01T08:30:00",
     distance: 14210.4, moving_time: 16020, elapsed_time: 19811,
     elevation_gain: 1204, elevation_loss: 1198, avg_hr: 131, max_hr: 172,
-    hr_zone_seconds: "[2072, 5217, 1773, 0, 0, 0]",
     has_gps: 1, has_hr: 1, has_altitude: 1, has_cadence: 1, has_power: 1,
     polyline: "", streams_sha256: null,
     ...over,
@@ -18,7 +17,7 @@ function row(over: Partial<ActivityRow> = {}): UsableRow {
 const NUMBERS = ["distance", "moving_time", "elapsed_time", "elevation_gain", "elevation_loss", "avg_hr", "max_hr"] as const;
 
 test("keeps every present value under its record key", () => {
-  const r = toRecord(row(), [{ provider: "strava", id: "1" }], false);
+  const r = toRecord(row(), [{ provider: "strava", id: "1" }], false, {}, [2072, 5217, 1773, 0, 0, 0]);
   assert.deepEqual(r, {
     id: "abc", name: "Hike", type: "Hike",
     ts: 1785565800, start_date: "2026-08-01T06:30:00+00:00", start_local: "2026-08-01T08:30:00",
@@ -49,11 +48,9 @@ test("drops provider zeros", () => {
   assert.equal(flat.elevation_loss, 0);
 });
 
-test("hr zones", () => {
-  assert.deepEqual(toRecord(row({ hr_zone_seconds: "[2072,5217,1773,0,0,0]" }), [], false).hr_zones, [2072, 5217, 1773, 0, 0, 0]);
-  assert.ok(!("hr_zones" in toRecord(row({ has_hr: 0 }), [], false)));
-  assert.ok(!("hr_zones" in toRecord(row({ hr_zone_seconds: "[0,0,0,0,0,0]" }), [], false)));
-  assert.ok(!("hr_zones" in toRecord(row({ hr_zone_seconds: null }), [], false)));
+test("hr zones are the recomputed ones passed in, absent when unknown", () => {
+  assert.deepEqual(toRecord(row(), [], false, {}, [1, 2, 3, 4, 5, 6]).hr_zones, [1, 2, 3, 4, 5, 6]);
+  assert.ok(!("hr_zones" in toRecord(row(), [], false)));
 });
 
 test("channels follow the flags", () => {
@@ -75,7 +72,7 @@ test("detail flag", () => {
 test("never writes null", () => {
   const allNull = row({
     start_local: null, distance: null, moving_time: null, elapsed_time: null,
-    elevation_gain: null, elevation_loss: null, avg_hr: null, max_hr: null, hr_zone_seconds: null,
+    elevation_gain: null, elevation_loss: null, avg_hr: null, max_hr: null,
   });
   assert.ok(!JSON.stringify(toRecord(allNull, [], false)).includes("null"));
 });

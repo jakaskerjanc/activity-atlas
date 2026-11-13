@@ -4,7 +4,8 @@
 // docs/2026-11-04-display-files-design.md. No network.
 //
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
-//   activities.json     v1  every visible activity's numbers; unknown values left out
+//   activities.json     v1  every visible activity's numbers; unknown values left out;
+//                           heart-rate zones recomputed against one set of limits (zones.ts)
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
 //   profiles.json       v1  every activity's elevation every 100 m, for the analytics profiles chart
 //   steps.json          v1  Garmin's daily step totals, for the analytics steps calendar
@@ -24,6 +25,7 @@ import { simplifyLngLat } from "./simplify.ts";
 import { isUsable, toRecord, type ActivityRow } from "./numbers.ts";
 import { decodeChannel, type StreamChannel } from "./codec.ts";
 import { buildDetail, type Streams } from "./detail.ts";
+import { referenceZoneLimits, zoneSeconds } from "./zones.ts";
 import { PROFILE_STEP_M, PROFILES_VERSION, routeProfile } from "./routeProfile.ts";
 import type {
   ActivitiesFile,
@@ -114,8 +116,8 @@ function liveSources(db: Database.Database): Map<string, ActivitySource[]> {
 /** Stream channels a detail file is built from. */
 const DETAIL_CHANNELS = ["time", "distance", "lat", "lon", "altitude", "hr", "speed", "cadence"] as const;
 
-/** The detail file for one streams row, or null (no row, or nothing worth charting). */
-function readDetail(stmt: Database.Statement, sha: string | null): DetailFile | null {
+/** One streams row's decoded channels, or null (no row, or no time channel). */
+function readStreams(stmt: Database.Statement, sha: string | null): Streams | null {
   if (!sha) return null;
   const row = stmt.get(sha) as Record<StreamChannel, Buffer | null> | undefined;
   if (!row?.time) return null;
@@ -124,7 +126,7 @@ function readDetail(stmt: Database.Statement, sha: string | null): DetailFile | 
     const blob = row[c];
     if (blob) streams[c] = decodeChannel(c, blob);
   }
-  return buildDetail(streams as Streams);
+  return streams as Streams;
 }
 
 const DAY_MS = 86_400_000;
@@ -236,7 +238,7 @@ export function readDisplayFiles(
     const rows = db
       .prepare(
         "SELECT id,name,type,start_time,start_local,distance,moving_time,elapsed_time," +
-          "elevation_gain,elevation_loss,avg_hr,max_hr,hr_zone_seconds," +
+          "elevation_gain,elevation_loss,avg_hr,max_hr," +
           "has_gps,has_hr,has_altitude,has_cadence,has_power,polyline,streams_sha256 " +
           "FROM activities WHERE visible = 1 ORDER BY start_time, id",
       )
@@ -246,6 +248,9 @@ export function readDisplayFiles(
     const files = emptyFiles(stats);
     const { file: places, placeOf, routeOf } = readPlaces(db);
     files.places = places;
+    // One set of zone limits for every activity, so zone time compares across history.
+    const zoneLimits = referenceZoneLimits(db);
+    if (zoneLimits) files.activities.hr_zone_limits = zoneLimits;
     for (const row of rows) {
       if (!isUsable(row)) {
         warn(`Skipping activity ${row.id}: missing type or unparseable start_time.`);
@@ -253,14 +258,17 @@ export function readDisplayFiles(
       }
       const route = wireRoute(row.polyline, stats);
       if (route) files.routes.routes[row.id] = route;
-      const detail = readDetail(streams, row.streams_sha256);
+      const decoded = readStreams(streams, row.streams_sha256);
+      const detail = decoded && buildDetail(decoded);
       if (detail) {
         files.details.set(row.id, detail);
         const profile = routeProfile(detail);
         if (profile) files.profiles.profiles[row.id] = profile;
       }
       const groups = { place: placeOf.get(row.id), route: routeOf.get(row.id) };
-      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null, groups));
+      const hrZones =
+        zoneLimits && decoded?.hr && row.has_hr === 1 ? zoneSeconds(decoded.time, decoded.hr, zoneLimits) : undefined;
+      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null, groups, hrZones));
     }
     files.steps = readSteps(db);
     return files;

@@ -10,6 +10,7 @@ import { Ridgeline } from "./Ridgeline";
 import { ElevationProfiles } from "./ElevationProfiles";
 import { CityComparisons } from "./CityComparisons";
 import { ActiveHoursClocks } from "./ActiveHoursClock";
+import { HeartRateZones } from "./HeartRateZones";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
@@ -23,6 +24,7 @@ import {
 } from "../activityFilter";
 import { activityCalendar, consistency, consistencyCards } from "../analytics";
 import { activeHoursByWeekPart } from "../activeHours";
+import { zoneBands, zoneSummary } from "../hrZones";
 import { stepsCalendar } from "../steps";
 import { climbingRidgeline } from "../ridgeline";
 import { profileChart } from "../elevationProfiles";
@@ -58,6 +60,8 @@ interface Props {
   onResetFilter?: () => void;
   /** The places by id, so an empty page can name the picked place. */
   places?: ReadonlyMap<string, Place>;
+  /** The reference limits (activities.json's hr_zone_limits); absent when the data has none. */
+  zoneLimits?: number[];
   /** Clear just the picked place (offered first when nothing matches at a place). */
   onClearPlace?: () => void;
   theme?: Theme;
@@ -70,6 +74,7 @@ export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
   { id: "distance", label: "How far is that?" },
   { id: "calendar", label: "Activity calendar" },
   { id: "hours", label: "Active hours" },
+  { id: "zones", label: "Heart-rate zones" },
   { id: "climbing", label: "Climbing by month" },
   { id: "profiles", label: "Elevation profiles" },
 ];
@@ -94,6 +99,7 @@ export function AnalyticsView({
   onResetFilter,
   places = NO_PLACES,
   onClearPlace,
+  zoneLimits,
   theme = "dark",
 }: Props) {
   const fetched = useRouteProfiles();
@@ -126,6 +132,12 @@ export function AnalyticsView({
   );
 
   const hours = useMemo(() => activeHoursByWeekPart(visible), [visible]);
+
+  const zones = useMemo(
+    () => (filter ? zoneSummary(visible, filter.fromMonth, filter.toMonth) : null),
+    [filter, visible],
+  );
+  const bands = useMemo(() => (zoneLimits ? zoneBands(zoneLimits) : null), [zoneLimits]);
 
   const ridgeline = useMemo(
     () => (filter ? climbingRidgeline(visible, filter.fromMonth, filter.toMonth) : null),
@@ -204,6 +216,21 @@ export function AnalyticsView({
                     subtitle="Time out in each hour of the day, local time. Each clock is scaled to its own busiest hour."
                   />
                   <ActiveHoursClocks split={hours} />
+                </section>
+                <section id="zones" style={card} className="span-2">
+                  <SectionHeading
+                    title="Heart-rate zones"
+                    subtitle={
+                      zoneLimits
+                        ? `Time in each zone, from heart rate. Zone 1 starts at ${zoneLimits[0]} bpm, zone 5 at ${zoneLimits[4]} bpm: your watch's current zones, applied to every activity.`
+                        : "Time in each zone, from heart rate"
+                    }
+                  />
+                  {zones && bands && zones.counted > 0 ? (
+                    <HeartRateZones summary={zones} bands={bands} compact={mobile} />
+                  ) : (
+                    <p style={statusText}>No visible activity has heart-rate zones.</p>
+                  )}
                 </section>
                 <section id="climbing" style={card} className="span-2">
                   <SectionHeading

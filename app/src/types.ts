@@ -42,7 +42,11 @@ export interface ActivityRecord {
   avg_hr?: number;
   /** bpm */
   max_hr?: number;
-  /** seconds below zone 1, then in zones 1–5 */
+  /**
+   * Seconds below zone 1, then in zones 1–5 (six numbers), recomputed from the heart-rate
+   * stream against the file's hr_zone_limits; time above zone 5's top counts in zone 5,
+   * pauses (sample gaps over 60 s) in none. Absent without a heart-rate stream or limits.
+   */
   hr_zones?: number[];
   channels: Channel[];
   /** Live provider sources only (deleted ones are dropped), Strava first. */
@@ -65,6 +69,12 @@ export interface RoutesFile {
 export interface ActivitiesFile {
   v: 1;
   activities: ActivityRecord[];
+  /**
+   * The reference limits: lower bounds in bpm of zones 1 to 5, taken from the newest
+   * activity whose watch reported its zones. Every record's hr_zones is measured
+   * against them. Absent when no activity has reported zones (then no record has any).
+   */
+  hr_zone_limits?: number[];
 }
 
 /**
