@@ -37,6 +37,19 @@ describe("AnalyticsView", () => {
     expect(html).toContain("1 activity from Aug 2024 to Aug 2024");
   });
 
+  test("shows year against year: the newest year's total, read against the year before", () => {
+    const years = createActivityFilter([
+      record({ id: "a", ts: Date.UTC(2023, 0, 9) / 1000, start_date: "2023-01-09T00:00:00Z", distance: 5000 }),
+      record({ id: "b", ts: Date.UTC(2023, 7, 1) / 1000, start_date: "2023-08-01T00:00:00Z", distance: 9000 }),
+      record({ id: "c", ts: Date.UTC(2024, 2, 1) / 1000, start_date: "2024-03-01T00:00:00Z", distance: 7000 }),
+    ]);
+    const html = render({ filter: years, visible: visibleActivities(years) });
+    expect(html).toContain("Year against year");
+    // The range ends in March 2024, long past, so 2024 runs to the end of that month.
+    expect(html).toContain("7 km</strong> in 2024 by Mar 31, 2 km ahead of 2023");
+    expect(html).toContain('aria-label="Running distance through the year: 2023 14 km, 2024 7 km"');
+  });
+
   test("shows the climbing ridgeline from the activities alone", () => {
     const html = render();
     expect(html).toContain("Climbing by month");

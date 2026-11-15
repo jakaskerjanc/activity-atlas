@@ -113,6 +113,10 @@ A distance comparison's route from Ljubljana to its city, drawn dashed on the ma
 The Analytics chart that draws every visible activity's route profile as a see-through line against distance in km, in its activity type's color; repeated climbs darken where the lines stack up.
 _Avoid_: heatmap
 
+**Year against year**:
+The Analytics chart of the visible activities' running total (distance, climbing or moving time) through the calendar year, one line per year from January to December (UTC days). The newest year is the accent line and stops at today; a line in the date range's first year starts where the range does. The sentence above it reads the newest year against the year before on the same date, and is left out when the two lines don't start on the same day.
+_Avoid_: cumulative chart, progress chart
+
 **Steps calendar**:
 The second grid in the Activity calendar card: the same year's days on the same grid, shaded by Garmin's daily step total (under 10k ringed in the accent, then 10–12k, 12–16k, 16–22k, 22k+). It follows the date range only; the type selection doesn't apply to steps. Daily step totals are the only wellness data the site publishes.
 _Avoid_: steps heatmap
