@@ -11,6 +11,7 @@ import { ElevationProfiles } from "./ElevationProfiles";
 import { CityComparisons } from "./CityComparisons";
 import { ActiveHoursClocks } from "./ActiveHoursClock";
 import { HeartRateZones } from "./HeartRateZones";
+import { YearAgainstYear } from "./YearAgainstYear";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
@@ -72,6 +73,7 @@ export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
   { id: "totals", label: "Totals" },
   { id: "consistency", label: "Consistency" },
   { id: "distance", label: "How far is that?" },
+  { id: "years", label: "Year against year" },
   { id: "calendar", label: "Activity calendar" },
   { id: "hours", label: "Active hours" },
   { id: "zones", label: "Heart-rate zones" },
@@ -110,8 +112,8 @@ export function AnalyticsView({
   // on a phone the filters overlay the page instead.
   const left = sidePanelExpanded && !mobile ? SIDE_PANEL_CLEARANCE + GUTTER : GUTTER;
 
-  const { totals, cards, calendar } = useMemo(() => {
-    if (!filter) return { totals: [], cards: [], calendar: [] };
+  const { totals, cards, calendar, span } = useMemo(() => {
+    if (!filter) return { totals: [], cards: [], calendar: [], span: null };
     // Stop the range at now, so a range ending this month doesn't count days still to come.
     const [from, to] = rangeTs(filter);
     const end = Math.min(to, Date.now() / 1000);
@@ -120,6 +122,7 @@ export function AnalyticsView({
       totals: totalCards(visible),
       cards: consistencyCards(consistency(visible, from, end)),
       calendar: activityCalendar(visible, from, end),
+      span: { from, end },
     };
   }, [filter, visible]);
 
@@ -202,6 +205,10 @@ export function AnalyticsView({
                     comparisons={comparisons}
                     onShowOnMap={onShowCity}
                   />
+                </section>
+                <section id="years" style={card} className="span-2">
+                  <SectionHeading title="Year against year" subtitle="Your running total through each calendar year" />
+                  {span && <YearAgainstYear activities={visible} from={span.from} end={span.end} compact={mobile} />}
                 </section>
                 <section id="calendar" style={card} className="span-2">
                   <SectionHeading

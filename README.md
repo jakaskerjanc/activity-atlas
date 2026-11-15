@@ -17,9 +17,10 @@ on built-in demo data until you import your own.
   follows them along the route.
 - **Places:** pick a place to see every activity that went there, and the
   other times on the same route.
-- **Analytics:** totals, consistency, an activity calendar with your daily
-  steps, the hours of the day you're out, climbing by month, overlaid
-  elevation profiles, and your distance as a trip to a city.
+- **Analytics:** totals, consistency, this year against earlier ones, an
+  activity calendar with your daily steps, the hours of the day you're out,
+  climbing by month, overlaid elevation profiles, and your distance as a trip
+  to a city.
 - **Data:** Strava and Garmin bulk exports, merged where both recorded the same
   outing, kept current by a daily fetch from Garmin's Personal API.
 - **Hosting:** a static site on GitHub Pages. Your data lives in a private R2
