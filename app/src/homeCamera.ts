@@ -1,11 +1,10 @@
-// The opening map camera, computed without Mapbox. The route preview (ui/RoutePreview)
-// draws the routes where the map will draw them before mapbox-gl has loaded, and MapView
-// starts on the same camera, so the map's first tiles are the ones it will keep. Pure
-// module (no React / Mapbox); tested in homeCamera.test.ts.
+// The opening map camera, computed without Mapbox. MapView starts on it, so the map's
+// first tiles are the ones it will keep; projector() also draws the Activities page's
+// route sketches. Pure module (no React / Mapbox); tested in homeCamera.test.ts.
 //
 // The math is Mapbox's flat Web Mercator: a 512 px world at zoom 0, doubling per zoom
 // level. At the zooms the opening view uses, the globe projection has fully given way to
-// it, so the preview and the map agree to within a pixel or two.
+// it, so this camera and the map's own agree to within a pixel or two.
 
 import { densestClusterRouteBounds, type Bounds } from "./cluster";
 import { fitOffset, fitPadding, type FitPadding, type Insets } from "./ui/layout";

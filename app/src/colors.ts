@@ -60,13 +60,28 @@ const HEAT_LEGEND_STOPS: Record<Theme, string[]> = {
  * steps deep enough to hold contrast on the light map and white cards.
  */
 const TYPE_COLORS: Record<Theme, Record<string, string>> = {
-  dark: { Run: "#2ec4b6", Ride: "#5b8cff", Hike: "#f2c230", Walk: "#f7a1e0" },
-  light: { Run: "#14b3a1", Ride: "#3d6fe0", Hike: "#c99400", Walk: "#b14aa0" },
+  // Workout is the catch-all type row (activityFilter.ts), so it wears the grey of "the
+  // rest"; Weight training keeps the violet it had when it was hashed.
+  dark: {
+    Run: "#2ec4b6", Ride: "#5b8cff", Hike: "#f2c230", Walk: "#f7a1e0",
+    WeightTraining: "#9085e9", Workout: "#a0a4ae",
+  },
+  light: {
+    Run: "#14b3a1", Ride: "#3d6fe0", Hike: "#c99400", Walk: "#b14aa0",
+    WeightTraining: "#6250d6", Workout: "#7d828c",
+  },
 };
-/** Types outside the main four, keyed by a hash of the name so they never shift. */
+/**
+ * Any other type, keyed by a hash of the name so it never shifts. The palette's steps
+ * that a fixed type already wears are left out, so no other type can share them.
+ */
 const EXTRA_TYPE_COLORS: Record<Theme, string[]> = {
-  dark: ["#9085e9", "#a8d84a", "#e98a6b", "#a0a4ae", "#6fd3f7"],
-  light: ["#6250d6", "#6e9a14", "#c4643f", "#7d828c", "#1f8fb8"],
+  dark: ["#9085e9", "#a8d84a", "#e98a6b", "#a0a4ae", "#6fd3f7"].filter(
+    (c) => !Object.values(TYPE_COLORS.dark).includes(c),
+  ),
+  light: ["#6250d6", "#6e9a14", "#c4643f", "#7d828c", "#1f8fb8"].filter(
+    (c) => !Object.values(TYPE_COLORS.light).includes(c),
+  ),
 };
 
 // --- Domain ---------------------------------------------------------------
@@ -79,6 +94,8 @@ export interface ColorDomain {
   speedMax: number;
   /** distinct activity types, sorted (matches availableTypes order) */
   types: string[];
+  /** The type row of each type (ActivityFilter.rowOf): a rare type wears its row's color. */
+  rowOf?: Readonly<Record<string, string>>;
 }
 
 /** km/h from a feature's distance (m) and moving time (s); undefined when either is unknown. */
@@ -170,8 +187,17 @@ function whenKnown(test: unknown[], color: ExpressionSpecification): ExpressionS
   return ["case", test, color, NEUTRAL] as unknown as ExpressionSpecification;
 }
 
-/** The fixed color of an activity type, the same in every view. */
-export function typeColor(type: string, theme: Theme = "dark"): string {
+/**
+ * The fixed color of an activity type, the same in every view. With `rowOf` (the
+ * filter's type rows), a type listed under another type's row takes that row's color,
+ * so the type list's swatches stay a true legend.
+ */
+export function typeColor(
+  type: string,
+  theme: Theme = "dark",
+  rowOf?: Readonly<Record<string, string>>,
+): string {
+  type = rowOf?.[type] ?? type;
   const fixed = TYPE_COLORS[theme][type];
   if (fixed) return fixed;
   let h = 0;
@@ -180,10 +206,14 @@ export function typeColor(type: string, theme: Theme = "dark"): string {
   return extra[h % extra.length];
 }
 
-function typeMatch(types: string[], theme: Theme): string | ExpressionSpecification {
+function typeMatch(
+  types: string[],
+  theme: Theme,
+  rowOf?: Readonly<Record<string, string>>,
+): string | ExpressionSpecification {
   if (types.length === 0) return ACCENT;
   const expr: unknown[] = ["match", ["get", "type"]];
-  for (const t of types) expr.push(t, typeColor(t, theme));
+  for (const t of types) expr.push(t, typeColor(t, theme, rowOf));
   expr.push(ACCENT); // fallback for any unexpected type
   return expr as unknown as ExpressionSpecification;
 }
@@ -213,7 +243,7 @@ export function lineColorExpression(
         ramp(speedExpr(), domain.speedMin, domain.speedMax, SPEED_STOPS[theme]),
       );
     case "type":
-      return typeMatch(domain.types, theme);
+      return typeMatch(domain.types, theme, domain.rowOf);
   }
 }
 
@@ -256,7 +286,7 @@ export function legendFor(mode: ColorMode, domain: ColorDomain, theme: Theme = "
     case "type":
       return {
         kind: "categorical",
-        entries: domain.types.map((t) => ({ label: t, color: typeColor(t, theme) })),
+        entries: domain.types.map((t) => ({ label: t, color: typeColor(t, theme, domain.rowOf) })),
       };
   }
 }

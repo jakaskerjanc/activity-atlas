@@ -148,7 +148,7 @@ interface Props {
   cityRoute: CityRouteLine | null;
   /** Bumped each time a city route is asked for, so asking again refits the camera. */
   cityRouteEpoch: number;
-  /** Called as the routes start to fade in, so the route preview can fade out. */
+  /** Called as the routes start to fade in (basemap drawn), so the loading spinner can go. */
   onRoutesShown?: () => void;
 }
 
@@ -577,7 +577,9 @@ export function MapView(props: Props) {
       // The type's color only where routes wear it; in the other modes the route's color
       // varies along it or with the data, so the dot keeps to the accent.
       dot.style.background =
-        propsRef.current.colorMode === "type" ? typeColor(p.type, propsRef.current.theme) : ACCENT;
+        propsRef.current.colorMode === "type"
+          ? typeColor(p.type, propsRef.current.theme, propsRef.current.colorDomain.rowOf)
+          : ACCENT;
       const label = document.createElement("span");
       label.textContent = p.name;
       label.style.overflow = "hidden";
@@ -608,6 +610,17 @@ export function MapView(props: Props) {
     if (!mapOwnsCursorRef.current) return;
     mapOwnsCursorRef.current = false;
     propsRef.current.onCursor(null);
+  }
+
+  /** Start the reveal once the map is idle: the basemap tiles for the current view
+   * have drawn (and the route source has parsed), so the routes never show up on an
+   * empty canvas. The App's loading spinner stays up until then (onRoutesShown). */
+  function revealWhenReady() {
+    const map = mapRef.current;
+    if (!map) return;
+    map.once("idle", () => {
+      if (mapRef.current === map) startFade();
+    });
   }
 
   /** Animate the reveal from opacity 0 to full. */
@@ -800,8 +813,8 @@ export function MapView(props: Props) {
   useEffect(() => {
     if (!HAS_TOKEN || !containerRef.current || mapRef.current) return;
     // Open on the home frame (App mounts the map once the routes are in, unless they
-    // failed), so the first tiles fetched are the ones the view keeps, and they land
-    // under the route preview. frameHome still runs on load, with Mapbox's own numbers.
+    // failed), so the first tiles fetched are the ones the view keeps. frameHome still
+    // runs on load, with Mapbox's own numbers.
     const el = containerRef.current;
     const p = propsRef.current;
     const home = p.data
@@ -834,7 +847,7 @@ export function MapView(props: Props) {
         applyRoutes();
         applyActiveRoutes();
         frameHome();
-        startFade();
+        revealWhenReady();
       }
       // A city route or an activity (picked on the Activities page) asked for before the
       // map was ready.
@@ -931,7 +944,7 @@ export function MapView(props: Props) {
     applyActiveRoutes();
     framedRef.current = false;
     frameHome();
-    startFade();
+    revealWhenReady();
   }, [data]);
 
   // Swap whole routes for grade runs (and back) as the color mode or the runs change.

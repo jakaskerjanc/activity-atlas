@@ -1,6 +1,6 @@
-// Filter controls: activity-type toggles (most activities first, with live counts; rare
-// types left out), the places list (PlacesSection) and date-range sliders. Rendered as a
-// section inside the SidePanel.
+// Filter controls: activity-type toggles, one per type row (most activities first, with
+// live counts; rare types share the Workout row), date-range sliders and the places list
+// (PlacesSection). Rendered as a section inside the SidePanel.
 // In the map's Type color mode each toggle's swatch takes its type's route color, so the
 // list doubles as the map's legend.
 
@@ -12,11 +12,12 @@ import { formatMonth, formatMonthShort, typeLabel } from "../format";
 import { typeColor, type ColorMode } from "../colors";
 import type { Place, Theme } from "../types";
 import {
+  isRowOn,
   setFromMonth,
   setToMonth,
-  toggleType,
+  toggleRow,
   typeCounts,
-  listedTypes,
+  typeRows,
   type ActivityFilter,
 } from "../activityFilter";
 
@@ -33,33 +34,38 @@ interface Props {
 export function FilterSection({ filter, onChange, places, colorMode, theme = "dark" }: Props) {
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
-  const types = useMemo(() => listedTypes(filter), [filter]);
+  const rows = useMemo(() => typeRows(filter), [filter]);
   const byType = colorMode === "type";
   return (
     <>
       <h3 style={{ ...sectionLabel, marginBottom: 8 }}>Activity types</h3>
       <div role="group" aria-label="Activity types" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {types.map((t) => {
-          const on = filter.types.has(t);
-          const color = byType ? typeColor(t, theme) : "var(--accent)";
+        {rows.map(({ type, members }) => {
+          const on = isRowOn(filter, type);
+          const color = byType ? typeColor(type, theme) : "var(--accent)";
+          const count = members.reduce((n, t) => n + (counts[t] ?? 0), 0);
+          // A row holding rarer types names them, so they can be found.
+          const others = members.filter((t) => t !== type);
+          const title = others.length
+            ? `${typeLabel(type)}, with ${others.map((t) => typeLabel(t).toLowerCase()).join(", ")}`
+            : undefined;
           return (
             <button
-              key={t}
+              key={type}
               type="button"
               className="ctl"
               aria-pressed={on}
-              onClick={() => onChange(toggleType(filter, t))}
+              title={title}
+              onClick={() => onChange(toggleRow(filter, type))}
               style={rowStyle(on)}
             >
               <span style={dotStyle(on, color)}>{on && <Check />}</span>
-              <span style={{ flex: 1, textAlign: "left" }}>{typeLabel(t)}</span>
-              <span style={countStyle(on)}>{counts[t] ?? 0}</span>
+              <span style={{ flex: 1, textAlign: "left" }}>{typeLabel(type)}</span>
+              <span style={countStyle(on)}>{count}</span>
             </button>
           );
         })}
       </div>
-
-      <PlacesSection filter={filter} places={places} onChange={onChange} />
 
       <hr style={divider} />
 
@@ -77,6 +83,9 @@ export function FilterSection({ filter, onChange, places, colorMode, theme = "da
         onFromChange={(m) => onChange(setFromMonth(filter, m))}
         onToChange={(m) => onChange(setToMonth(filter, m))}
       />
+
+      {/* Last: its list grows and shrinks with the filter, so nothing below it jumps. */}
+      <PlacesSection filter={filter} places={places} onChange={onChange} />
     </>
   );
 }
@@ -105,6 +114,11 @@ function DualRange({
   const span = max - min;
   const pctFrom = span > 0 ? ((from - min) / span) * 100 : 0;
   const pctTo = span > 0 ? ((to - min) / span) * 100 : 100;
+  // The later input sits on top, so where the thumbs overlap it takes the drag. Put the
+  // one with room to move there instead: with both at the end, the end thumb can go
+  // neither right (max) nor left (it can't pass the start), so the start thumb must
+  // be the one grabbed. Overlapping at the start, the end thumb must be.
+  const fromOnTop = from - min > max - to;
 
   return (
     <>
@@ -120,6 +134,7 @@ function DualRange({
           max={max}
           step={1}
           value={from}
+          style={{ zIndex: fromOnTop ? 2 : 1 }}
           onChange={(e) => onFromChange(+e.target.value)}
           aria-label="Earliest month"
           aria-valuetext={formatMonth(from)}
@@ -131,6 +146,7 @@ function DualRange({
           max={max}
           step={1}
           value={to}
+          style={{ zIndex: fromOnTop ? 1 : 2 }}
           onChange={(e) => onToChange(+e.target.value)}
           aria-label="Latest month"
           aria-valuetext={formatMonth(to)}

@@ -3,8 +3,9 @@ import { featureFilter } from "mapbox-gl/dist/style-spec/index.es.js";
 import {
   createActivityFilter,
   filterExpression,
-  listedTypes,
-  MIN_LISTED_TYPE_ACTIVITIES,
+  CATCH_ALL_TYPE,
+  isRowOn,
+  MIN_OWN_ROW_ACTIVITIES,
   onlyMonth,
   placeCounts,
   placeTotals,
@@ -15,8 +16,10 @@ import {
   setToMonth,
   toggleMonth,
   togglePlace,
+  toggleRow,
   toggleType,
   typeCounts,
+  typeRows,
   typesByCount,
   visibleActivities,
   visibleFeatures,
@@ -145,22 +148,85 @@ describe("types by count", () => {
   });
 });
 
-describe("listed types", () => {
-  // Enough runs to be listed, one ride short of it.
-  const runs = Array.from({ length: MIN_LISTED_TYPE_ACTIVITIES }, (_, i) =>
-    record({ id: `s:r${i}`, type: "Run", ts: at("2024-01-15T08:00:00Z") }),
-  );
-  const rides = Array.from({ length: MIN_LISTED_TYPE_ACTIVITIES - 1 }, (_, i) =>
-    record({ id: `s:b${i}`, type: "Ride", ts: at("2024-03-01T00:00:00Z") }),
-  );
+describe("type rows", () => {
+  // `n` activities of `type`, all in January 2024 unless `iso` says otherwise.
+  const many = (type: string, n: number, iso = "2024-01-15T08:00:00Z") =>
+    Array.from({ length: n }, (_, i) => record({ id: `s:${type}${i}`, type, ts: at(iso) }));
+  const data = [
+    ...many("Run", 3),
+    ...many("WeightTraining", MIN_OWN_ROW_ACTIVITIES),
+    ...many("Workout", 4),
+    ...many("Swim", MIN_OWN_ROW_ACTIVITIES - 1, "2024-03-01T00:00:00Z"),
+    ...many("Rowing", 1),
+  ];
 
-  test("leave out types with too few activities", () => {
-    expect(listedTypes(createActivityFilter([...runs, ...rides]))).toEqual(["Run"]);
+  test("give a type its own row from MIN_OWN_ROW_ACTIVITIES activities", () => {
+    expect(createActivityFilter(data).rowOf).toMatchObject({ WeightTraining: "WeightTraining" });
   });
 
-  test("count over every date, so a type doesn't vanish as the range narrows", () => {
-    const f = setFromMonth(createActivityFilter([...runs, ...rides]), month(2024, 3));
-    expect(listedTypes(f)).toEqual(["Run"]);
+  test("put rarer types under the catch-all Workout row", () => {
+    const { rowOf } = createActivityFilter(data);
+    expect(rowOf).toMatchObject({ Swim: CATCH_ALL_TYPE, Rowing: CATCH_ALL_TYPE, Workout: CATCH_ALL_TYPE });
+  });
+
+  test("keep the default types on their own rows however rare", () => {
+    expect(createActivityFilter(data).rowOf.Run).toBe("Run");
+  });
+
+  test("move a type out to its own row once it reaches the threshold", () => {
+    const more = [...data, ...many("Swim", 1, "2025-06-01T00:00:00Z")];
+    const f = createActivityFilter(more);
+    expect(f.rowOf.Swim).toBe("Swim");
+    expect(typeRows(f).map((r) => r.type)).toEqual(["Swim", "WeightTraining", "Workout", "Run"]);
+  });
+
+  test("list rows most activities first, counting every type in a row", () => {
+    expect(typeRows(createActivityFilter(data))).toEqual([
+      { type: "Workout", members: ["Workout", "Swim", "Rowing"] },
+      { type: "WeightTraining", members: ["WeightTraining"] },
+      { type: "Run", members: ["Run"] },
+    ]);
+  });
+
+  test("hold a Workout row even when the data has no Workout activity", () => {
+    const f = createActivityFilter([...many("Run", 3), ...many("Swim", 2)]);
+    expect(typeRows(f)).toEqual([
+      { type: "Run", members: ["Run"] },
+      { type: "Workout", members: ["Swim"] },
+    ]);
+  });
+
+  test("count over every date, so rows don't change as the range narrows", () => {
+    const f = setFromMonth(createActivityFilter(data), month(2024, 3));
+    expect(typeRows(f)).toEqual(typeRows(createActivityFilter(data)));
+  });
+
+  test("switch every type in a row on and off together", () => {
+    const on = toggleRow(createActivityFilter(data), "Workout");
+    expect(isRowOn(on, "Workout")).toBe(true);
+    expect([...on.types].sort()).toEqual(["Rowing", "Run", "Swim", "Workout"]);
+    const off = toggleRow(on, "Workout");
+    expect(isRowOn(off, "Workout")).toBe(false);
+    expect([...off.types]).toEqual(["Run"]);
+  });
+
+  test("switch a partly-on row fully on", () => {
+    const partly = toggleType(createActivityFilter(data), "Swim");
+    expect(isRowOn(partly, "Workout")).toBe(false);
+    expect(isRowOn(toggleRow(partly, "Workout"), "Workout")).toBe(true);
+  });
+
+  test("ignore a row the data doesn't have", () => {
+    const f = createActivityFilter(data);
+    expect(toggleRow(f, "Swim")).toBe(f);
+    expect(toggleRow(f, "Padel")).toBe(f);
+  });
+
+  test("reveal a rare activity by switching its whole row on", () => {
+    const swim = data.find((a) => a.type === "Swim")!;
+    const f = revealActivity(createActivityFilter(data), swim);
+    expect(isVisible(f, swim)).toBe(true);
+    expect(isRowOn(f, "Workout")).toBe(true);
   });
 });
 

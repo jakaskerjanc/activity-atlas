@@ -46,12 +46,14 @@ interface Props {
   /** Every activity type in the filter's order (most activities first, over all data), so
    * the legend keeps one order whatever the filter shows. */
   order?: readonly string[];
+  /** The filter's type rows: lines wear their row's color, and the legend counts rows. */
+  rowOf?: Readonly<Record<string, string>>;
   theme?: Theme;
   /** A phone: a shorter plot. */
   compact?: boolean;
 }
 
-export function ElevationProfiles({ chart, order = [], theme = "dark", compact = false }: Props) {
+export function ElevationProfiles({ chart, order = [], rowOf, theme = "dark", compact = false }: Props) {
   const canHover = useMediaQuery("(hover: hover)");
   const [boxRef, width] = useElementWidth<HTMLDivElement>(FALLBACK_WIDTH);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -88,25 +90,28 @@ export function ElevationProfiles({ chart, order = [], theme = "dark", compact =
     ctx.lineJoin = "round";
     ctx.globalAlpha = lineAlpha(lines.length);
     for (const line of lines) {
-      ctx.strokeStyle = typeColor(line.type, theme);
+      ctx.strokeStyle = typeColor(line.type, theme, rowOf);
       ctx.beginPath();
       points(line.profile, chart, { w: plotW, h: PLOT_H, lo: yMin, hi: yMax }).forEach(([x, y], i) =>
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y),
       );
       ctx.stroke();
     }
-  }, [chart, lines, theme, plotW, PLOT_H, yMin, yMax]);
+  }, [chart, lines, theme, rowOf, plotW, PLOT_H, yMin, yMax]);
 
   const legend = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const l of lines) counts.set(l.type, (counts.get(l.type) ?? 0) + 1);
+    for (const l of lines) {
+      const row = rowOf?.[l.type] ?? l.type;
+      counts.set(row, (counts.get(row) ?? 0) + 1);
+    }
     // The filter's type order, not this set's counts, so the legend never reshuffles.
     const rank = (t: string) => {
       const i = order.indexOf(t);
       return i < 0 ? order.length : i;
     };
     return [...counts].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  }, [lines, order]);
+  }, [lines, order, rowOf]);
 
   const track = (e: PointerEvent<HTMLCanvasElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -188,7 +193,7 @@ export function ElevationProfiles({ chart, order = [], theme = "dark", compact =
                   .join(" ")}
                 style={{
                   fill: "none",
-                  stroke: typeColor(hovered.type, theme),
+                  stroke: typeColor(hovered.type, theme, rowOf),
                   strokeWidth: 2.5,
                   strokeLinejoin: "round",
                 }}
