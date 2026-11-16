@@ -25,12 +25,16 @@ interface Props {
 }
 
 export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
-  if (cities.status !== "ready") {
+  if (cities.status === "loading") {
     return (
-      <p style={statusText}>
-        {cities.status === "loading" ? "Loading cities…" : "Couldn't load the city distances."}
+      <p role="status" style={{ ...statusText, display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="spinner" aria-hidden="true" />
+        Loading cities…
       </p>
     );
+  }
+  if (cities.status !== "ready") {
+    return <p style={statusText}>Couldn't load the city distances.</p>;
   }
   if (comparisons.length === 0) {
     return <p style={statusText}>No visible ride, run, walk or hike has a distance.</p>;

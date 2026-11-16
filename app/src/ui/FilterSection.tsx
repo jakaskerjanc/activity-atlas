@@ -1,5 +1,5 @@
 // Filter controls: activity-type toggles (most activities first, with live counts; rare
-// types left out), the places list (PlacesSection) and date-range sliders. Rendered as a
+// types left out), date-range sliders and the places list (PlacesSection). Rendered as a
 // section inside the SidePanel.
 // In the map's Type color mode each toggle's swatch takes its type's route color, so the
 // list doubles as the map's legend.
@@ -59,8 +59,6 @@ export function FilterSection({ filter, onChange, places, colorMode, theme = "da
         })}
       </div>
 
-      <PlacesSection filter={filter} places={places} onChange={onChange} />
-
       <hr style={divider} />
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
@@ -77,6 +75,9 @@ export function FilterSection({ filter, onChange, places, colorMode, theme = "da
         onFromChange={(m) => onChange(setFromMonth(filter, m))}
         onToChange={(m) => onChange(setToMonth(filter, m))}
       />
+
+      {/* Last: its list grows and shrinks with the filter, so nothing below it jumps. */}
+      <PlacesSection filter={filter} places={places} onChange={onChange} />
     </>
   );
 }
@@ -105,6 +106,11 @@ function DualRange({
   const span = max - min;
   const pctFrom = span > 0 ? ((from - min) / span) * 100 : 0;
   const pctTo = span > 0 ? ((to - min) / span) * 100 : 100;
+  // The later input sits on top, so where the thumbs overlap it takes the drag. Put the
+  // one with room to move there instead: with both at the end, the end thumb can go
+  // neither right (max) nor left (it can't pass the start), so the start thumb must
+  // be the one grabbed. Overlapping at the start, the end thumb must be.
+  const fromOnTop = from - min > max - to;
 
   return (
     <>
@@ -120,6 +126,7 @@ function DualRange({
           max={max}
           step={1}
           value={from}
+          style={{ zIndex: fromOnTop ? 2 : 1 }}
           onChange={(e) => onFromChange(+e.target.value)}
           aria-label="Earliest month"
           aria-valuetext={formatMonth(from)}
@@ -131,6 +138,7 @@ function DualRange({
           max={max}
           step={1}
           value={to}
+          style={{ zIndex: fromOnTop ? 1 : 2 }}
           onChange={(e) => onToChange(+e.target.value)}
           aria-label="Latest month"
           aria-valuetext={formatMonth(to)}

@@ -13,7 +13,6 @@ import { AnalyticsView, ANALYTICS_SECTIONS } from "./ui/AnalyticsView";
 import { ActivitiesView } from "./ui/ActivitiesView";
 import { DEFAULT_SORT, type SearchNames, type Sort } from "./activitySearch";
 import { useView } from "./ui/useView";
-import { RoutePreview } from "./ui/RoutePreview";
 import {
   createActivityFilter,
   activeIsolation,
@@ -52,6 +51,7 @@ import { gradeRoutes } from "./grade";
 import { chromeInsets } from "./ui/layout";
 import { FS, primaryButton, secondaryButton } from "./ui/theme";
 import { MapErrorBoundary } from "./ui/MapErrorBoundary";
+import { HAS_TOKEN } from "./mapStyle";
 import { ArrowRightIcon } from "./ui/icons";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
@@ -61,10 +61,8 @@ import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle 
 
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
-// user heads for the map (hovering the Map tab starts it early). On the map it waits
-// for the route preview to paint, so the routes arrive before the ~520 kB that draws
-// them properly instead of sharing a slow connection with it; on a fast one the wait
-// is a frame or two.
+// user heads for the map (hovering the Map tab starts it early). On the map it loads
+// alongside routes.json, since the page shows only a spinner until both are in.
 let mapViewImport: Promise<typeof import("./MapView")> | null = null;
 const loadMapView = () => (mapViewImport ??= import("./MapView"));
 const MapView = lazy(() => loadMapView().then((m) => ({ default: m.MapView })));
@@ -124,9 +122,12 @@ export default function App() {
   useEffect(() => {
     if (view === "map") setMapMounted(true);
   }, [view]);
-  // The route preview is up (or has nothing to show), so the map can load.
-  const [previewSettled, setPreviewSettled] = useState(false);
-  // The map has drawn the routes, so the route preview can go.
+  // Fetch the mapbox-gl chunk alongside routes.json rather than after it.
+  useEffect(() => {
+    if (mapMounted) prefetchMapView();
+  }, [mapMounted]);
+  // The map has drawn its basemap and started revealing the routes; until then the map
+  // page shows only the loading spinner.
   const [mapDrawn, setMapDrawn] = useState(false);
 
   // index.css keys the panel material off the page: see-through glass on the map only.
@@ -737,10 +738,11 @@ export default function App() {
           />
         ))}
 
-      {!filter && !error && (
+      {/* On the map page, up until both the routes and the basemap are in. */}
+      {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed)) && (
         <div role="status" style={{ ...chip, top: "50%", transform: "translate(-50%, -50%)" }}>
-          <span className="pulse-dot" style={pulseDot} />
-          Loading activities…
+          <span className="spinner" aria-hidden="true" />
+          {filter ? "Loading map…" : "Loading activities…"}
         </div>
       )}
 
@@ -768,8 +770,8 @@ export default function App() {
       {/* inert while covered, so keyboard focus can't land on the hidden map. */}
       {mapMounted && (
         <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          {/* After the preview, or at once if the routes failed to load. */}
-          {(previewSettled || error != null) && (
+          {/* Once the routes are in (it opens framed on them), or at once if they failed. */}
+          {(data != null || error != null) && (
             <MapErrorBoundary onError={() => setMapFailed(true)}>
               <Suspense fallback={null}>
                 <MapView
@@ -802,15 +804,6 @@ export default function App() {
                 />
               </Suspense>
             </MapErrorBoundary>
-          )}
-          {/* Over the map's canvas: the routes until the map draws its own. */}
-          {data && (
-            <RoutePreview
-              features={visibleOnMap}
-              insets={insets}
-              done={mapDrawn}
-              onSettled={() => setPreviewSettled(true)}
-            />
           )}
         </div>
       )}
@@ -864,13 +857,6 @@ const chip: CSSProperties = {
   boxShadow: "var(--panel-shadow)",
   backdropFilter: "var(--panel-blur)",
   WebkitBackdropFilter: "var(--panel-blur)",
-};
-
-const pulseDot: CSSProperties = {
-  width: 8,
-  height: 8,
-  borderRadius: "50%",
-  background: "var(--accent)",
 };
 
 // The muted line in place of charts (loading, failed, or no samples).
