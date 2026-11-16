@@ -6,7 +6,8 @@ import pytest
 
 from ingest import db
 from ingest.archive import LocalArchive
-from ingest.garmin_import import GarminImporter, _iter_summaries
+from ingest.garmin_import import GarminImporter, _iter_summaries, record_to_source
+from ingest.records import SourceRecord
 from ingest.strava_import import StravaImporter
 from ingest.tests.factories import fixture_bytes, outdoor
 from ingest.tests.test_strava_import import HEADER, _activity_for, _row, _zip
@@ -58,6 +59,14 @@ def _garmin_zip(tmp_path, run_distance_cm=1025050, name="garmin_export.zip", mad
 def test_iter_summaries_flattens_nested():
     got = [s["activityId"] for s in _iter_summaries([[{"activityId": 1}], {"activityId": 2}])]
     assert got == [1, 2]
+
+
+def test_zero_moving_duration_falls_back_to_duration():
+    # An indoor ride with only a heart-rate strap: the summary says movingDuration 0, not null.
+    summary = {"activityId": 900004, "name": "Indoor Cycling", "activityType": "indoor_cycling",
+               "startTimeGmt": 1793982360000, "distance": 0, "duration": 3600000, "movingDuration": 0}
+    rec = SourceRecord("garmin", "900004", NOW, summary, None, None, {"kind": "garmin_export"})
+    assert record_to_source(rec, None).moving_s == 3600
 
 
 def test_matches_fit_and_scales_units(tmp_path):

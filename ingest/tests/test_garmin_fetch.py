@@ -144,6 +144,13 @@ def test_record_to_source_moving_falls_back_to_duration_and_file_fills_gaps():
     assert s.moving_s == 2400 and s.reported["avg_hr"] == 95 and s.hr_zones is not None
 
 
+def test_record_to_source_zero_moving_duration_falls_back_to_duration():
+    # An indoor ride with only a heart-rate strap: Garmin sends movingDuration 0, not null.
+    item = {"activityId": 2, "startTimeGMT": "2026-11-06 16:26:00", "duration": 3600.8,
+            "movingDuration": 0.0, "distance": 0.0}
+    assert gf.record_to_source(_record(item), None).moving_s == 3600.8
+
+
 NOW_OUT = "2026-10-27T10:00:00+00:00"      # both fixture activities are older than the re-check window
 NOW_IN = "2026-09-20T10:00:00+00:00"       # and both are inside it here
 

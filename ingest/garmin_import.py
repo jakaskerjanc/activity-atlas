@@ -70,7 +70,9 @@ def record_to_source(rec: SourceRecord, parsed: ParsedFile | None) -> SourceActi
         type=canonical_type(s.get("activityType") or "other"),
         start_time=datetime.fromtimestamp(int(s["startTimeGmt"]) / 1000, tz=timezone.utc),
         elapsed_s=value("elapsed_s", elapsed),
-        moving_s=value("moving_s", moving if moving is not None else elapsed),
+        # A stationary activity with no speed source (indoor ride, HR strap only) comes with
+        # movingDuration 0 or none at all: either way it was moving the whole time, as on Strava.
+        moving_s=value("moving_s", moving or elapsed),
         distance_m=value("distance_m", _scaled(s, "distance", _CM)),
         utc_offset_s=parsed.utc_offset_s if parsed else None,
         reported=reported,
