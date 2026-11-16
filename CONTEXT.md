@@ -21,8 +21,12 @@ The user's current choice of which activities are shown: a type selection, a dat
 _Avoid_: activity window, view, selection
 
 **Type selection**:
-The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state. On load it holds Run, Hike, Walk and Ride (those the data has, or every type when it has none of them).
+The set of activity types currently switched on. Empty means no activities are shown; there is no separate "all" state. On load it holds Run, Hike, Walk and Ride (those the data has, or every type when it has none of them). It holds types, never type rows: switching a row switches every type in it.
 _Avoid_: enabled types, type filter
+
+**Type row**:
+One toggle in the type selection list. A type with at least 10 activities (over all dates), one of Run, Hike, Walk and Ride, or Workout gets its own row; every rarer type is listed under the Workout row, which also counts them. Worked out from the data on every load, so a type moves out to its own row once it reaches 10.
+_Avoid_: category, group, other
 
 **Date range**:
 An inclusive span of whole calendar months (UTC) that an activity's start must fall within. Clicking a month in the ridgeline narrows it to that month (isolating the month); clicking the month again restores the range it had before.
@@ -41,7 +45,7 @@ The activities that pass the activity filter.
 _Avoid_: filtered features, shown set
 
 **Type color**:
-The one fixed color an activity type has everywhere it is colored: the map's Type color mode, the swatches in the type selection list (which double as the map's legend in that mode), and the analytics charts. It never depends on which other types exist or are switched on, and no type uses the accent orange (that means the app and the selected activity).
+The one fixed color an activity type has everywhere it is colored: the map's Type color mode, the swatches in the type selection list (which double as the map's legend in that mode), and the analytics charts. A type listed under the Workout row wears Workout's grey, so the list stays a true legend, and gets its own color once it has its own row. It never depends on which types are switched on, and no type uses the accent orange (that means the app and the selected activity).
 
 **Type count**:
 How many activities of a type fall inside the date range and the selected place, regardless of whether that type is switched on.

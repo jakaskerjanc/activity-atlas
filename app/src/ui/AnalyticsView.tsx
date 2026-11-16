@@ -19,7 +19,7 @@ import { card, FS, primaryButton, secondaryButton } from "./theme";
 import { SIDE_PANEL_CLEARANCE } from "./layout";
 import {
   rangeTs,
-  typesByCount,
+  typeRows,
   type ActivityFilter,
   type MonthIsolation,
 } from "../activityFilter";
@@ -147,8 +147,8 @@ export function AnalyticsView({
     [filter, visible],
   );
 
-  // The legend's fixed type order: the filter's own (most activities first, over all data).
-  const typeOrder = useMemo(() => (filter ? typesByCount(filter) : []), [filter?.activities]);
+  // The legend's fixed order: the filter's type rows (most activities first, over all data).
+  const typeOrder = useMemo(() => (filter ? typeRows(filter).map((r) => r.type) : []), [filter?.activities]);
 
   const chart = useMemo(() => {
     if (profiles.status !== "ready") return null;
@@ -255,6 +255,7 @@ export function AnalyticsView({
                       onPickMonth={onPickMonth}
                       compact={mobile}
                       theme={theme}
+                      rowOf={filter?.rowOf}
                     />
                   )}
                 </section>
@@ -270,7 +271,13 @@ export function AnalyticsView({
                         : "Couldn't load elevation profiles."}
                     </p>
                   ) : chart && filter ? (
-                    <ElevationProfiles chart={chart} order={typeOrder} theme={theme} compact={mobile} />
+                    <ElevationProfiles
+                      chart={chart}
+                      order={typeOrder}
+                      rowOf={filter.rowOf}
+                      theme={theme}
+                      compact={mobile}
+                    />
                   ) : (
                     <p style={statusText}>No visible activity has an elevation profile.</p>
                   )}

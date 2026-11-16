@@ -164,6 +164,34 @@ describe("lineColorExpression", () => {
   });
 });
 
+describe("type colors by row", () => {
+  const rowOf = { Workout: "Workout", Swim: "Workout", Run: "Run" };
+
+  test("give a type listed under another row that row's color", () => {
+    expect(typeColor("Swim", "dark", rowOf)).toBe(typeColor("Workout"));
+    expect(typeColor("Swim", "light", rowOf)).toBe(typeColor("Workout", "light"));
+  });
+
+  test("leave a type on its own row its own color", () => {
+    expect(typeColor("Run", "dark", rowOf)).toBe(typeColor("Run"));
+  });
+
+  test("draw a rare type in its row's color on the map", () => {
+    const expr = lineColorExpression("type", domain({ types: ["Run", "Swim"], rowOf })) as unknown[];
+    expect(expr[expr.indexOf("Swim") + 1]).toBe(typeColor("Workout"));
+  });
+
+  test("never give another type Workout's or Weight training's color", () => {
+    for (const theme of ["dark", "light"] as const) {
+      const fixed = [typeColor("Workout", theme), typeColor("WeightTraining", theme)];
+      expect(fixed[0]).not.toBe(fixed[1]);
+      for (const t of ["Swim", "Rowing", "StairStepper", "Padel", "IceSkate", "Badminton", "Tennis"]) {
+        expect(fixed).not.toContain(typeColor(t, theme));
+      }
+    }
+  });
+});
+
 describe("typeColor", () => {
   test("is distinct across the main types", () => {
     const colors = ["Run", "Ride", "Hike", "Walk"].map((t) => typeColor(t));
