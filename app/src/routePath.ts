@@ -1,7 +1,6 @@
-// A route as an SVG path: the one way the site draws a route outside Mapbox. The map's
-// stand-in picture (ui/RoutePreview.tsx) draws every route with it through the map's
-// opening camera, and the Activities page's preview (trackSketch.ts) one route fitted to
-// its box. Pure module.
+// A route as an SVG path: the one way the site draws a route outside Mapbox. The
+// Activities page's preview (trackSketch.ts) draws one route with it, fitted to its box.
+// Pure module.
 
 /** Screen position of a [lng, lat] point, in px. */
 export type Projector = (lng: number, lat: number) => [number, number];
