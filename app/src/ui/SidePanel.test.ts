@@ -102,7 +102,7 @@ describe("SidePanel type list", () => {
     const filter = createActivityFilter([record({ id: "a", place: "p1" }), record({ id: "b", place: "p1" })]);
     const places: Place[] = [{ id: "p1", name: "Slavnik", ele: 1028, kind: "peak" }];
     const html = render({ filter, places });
-    expect(html).toMatch(/Activity types.*Places.*Slavnik.*Date range/);
+    expect(html).toMatch(/Activity types.*Date range.*Places.*Slavnik/);
     expect(render({ filter, places: [] })).not.toContain("Search places");
   });
 
