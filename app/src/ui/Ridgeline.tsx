@@ -53,6 +53,8 @@ interface Props {
   /** A phone: narrower label columns, so the ridges keep most of the width. */
   compact?: boolean;
   theme?: Theme;
+  /** The filter's type rows: tooltip dots wear the row's color. */
+  rowOf?: Readonly<Record<string, string>>;
 }
 
 interface DayHover {
@@ -63,7 +65,14 @@ interface DayHover {
   y: number;
 }
 
-export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth, compact = false, theme = "dark" }: Props) {
+export function Ridgeline({
+  ridgeline,
+  isolatedMonth,
+  onPickMonth,
+  compact = false,
+  theme = "dark",
+  rowOf,
+}: Props) {
   const LABEL_W = compact ? 58 : 76;
   const GAIN_W = compact ? 58 : 60;
   const { ridges, maxM } = ridgeline;
@@ -249,6 +258,7 @@ export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth, compact = fal
           hover={dayHover}
           ridge={ridges.find((r) => r.month === dayHover.month)}
           theme={theme}
+          rowOf={rowOf}
           width={width}
         />
       )}
@@ -259,7 +269,19 @@ export function Ridgeline({ ridgeline, isolatedMonth, onPickMonth, compact = fal
 const TIP_W = 240;
 
 /** The hovered day: its date, its climbing, and each activity with its own gain. */
-function DayTooltip({ hover, ridge, theme, width }: { hover: DayHover; ridge?: MonthRidge; theme: Theme; width: number }) {
+function DayTooltip({
+  hover,
+  ridge,
+  theme,
+  width,
+  rowOf,
+}: {
+  hover: DayHover;
+  ridge?: MonthRidge;
+  theme: Theme;
+  width: number;
+  rowOf?: Readonly<Record<string, string>>;
+}) {
   if (!ridge) return null;
   const list = ridge.byDay?.[hover.day - 1] ?? [];
   const gain = ridge.daily[hover.day - 1] ?? 0;
@@ -278,7 +300,7 @@ function DayTooltip({ hover, ridge, theme, width }: { hover: DayHover; ridge?: M
         <ul style={tipList}>
           {list.slice(0, 5).map((a) => (
             <li key={a.id} style={tipItem}>
-              <span style={{ ...tipDot, background: typeColor(a.type, theme) }} />
+              <span style={{ ...tipDot, background: typeColor(a.type, theme, rowOf) }} />
               <span style={tipName}>{a.name}</span>
               <span style={tipVal}>{a.gainM != null ? `${formatMeters(a.gainM)} m` : "–"}</span>
             </li>

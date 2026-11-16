@@ -1,6 +1,6 @@
-// Filter controls: activity-type toggles (most activities first, with live counts; rare
-// types left out), date-range sliders and the places list (PlacesSection). Rendered as a
-// section inside the SidePanel.
+// Filter controls: activity-type toggles, one per type row (most activities first, with
+// live counts; rare types share the Workout row), date-range sliders and the places list
+// (PlacesSection). Rendered as a section inside the SidePanel.
 // In the map's Type color mode each toggle's swatch takes its type's route color, so the
 // list doubles as the map's legend.
 
@@ -12,11 +12,12 @@ import { formatMonth, formatMonthShort, typeLabel } from "../format";
 import { typeColor, type ColorMode } from "../colors";
 import type { Place, Theme } from "../types";
 import {
+  isRowOn,
   setFromMonth,
   setToMonth,
-  toggleType,
+  toggleRow,
   typeCounts,
-  listedTypes,
+  typeRows,
   type ActivityFilter,
 } from "../activityFilter";
 
@@ -33,27 +34,34 @@ interface Props {
 export function FilterSection({ filter, onChange, places, colorMode, theme = "dark" }: Props) {
   // Memoized: App re-renders every replay frame, and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
-  const types = useMemo(() => listedTypes(filter), [filter]);
+  const rows = useMemo(() => typeRows(filter), [filter]);
   const byType = colorMode === "type";
   return (
     <>
       <h3 style={{ ...sectionLabel, marginBottom: 8 }}>Activity types</h3>
       <div role="group" aria-label="Activity types" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {types.map((t) => {
-          const on = filter.types.has(t);
-          const color = byType ? typeColor(t, theme) : "var(--accent)";
+        {rows.map(({ type, members }) => {
+          const on = isRowOn(filter, type);
+          const color = byType ? typeColor(type, theme) : "var(--accent)";
+          const count = members.reduce((n, t) => n + (counts[t] ?? 0), 0);
+          // A row holding rarer types names them, so they can be found.
+          const others = members.filter((t) => t !== type);
+          const title = others.length
+            ? `${typeLabel(type)}, with ${others.map((t) => typeLabel(t).toLowerCase()).join(", ")}`
+            : undefined;
           return (
             <button
-              key={t}
+              key={type}
               type="button"
               className="ctl"
               aria-pressed={on}
-              onClick={() => onChange(toggleType(filter, t))}
+              title={title}
+              onClick={() => onChange(toggleRow(filter, type))}
               style={rowStyle(on)}
             >
               <span style={dotStyle(on, color)}>{on && <Check />}</span>
-              <span style={{ flex: 1, textAlign: "left" }}>{typeLabel(t)}</span>
-              <span style={countStyle(on)}>{counts[t] ?? 0}</span>
+              <span style={{ flex: 1, textAlign: "left" }}>{typeLabel(type)}</span>
+              <span style={countStyle(on)}>{count}</span>
             </button>
           );
         })}

@@ -301,6 +301,7 @@ export function ActivitiesView({
                               onToggle={toggle}
                               mobile={mobile}
                               theme={theme}
+                              rowOf={filter?.rowOf}
                             />
                             {open && (
                               <ActivityPreview
@@ -370,6 +371,7 @@ const ActivityRow = memo(function ActivityRow({
   onToggle,
   mobile,
   theme,
+  rowOf,
 }: {
   activity: ActivityRecord;
   query: string;
@@ -379,6 +381,8 @@ const ActivityRow = memo(function ActivityRow({
   onToggle: (id: string) => void;
   mobile: boolean;
   theme: Theme;
+  /** The filter's type rows: the dot wears the row's color, as on the map. */
+  rowOf?: Readonly<Record<string, string>>;
 }) {
   const place = a.place !== undefined ? names.places.get(a.place)?.name : undefined;
   const route = a.route !== undefined ? names.routes.get(a.route) : undefined;
@@ -398,7 +402,7 @@ const ActivityRow = memo(function ActivityRow({
           <Highlight text={a.name || "Untitled"} query={query} />
         </span>
         <span style={metaLine}>
-          <span aria-hidden="true" style={{ ...dot, background: typeColor(a.type, theme) }} />
+          <span aria-hidden="true" style={{ ...dot, background: typeColor(a.type, theme, rowOf) }} />
           {meta.map((m, i) => (
             <span key={i} style={{ whiteSpace: "nowrap" }}>
               {i > 0 && <span style={{ color: "var(--text-faint)", margin: "0 6px" }}>·</span>}

@@ -220,14 +220,15 @@ export default function App() {
   const mapFilter = useMemo(() => (filter ? filterExpression(filter) : null), [filter]);
 
   // Color scale domain from the visible set, so the recency and speed ramps span what's
-  // actually shown. Type colors are fixed per type (colors.ts), so a type never changes
-  // color as others are toggled off.
+  // actually shown. Type colors are fixed per type row (colors.ts), so a type never
+  // changes color as others are toggled off.
   const colorDomain = useMemo(
     () => ({
       ...computeDomain(visibleOnMap),
       types: [...(filter?.availableTypes ?? [])],
+      rowOf: filter?.rowOf,
     }),
-    [visibleOnMap, filter?.availableTypes],
+    [visibleOnMap, filter?.availableTypes, filter?.rowOf],
   );
 
   // The Grade color mode colors routes by grade, from the route profiles: fetched the

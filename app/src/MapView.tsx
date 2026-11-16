@@ -577,7 +577,9 @@ export function MapView(props: Props) {
       // The type's color only where routes wear it; in the other modes the route's color
       // varies along it or with the data, so the dot keeps to the accent.
       dot.style.background =
-        propsRef.current.colorMode === "type" ? typeColor(p.type, propsRef.current.theme) : ACCENT;
+        propsRef.current.colorMode === "type"
+          ? typeColor(p.type, propsRef.current.theme, propsRef.current.colorDomain.rowOf)
+          : ACCENT;
       const label = document.createElement("span");
       label.textContent = p.name;
       label.style.overflow = "hidden";

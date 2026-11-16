@@ -16,6 +16,12 @@ export interface ActivityFilter {
   readonly activities: readonly ActivityRecord[];
   /** Every activity type present, sorted. */
   readonly availableTypes: readonly string[];
+  /**
+   * The type row each available type is listed (and colored) under: itself, or
+   * CATCH_ALL_TYPE for a rare one. Worked out from the counts over all the data, so a
+   * type gets its own row once it reaches MIN_OWN_ROW_ACTIVITIES (see rowOfTypes).
+   */
+  readonly rowOf: Readonly<Record<string, string>>;
   /** Type selection: the activity types switched on. Empty shows nothing. */
   readonly types: ReadonlySet<string>;
   /** Month-index bounds of the data (see format.ts: monthIndex). */
@@ -40,6 +46,8 @@ export const DEFAULT_TYPES: readonly string[] = ["Run", "Hike", "Walk", "Ride"];
  */
 export function createActivityFilter(activities: readonly ActivityRecord[]): ActivityFilter {
   const availableTypes = [...new Set(activities.map((a) => a.type))].sort();
+  // The default types always have their own rows (rowOfTypes), so switching them on
+  // never leaves a row half on.
   const defaults = availableTypes.filter((t) => DEFAULT_TYPES.includes(t));
   const months = activities.map((a) => monthIndex(a.ts));
   // No activities: any finite month will do, since nothing can be shown anyway.
@@ -48,6 +56,7 @@ export function createActivityFilter(activities: readonly ActivityRecord[]): Act
   return {
     activities,
     availableTypes,
+    rowOf: rowOfTypes(activities),
     types: new Set(defaults.length ? defaults : availableTypes),
     minMonth,
     maxMonth,
@@ -57,6 +66,42 @@ export function createActivityFilter(activities: readonly ActivityRecord[]): Act
   };
 }
 
+/**
+ * Fewest activities (over all dates) a type needs for its own row in the type list.
+ * Rarer types are listed under CATCH_ALL_TYPE instead.
+ */
+export const MIN_OWN_ROW_ACTIVITIES = 10;
+
+/** The type whose row also holds every rare type. */
+export const CATCH_ALL_TYPE = "Workout";
+
+/**
+ * The type row of each type in `activities`: the type itself when it has at least
+ * MIN_OWN_ROW_ACTIVITIES activities, is one of DEFAULT_TYPES (so a small data set never
+ * folds its runs away) or is CATCH_ALL_TYPE; CATCH_ALL_TYPE otherwise. Counted over
+ * every activity, not the date range, so rows don't come and go as the range moves.
+ */
+export function rowOfTypes(activities: readonly ActivityRecord[]): Record<string, string> {
+  const counts = countByType(activities);
+  const rowOf: Record<string, string> = {};
+  for (const [t, n] of Object.entries(counts)) {
+    const own = n >= MIN_OWN_ROW_ACTIVITIES || DEFAULT_TYPES.includes(t) || t === CATCH_ALL_TYPE;
+    rowOf[t] = own ? t : CATCH_ALL_TYPE;
+  }
+  return rowOf;
+}
+
+function countByType(activities: readonly ActivityRecord[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const a of activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
+  return counts;
+}
+
+/** The available types listed under `row` (none when it isn't a row). */
+function rowMembers(filter: ActivityFilter, row: string): string[] {
+  return filter.availableTypes.filter((t) => filter.rowOf[t] === row);
+}
+
 /** Switch an activity type on or off. A type the data doesn't contain is ignored. */
 export function toggleType(filter: ActivityFilter, type: string): ActivityFilter {
   if (!filter.availableTypes.includes(type)) return filter;
@@ -64,6 +109,25 @@ export function toggleType(filter: ActivityFilter, type: string): ActivityFilter
   if (types.has(type)) types.delete(type);
   else types.add(type);
   return { ...filter, types };
+}
+
+/**
+ * Switch a type row on or off: every type listed under it together. A row that is only
+ * partly on switches fully on. A row the data doesn't have is ignored.
+ */
+export function toggleRow(filter: ActivityFilter, row: string): ActivityFilter {
+  const members = rowMembers(filter, row);
+  if (members.length === 0) return filter;
+  const types = new Set(filter.types);
+  if (isRowOn(filter, row)) for (const t of members) types.delete(t);
+  else for (const t of members) types.add(t);
+  return { ...filter, types };
+}
+
+/** Whether every type listed under a row is switched on. */
+export function isRowOn(filter: ActivityFilter, row: string): boolean {
+  const members = rowMembers(filter, row);
+  return members.length > 0 && members.every((t) => filter.types.has(t));
 }
 
 /** Select a place, or clear it when it is the one selected. Types and dates stay. */
@@ -152,16 +216,18 @@ export function isVisible(filter: ActivityFilter, a: ActivityRecord): boolean {
 }
 
 /**
- * Make one of the filter's activities visible: switch its type on, widen the date
+ * Make one of the filter's activities visible: switch its type row on, widen the date
  * range just enough to include its month, and clear the place if it has another one.
  * The same filter when the activity already passes.
  */
 export function revealActivity(filter: ActivityFilter, a: ActivityRecord): ActivityFilter {
   if (isVisible(filter, a)) return filter;
   const m = monthIndex(a.ts);
+  const types = new Set(filter.types).add(a.type);
+  for (const t of rowMembers(filter, filter.rowOf[a.type])) types.add(t);
   return {
     ...filter,
-    types: new Set(filter.types).add(a.type),
+    types,
     fromMonth: Math.min(filter.fromMonth, m),
     toMonth: Math.max(filter.toMonth, m),
     place: a.place === filter.place ? filter.place : null,
@@ -227,28 +293,40 @@ export function placeCounts(filter: ActivityFilter): Record<string, number> {
 }
 
 /**
- * The available types, most activities first (ties by name), for listing in the
- * filter. Counted over every activity, not the date range, so the rows keep their
- * order while the range slider moves. availableTypes stays alphabetical: type colors
- * are keyed to it.
+ * The available types, most activities first (ties by name). Counted over every
+ * activity, not the date range, so the order holds while the range slider moves.
+ * availableTypes stays alphabetical.
  */
 export function typesByCount(filter: ActivityFilter): string[] {
-  const counts: Record<string, number> = {};
-  for (const a of filter.activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
+  const counts = countByType(filter.activities);
   return [...filter.availableTypes].sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1));
 }
 
-/** Fewest activities (over all dates) a type needs to get a row in the type list. */
-export const MIN_LISTED_TYPE_ACTIVITIES = 5;
+/** One row of the type list: the type it is named and colored after, and the types it switches. */
+export interface TypeRow {
+  readonly type: string;
+  /** The row's own type first (when the data has it), then the rest by count. */
+  readonly members: readonly string[];
+}
 
 /**
- * The types the filter's type list shows: typesByCount without the rare ones (fewer
- * than MIN_LISTED_TYPE_ACTIVITIES activities), which would only clutter it.
+ * The type list's rows (see rowOfTypes), most activities first counting every member
+ * (ties by name), over all dates so the rows keep their order while the range moves.
  */
-export function listedTypes(filter: ActivityFilter): string[] {
-  const counts: Record<string, number> = {};
-  for (const a of filter.activities) counts[a.type] = (counts[a.type] ?? 0) + 1;
-  return typesByCount(filter).filter((t) => counts[t] >= MIN_LISTED_TYPE_ACTIVITIES);
+export function typeRows(filter: ActivityFilter): TypeRow[] {
+  const counts = countByType(filter.activities);
+  const byRow = new Map<string, string[]>();
+  for (const t of typesByCount(filter)) {
+    const row = filter.rowOf[t];
+    const members = byRow.get(row) ?? [];
+    if (t === row) members.unshift(t);
+    else members.push(t);
+    byRow.set(row, members);
+  }
+  const total = (members: readonly string[]) => members.reduce((n, t) => n + counts[t], 0);
+  return [...byRow]
+    .map(([type, members]) => ({ type, members }))
+    .sort((a, b) => total(b.members) - total(a.members) || (a.type < b.type ? -1 : 1));
 }
 
 /**

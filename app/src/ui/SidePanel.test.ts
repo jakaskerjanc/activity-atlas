@@ -106,6 +106,19 @@ describe("SidePanel type list", () => {
     expect(render({ filter, places: [] })).not.toContain("Search places");
   });
 
+  test("lists rare types under one Workout row, counting them and naming them", () => {
+    const filter = createActivityFilter([
+      record({ id: "w", type: "Workout" }),
+      record({ id: "s1", type: "Swim" }),
+      record({ id: "s2", type: "Swim" }),
+      record({ id: "r", type: "Rowing" }),
+    ]);
+    const html = render({ filter });
+    expect(html).toContain('title="Workout, with swim, rowing"');
+    expect(html).toMatch(/>Workout<\/span><span[^>]*>4<\/span>/);
+    expect(html).not.toContain(">Swim<");
+  });
+
   test("toggles say whether they are on", () => {
     const runs = createActivityFilter(Array.from({ length: 5 }, (_, i) => record({ id: `r${i}` })));
     expect(render({ filter: runs })).toMatch(/aria-pressed="true"[^>]*>.*Run/);
