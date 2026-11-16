@@ -5,14 +5,11 @@
 import type { ReactNode } from "react";
 import { FS, iconButton } from "./theme";
 import { CloseIcon } from "./icons";
-import type { ActivityLink } from "../format";
 
 interface Props {
   title: string;
   /** Rich title (e.g. with the arrow icon); `title` stays the plain text for tooltips. */
   titleNode?: ReactNode;
-  /** The activity's pages on Garmin Connect / Strava, as letter badges after the title. */
-  links?: ActivityLink[];
   subtitle?: ReactNode;
   /** The collapse/close button. */
   action?: { label: string; icon: ReactNode; onClick: () => void; expanded?: boolean; controls?: string };
@@ -22,7 +19,7 @@ interface Props {
   close?: { label: string; onClick: () => void };
 }
 
-export function PanelHeader({ title, titleNode, links = [], subtitle, action, sheet, close }: Props) {
+export function PanelHeader({ title, titleNode, subtitle, action, sheet, close }: Props) {
   return (
     <div
       onClick={sheet ? action?.onClick : undefined}
@@ -42,24 +39,6 @@ export function PanelHeader({ title, titleNode, links = [], subtitle, action, sh
             <span style={ellipsis} title={title}>
               {titleNode ?? title}
             </span>
-            {links.length > 0 && (
-              <span style={badgeRow}>
-                {links.map((l) => (
-                  <a
-                    key={l.url}
-                    className="source-badge"
-                    href={l.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={l.label}
-                    title={l.label}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {l.short}
-                  </a>
-                ))}
-              </span>
-            )}
           </h2>
           {subtitle && <div style={subStyle}>{subtitle}</div>}
         </div>
@@ -111,8 +90,6 @@ const titleStyle = {
   gap: 8,
   minWidth: 0,
 } as const;
-
-const badgeRow = { display: "flex", gap: 4, flex: "0 0 auto" } as const;
 
 const ellipsis = {
   whiteSpace: "nowrap",

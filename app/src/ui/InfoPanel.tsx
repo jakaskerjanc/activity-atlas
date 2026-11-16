@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { GlassPanel } from "./GlassPanel";
 import { PanelHeader } from "./PanelHeader";
 import { StatGrid } from "./StatsSection";
+import { ProviderLink } from "./ProviderLink";
 import { ChevronIcon } from "./icons";
 import { DETAIL_PANEL_WIDTH, PANEL_EDGE, PANEL_TOP, SHEET_MAX_WIDTH } from "./layout";
 import type { StatCard } from "../stats";
@@ -19,14 +20,12 @@ interface Props {
   closeLabel?: string;
   subtitle: string;
   cards: StatCard[];
-  /** The activity's pages on Garmin Connect / Strava, shown as "G" / "S" badges. */
+  /** The activity's pages on Garmin Connect / Strava, as buttons at the foot of the body. */
   links: ActivityLink[];
   /** Rendered under the cards: the selected activity's charts or a status line. */
   body?: ReactNode;
   /** Replaces the cards: what to say (and offer) when nothing is shown. */
   notice?: ReactNode;
-  /** Cards in one row of four, to leave room for charts. */
-  compactCards?: boolean;
   /** Only the title strip shows. */
   collapsed: boolean;
   onToggle: () => void;
@@ -58,7 +57,6 @@ export function InfoPanel(p: Props) {
           title={p.title}
           titleNode={p.titleNode}
           close={p.onClose ? { label: p.closeLabel ?? "Close", onClick: p.onClose } : undefined}
-          links={p.links}
           subtitle={p.subtitle}
           sheet={p.mobile}
           action={{
@@ -71,8 +69,16 @@ export function InfoPanel(p: Props) {
         />
       }
     >
-      {p.notice ?? <StatGrid cards={p.cards} compact={p.compactCards} />}
+      {/* No cards for a selected activity: its body (ActivitySummary) carries its stats. */}
+      {p.notice ?? (p.cards.length > 0 && <StatGrid cards={p.cards} />)}
       {p.body}
+      {p.links.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+          {p.links.map((l) => (
+            <ProviderLink key={l.url} link={l} />
+          ))}
+        </div>
+      )}
     </GlassPanel>
   );
 }

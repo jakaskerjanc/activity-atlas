@@ -6,8 +6,9 @@ import {
   nearestIndex,
   niceTicks,
   paceTicks,
-  readout,
-  summaryReadout,
+  maxAltitude,
+  bandedLinePaths,
+  chartKinds,
   smoothSpeed,
 } from "./profile";
 import type { DetailFile } from "./types";
@@ -186,50 +187,30 @@ describe("nearestIndex", () => {
   });
 });
 
-describe("readout", () => {
-  test("lists present channels in order, distance first", () => {
-    const p = buildProfile(full, "Run")!;
-    const r = readout(full, p, 2, "Run");
-    expect(r.map((e) => e.label)).toEqual(["km", "time", "m", "bpm", "/km", "spm"]);
-    expect(r.map((e) => e.value)).toEqual(["0.03", "0:10", "320", "140", "5:33", "84"]);
-  });
-
-  test("a missing value at that index is a dash", () => {
-    const d = { ...full, hr: [100, 120, null, 150] };
-    const r = readout(d, buildProfile(d, "Run")!, 2, "Run");
-    expect(r.find((e) => e.label === "bpm")!.value).toBe("—");
-  });
-
-  test("rides read speed and rpm", () => {
-    const r = readout(full, buildProfile(full, "Ride")!, 2, "Ride");
-    expect(r.map((e) => e.label)).toEqual(["km", "time", "m", "bpm", "km/h", "rpm"]);
-    expect(r[4].value).toBe("10.8");
-  });
-});
-
 describe("cadence", () => {
-  test("is charted when recorded, so the readout's spm/rpm has a chart to point at", () => {
+  test("is charted when recorded", () => {
     expect(buildProfile(full, "Run")!.charts.map((c) => c.kind)).toContain("cadence");
   });
 });
 
-describe("summaryReadout", () => {
-  test("only what the stat cards above don't already say", () => {
-    const p = buildProfile(full, "Run")!;
-    const s = summaryReadout(full, p, "Run");
-    // No distance and no average pace or speed: the cards give the distance and the
-    // moving pace or speed, and a second, different value would contradict them.
-    expect(s.map((e) => e.label)).toEqual(["elapsed", "m high", "bpm avg", "spm avg"]);
-    expect(summaryReadout(full, buildProfile(full, "Ride")!, "Ride").map((e) => e.label)).toEqual([
-      "elapsed",
-      "m high",
-      "bpm avg",
-      "rpm avg",
-    ]);
+describe("bandedLinePaths", () => {
+  test("each step goes to the band its two ends average into, skipping gaps", () => {
+    const paths = bandedLinePaths([0, 1, 2, 3, 4], [90, 110, 130, null, 130], (v) => v, (v) => v, (v) => (v < 100 ? 0 : v < 120 ? 1 : 2), 3);
+    expect(paths[0]).toBe("");
+    expect(paths[1]).toBe("M0.0,90.0L1.0,110.0");
+    expect(paths[2]).toBe("M1.0,110.0L2.0,130.0");
+  });
+});
+
+describe("maxAltitude and chartKinds", () => {
+  test("the highest altitude sample, skipping gaps", () => {
+    expect(maxAltitude({ v: 1, step: 10, t: [0, 10, 20], alt: [300, null, 412.5] })).toBe(412.5);
+    expect(maxAltitude({ v: 1, step: 10, t: [0, 10] })).toBeUndefined();
   });
 
-  test("elapsed is the clock time of the last sample", () => {
-    const p = buildProfile(full, "Run")!;
-    expect(summaryReadout(full, p, "Run")[0].value).toBe(readout(full, p, full.t.length - 1, "Run")[1].value);
+  test("cadence is charted for a run, not for a hike or a walk", () => {
+    const detail = { v: 1 as const, step: 10, t: [0, 10, 20], d: [0, 30, 60], alt: [1, 2, 3], cad: [80, 82, 84] };
+    expect(chartKinds(buildProfile(detail, "Run")!, "Run")).toContain("cadence");
+    expect(chartKinds(buildProfile(detail, "Hike")!, "Hike")).not.toContain("cadence");
   });
 });

@@ -112,7 +112,7 @@ describe("activityCards", () => {
     expect(cards).toEqual([
       { value: "10.0", unit: "km", label: "Distance", accent: true },
       { value: "50m", parts: [{ value: "50", unit: "m" }], label: "Moving time" },
-      { value: "76", unit: "m", label: "Elevation gain" },
+      { value: "76", unit: "m", label: "Climb" },
       { value: "5:00", unit: "/km", label: "Pace" },
     ]);
   });

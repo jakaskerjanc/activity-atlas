@@ -33,7 +33,7 @@ describe("GroupRows", () => {
     const closed = render(slavnik, table, false);
     const buttons = closed.match(/<button[^>]*>(?:(?!<\/button>).)*<\/button>/g) ?? [];
     expect(buttons).toHaveLength(2);
-    expect(text(buttons[0])).toContain("To Slavnik · 29 times");
+    expect(text(buttons[0])).toContain("To Slavnik · 29×");
     expect(text(buttons[0])).toContain("→");
     expect(buttons[0]).not.toContain("aria-expanded");
     expect(buttons[1]).toContain('aria-expanded="false"');
@@ -62,11 +62,11 @@ describe("GroupRows", () => {
 
   test("a pass reads Over", () => {
     const html = render({ id: "p2", name: "Vršič", kind: "pass", count: 7 }, null, false);
-    expect(text(html)).toContain("Over Vršič · 7 times");
+    expect(text(html)).toContain("Over Vršič · 7×");
     // Route row absent: one button only.
     expect(html.match(/<button/g)).toHaveLength(1);
-    // A one-off reads "1 time", not "1 times".
-    expect(text(render({ ...slavnik, count: 1 }, null, false))).toMatch(/To Slavnik · 1 time(?!s)/);
+    // A place reached only this once has no row: it would filter down to this activity.
+    expect(render({ ...slavnik, count: 1 }, null, false)).toBe("");
   });
 
   test("the marks column can shrink and wrap, so a phone doesn't clip 'fastest'", () => {
