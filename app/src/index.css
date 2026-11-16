@@ -90,6 +90,14 @@
   --zone-3: #9867e1;
   --zone-4: #b790f7;
   --zone-5: #d4bcff;
+  /* The same ramp as a thin line (the heart-rate chart): the two darkest steps lifted,
+     so every zone holds against the card. */
+  --zone-line-0: #868a95;
+  --zone-line-1: #8a5fd0;
+  --zone-line-2: #9d70e6;
+  --zone-line-3: #b08af2;
+  --zone-line-4: #c6a6fa;
+  --zone-line-5: #ddc8ff;
 
   --vignette-shadow: inset 0 0 260px rgba(0, 0, 0, 0.6);
   --vignette-bg: radial-gradient(
@@ -154,6 +162,13 @@
   --zone-3: #7f47c7;
   --zone-4: #6529a9;
   --zone-5: #4a177f;
+  /* As a thin line, only below zone 1 needs to be darker to show on white. */
+  --zone-line-0: #9a9ea8;
+  --zone-line-1: var(--zone-1);
+  --zone-line-2: var(--zone-2);
+  --zone-line-3: var(--zone-3);
+  --zone-line-4: var(--zone-4);
+  --zone-line-5: var(--zone-5);
 
   --vignette-shadow: inset 0 0 200px rgba(120, 130, 150, 0.1);
   --vignette-bg: radial-gradient(
@@ -247,31 +262,6 @@ a:hover {
 }
 .ctl-accent:not(:disabled):hover {
   filter: brightness(1.08);
-}
-
-/* An activity's page on Garmin Connect / Strava: a small letter badge after the title. */
-.source-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  border: 1px solid var(--control-border);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text-muted);
-  text-decoration: none;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-.source-badge:hover {
-  color: var(--accent-text);
-  border-color: var(--accent);
-  background: var(--accent-tint-weak);
 }
 
 /* Panel scrollers sit inside the glass, so the bar is thinner and dimmer than the page
@@ -524,15 +514,55 @@ li + li > .activities__row {
 .activities__row:focus-visible {
   outline-offset: -2px;
 }
-/* A row's preview, opened under it: the track beside the stats, stacked on a phone. */
+/* A row's preview, opened under it and hung under the activity's name: past the row's
+   padding, its 96px date column and the column gap. The track sits beside the stats
+   (shrinking before they drop under 300px) and the elevation profile spans both. In
+   the compact list (data-compact, the rows' own breakpoint) the name leads the row, so
+   the preview starts at its padding. The track drops above the stats when the list
+   itself is narrow, whatever the window: the filters panel can take its width too. */
+.activities__list {
+  container-type: inline-size;
+}
 .activities__preview {
   display: grid;
-  gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-5) var(--sp-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-5) var(--sp-6);
+  padding: var(--sp-1) var(--sp-5) var(--sp-5) calc(var(--sp-5) + 96px + var(--sp-4));
   background: var(--accent-tint-weak);
   scroll-margin-top: 140px; /* clear of the header and the sticky search bar */
   scroll-margin-bottom: var(--sp-4);
   animation: preview-in 0.18s var(--ease-out);
+}
+.activities__preview[data-track] {
+  grid-template-columns: minmax(0, 272px) minmax(300px, 1fr);
+}
+.activities__preview[data-compact] {
+  padding-left: var(--sp-5);
+}
+/* The track box: the image's 16:10 shape on its own, and beside the stats as tall as
+   they are, between 2:1 and about 3:2, where cover-cropping takes no more than the
+   sketch's 20px margin (ActivityPreview: trackSketch). */
+.activities__track {
+  aspect-ratio: 16 / 10;
+}
+.activities__preview[data-track] .activities__track {
+  aspect-ratio: auto;
+  min-height: 136px;
+  max-height: 190px;
+}
+@container (max-width: 600px) {
+  .activities__preview[data-track] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .activities__preview[data-track] .activities__track {
+    aspect-ratio: 16 / 10;
+    min-height: 0;
+    max-height: none;
+  }
+}
+.activities__preview-wide {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 @keyframes preview-in {
   from {
@@ -552,7 +582,8 @@ li + li > .activities__row {
   }
   .activities__head,
   .activities__row,
-  .activities__preview {
+  .activities__preview,
+  .activities__preview[data-compact] {
     padding-left: var(--sp-4);
     padding-right: var(--sp-4);
   }

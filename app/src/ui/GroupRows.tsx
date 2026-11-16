@@ -1,5 +1,6 @@
-// The selected activity's place and same-route rows, under the stat cards. The place
-// row takes you into the filter ("To Slavnik · 29 times →"); the route row opens, in
+// The selected activity's place and same-route rows, under the stats. The place row
+// takes you into the filter ("To Slavnik · 29× →"), and shows only when there were
+// other times: a place reached once would filter down to this activity. The route row opens, in
 // place, a table of the other times on the route ("… · 10× ▸"). What they hold is
 // routeGroup.ts's call; App decides what a pick does to the filter.
 
@@ -21,16 +22,17 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-export function GroupRows({ place, route, open, onToggle, onPickPlace, onSelect }: Props) {
+export function GroupRows({ place: line, route, open, onToggle, onPickPlace, onSelect }: Props) {
   const listId = useId();
+  const place = line && line.count > 1 ? line : null;
   if (!place && !route) return null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 12 }}>
       {place && (
-        <button type="button" className="ctl" onClick={() => onPickPlace(place.id)} style={rowStyle}>
+        <button type="button" className="ctl" onClick={() => onPickPlace(place.id)} style={headRowStyle}>
           <span style={markStyle}>{place.kind === "pass" ? <SaddleIcon size={13} /> : <PeakIcon size={11} />}</span>
           <span style={labelStyle}>
-            {`${place.kind === "pass" ? "Over" : "To"} ${place.name} · ${place.count} ${place.count === 1 ? "time" : "times"}`}
+            {`${place.kind === "pass" ? "Over" : "To"} ${place.name} · ${place.count}×`}
           </span>
           <span aria-hidden="true" style={trailStyle}>
             →
@@ -45,7 +47,7 @@ export function GroupRows({ place, route, open, onToggle, onPickPlace, onSelect 
             aria-expanded={open}
             aria-controls={open ? listId : undefined}
             onClick={onToggle}
-            style={rowStyle}
+            style={headRowStyle}
           >
             <span aria-hidden="true" style={markStyle}>
               ↻
@@ -115,6 +117,10 @@ const rowStyle: CSSProperties = {
   fontWeight: 500,
   lineHeight: 1.3,
 };
+
+// The two rows' marks line up with the stats above: the padding the hover fill needs
+// hangs out past the body's edge.
+const headRowStyle: CSSProperties = { ...rowStyle, width: "calc(100% + 20px)", margin: "0 -10px" };
 
 const markStyle: CSSProperties = {
   width: 14,

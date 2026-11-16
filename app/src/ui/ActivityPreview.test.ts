@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityPreview, previewFacts } from "./ActivityPreview";
+import { ActivityPreview, timeCard } from "./ActivityPreview";
 import { record } from "../testFixtures";
 import type { DetailFile } from "../types";
 
@@ -15,11 +15,15 @@ const render = (over: Partial<Parameters<typeof ActivityPreview>[0]> = {}) =>
   renderToStaticMarkup(createElement(ActivityPreview, { activity: record({ name: "Morning Run" }), ...over }));
 
 describe("ActivityPreview", () => {
-  test("sketches the route, shows the stats, and offers the map", () => {
-    const html = render({ coords: route, onShowOnMap: () => {} });
+  test("sketches the route, shows the map panel's stats and the time, and offers the map", () => {
+    const html = render({
+      activity: record({ name: "Morning Run", start_local: "2024-08-18T07:42:10", elapsed_time: 3060 }),
+      coords: route,
+      onShowOnMap: () => {},
+    });
     expect(html).toContain('aria-label="Route of Morning Run"');
-    expect(html).toContain("Distance");
-    expect(html).toContain("Pace");
+    for (const label of ["Distance", "Moving time", "Climb", "Pace", "Time"]) expect(html).toContain(`>${label}<`);
+    expect(html).toContain("07:42–08:33");
     expect(html).toContain("Show on map");
   });
 
@@ -39,8 +43,21 @@ describe("ActivityPreview", () => {
 
   test("leaves out stats it doesn't know", () => {
     const html = render({ activity: record({ distance: undefined, moving_time: undefined, elevation_gain: undefined }) });
-    expect(html).not.toContain("Distance");
+    expect(html).not.toContain("Pace");
     expect(html).not.toContain("—");
+  });
+
+  test("colors the heart-rate line by zone, with average and max in its title", () => {
+    const detail: DetailFile = { v: 1, step: 10, t: [0, 10, 20, 30], d: [0, 40, 80, 120], alt: [300, 320, 360, 310], hr: [95, 125, 145, 150] };
+    const html = render({
+      activity: record({ detail: true, avg_hr: 131, max_hr: 168 }),
+      detail: { status: "ready", detail },
+      zoneLimits: [100, 120, 140, 160, 180],
+    });
+    expect(html).not.toContain("Heart-rate zones");
+    expect(html).toMatch(/Heart rate.*avg .*>131<.*max .*>168</);
+    expect(html).toContain('stroke="var(--zone-line-2)"');
+    expect(html).toContain('stroke="var(--zone-line-3)"');
   });
 
   test("links to the provider pages", () => {
@@ -49,38 +66,44 @@ describe("ActivityPreview", () => {
     expect(html).toContain("View on Strava");
   });
 
-  test("draws the map panel's elevation chart, alone, from the detail samples", () => {
+  test("draws the map panel's charts from the detail samples, the high point in the elevation title", () => {
     const detail: DetailFile = { v: 1, step: 10, t: [0, 10, 20, 30], d: [0, 40, 80, 120], alt: [300, 320, 360, 310], hr: [100, 120, 130, 125] };
     const html = render({ activity: record({ detail: true }), detail: { status: "ready", detail } });
     expect(html).toContain('aria-label="Elevation, m"');
-    expect(html).not.toContain('aria-label="Heart rate, bpm"');
-    // No map route to hover here, so the hint never offers one.
+    expect(html).toContain('aria-label="Heart rate, bpm"');
+    // No map route to hover here, so no hint offers one.
     expect(html).not.toContain("or the route");
-    expect(html).toContain("m high");
+    expect(html).toContain("High point");
+    expect(html).toContain(">360<");
   });
 
-  test("no chart without elevation samples; says when they are loading", () => {
-    const detail: DetailFile = { v: 1, step: 10, t: [0, 10], hr: [100, 120] };
-    expect(render({ activity: record({ detail: true }), detail: { status: "ready", detail } })).not.toContain('aria-label="Elevation, m"');
-    expect(render({ activity: record({ detail: true }), detail: { status: "loading" } })).toContain("Loading samples…");
+  test("says when the samples are loading or failed; without samples, no charts and no line", () => {
+    const sampled = record({ detail: true });
+    expect(render({ activity: sampled, detail: { status: "loading" } })).toContain("Loading samples…");
+    expect(render({ activity: sampled, detail: { status: "error" } })).toContain("load samples.");
+    const html = render({ activity: record(), detail: { status: "none" } });
+    expect(html).not.toContain("samples");
+    expect(html).not.toContain("<svg");
   });
 });
 
-describe("previewFacts", () => {
-  test("lists only what is known", () => {
-    expect(previewFacts(record())).toEqual([]);
-    expect(
-      previewFacts(record({ start_local: "2024-08-18T07:42:10", elapsed_time: 3725, avg_hr: 141.4, max_hr: 172 })),
-    ).toEqual([
-      { label: "Started", value: "07:42" },
-      { label: "Elapsed", value: "1:02:05" },
-      { label: "Avg HR", value: "141 bpm" },
-      { label: "Max HR", value: "172 bpm" },
-    ]);
+describe("timeCard", () => {
+  test("the local start to finish, naming the elapsed time when it stopped along the way", () => {
+    expect(timeCard(record({ start_local: "2024-08-18T07:42:10", elapsed_time: 3725 }))).toEqual({
+      value: "07:42–08:44",
+      label: "Time · 1h 2m elapsed",
+      wide: true,
+    });
+    // Under two minutes of stops, the span says it all; past midnight it wraps.
+    expect(timeCard(record({ start_local: "2024-08-18T23:30:00", elapsed_time: 3060 }))).toEqual({
+      value: "23:30–00:21",
+      label: "Time",
+      wide: true,
+    });
   });
 
-  test("leaves elapsed and average heart rate to the chart's readout when it is shown", () => {
-    const a = record({ start_local: "2024-08-18T07:42:10", elapsed_time: 3725, avg_hr: 141, max_hr: 172 });
-    expect(previewFacts(a, true).map((f) => f.label)).toEqual(["Started", "Max HR"]);
+  test("just the start without an elapsed time; nothing without a local start", () => {
+    expect(timeCard(record({ start_local: "2024-08-18T07:42:10" }))).toEqual({ value: "07:42", label: "Start time" });
+    expect(timeCard(record())).toBeNull();
   });
 });

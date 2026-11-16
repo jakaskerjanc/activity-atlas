@@ -48,6 +48,8 @@ interface Props {
   onResetFilter?: () => void;
   onClearPlace?: () => void;
   theme?: Theme;
+  /** The heart-rate zones' lower bounds, for the previews' zone ranges. */
+  zoneLimits?: readonly number[];
 }
 
 /** Gap between the docked filters panel and the content column, as on analytics. */
@@ -92,6 +94,7 @@ export function ActivitiesView({
   onResetFilter,
   onClearPlace,
   theme = "dark",
+  zoneLimits,
 }: Props) {
   const left = sidePanelExpanded && !mobile ? SIDE_PANEL_CLEARANCE + GUTTER : GUTTER;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -286,7 +289,7 @@ export function ActivitiesView({
                     </div>
                   )}
                   {rows.length > 0 ? (
-                    <ol id="activity-list" ref={listRef} onKeyDown={onListKey} style={list}>
+                    <ol id="activity-list" className="activities__list" ref={listRef} onKeyDown={onListKey} style={list}>
                       {rows.map((a) => {
                         const open = a.id === openId;
                         const coords = routes.get(a.id);
@@ -310,6 +313,7 @@ export function ActivitiesView({
                                 onShowOnMap={coords ? () => onOpen(a.id) : undefined}
                                 mobile={mobile}
                                 theme={theme}
+                                zoneLimits={zoneLimits}
                               />
                             )}
                           </li>

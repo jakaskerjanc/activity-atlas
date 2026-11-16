@@ -1,10 +1,10 @@
 // Pure chart model for the selected activity's detail file: which charts to draw,
 // their values in display units and y domains, plus the geometry helpers the SVG
-// component uses (ticks, paths with gaps, nearest sample) and the hover readout.
+// component uses (ticks, paths with gaps, nearest sample).
 // No React / DOM. See docs/2026-11-04-display-files-design.md, "App behaviour".
 
 import type { DetailFile } from "./types";
-import { formatClock, formatKm, formatMeters, formatPace, isFootBased } from "./format";
+import { isFootBased } from "./format";
 
 export type ChartKind = "elevation" | "hr" | "pace" | "speed" | "cadence";
 
@@ -30,7 +30,6 @@ export interface Profile {
 /** Below this speed (m/s) a sample is a stop: no pace is drawn there. */
 const STOP_SPEED = 0.3;
 const SMOOTH_WINDOW = 5;
-const DASH = "—";
 
 const present = (s: Series) => s.filter((v): v is number => v != null);
 
@@ -197,6 +196,29 @@ export function linePath(
     .join("");
 }
 
+/**
+ * A line in pieces by band: one SVG path per band (index = band), each holding the
+ * steps whose two ends average into that band, so the pieces join with no gap. `band`
+ * maps a value to its band (a heart rate to its zone).
+ */
+export function bandedLinePaths(
+  x: number[],
+  y: Series,
+  sx: (v: number) => number,
+  sy: (v: number) => number,
+  band: (v: number) => number,
+  bands: number,
+): string[] {
+  const out = Array.from({ length: bands }, () => "");
+  for (let i = 1; i < y.length; i++) {
+    const a = y[i - 1];
+    const b = y[i];
+    if (a == null || b == null) continue;
+    out[band((a + b) / 2)] += "M" + pt(sx(x[i - 1]), sy(a)) + "L" + pt(sx(x[i]), sy(b));
+  }
+  return out;
+}
+
 /** SVG path of a filled area: one closed shape per run of present samples. */
 export function areaPath(
   x: number[],
@@ -226,58 +248,20 @@ export function nearestIndex(x: number[], target: number): number {
   return Math.abs(x[hi] - target) < Math.abs(x[lo] - target) ? hi : lo;
 }
 
-const fmt = (v: number | null | undefined, f: (n: number) => string) => (v == null ? DASH : f(v));
 
-const mean = (s: Series | undefined) => {
-  const p = s ? present(s) : [];
-  return p.length ? p.reduce((a, b) => a + b, 0) / p.length : null;
-};
+/** The highest altitude sample, metres; undefined without any. */
+export function maxAltitude(detail: DetailFile): number | undefined {
+  let top: number | undefined;
+  for (const v of detail.alt ?? []) if (v != null && (top === undefined || v > top)) top = v;
+  return top;
+}
 
 /**
- * The readout at rest (no cursor): what the whole activity adds to the stat cards above
- * it. Distance and the moving speed or pace are on the cards, so they are left out here
- * (a sample mean would disagree with them). Elapsed is the clock time from start to
- * finish, pauses included; altitude is the high point, the rest averages over the
- * samples that have them.
+ * The charts the map panel draws: all the profile has, but cadence for a hike or a walk,
+ * where a step rate of 50–60 with stops says nothing.
  */
-export function summaryReadout(
-  detail: DetailFile,
-  profile: Profile,
-  type: string,
-): { label: string; value: string }[] {
-  const series = (kind: ChartKind) => profile.charts.find((c) => c.kind === kind)?.values;
-  const out: { label: string; value: string }[] = [];
-  out.push({ label: "elapsed", value: formatClock(detail.t[detail.t.length - 1] ?? 0) });
-  if (detail.alt) {
-    const p = present(detail.alt);
-    out.push({ label: "m high", value: p.length ? formatMeters(Math.max(...p)) : DASH });
-  }
-  if (detail.hr) out.push({ label: "bpm avg", value: fmt(mean(detail.hr), (v) => String(Math.round(v))) });
-  if (series("cadence")) {
-    out.push({ label: `${isFootBased(type) ? "spm" : "rpm"} avg`, value: fmt(mean(series("cadence")), (v) => String(Math.round(v))) });
-  }
-  return out;
+export function chartKinds(profile: Profile, type: string): ChartKind[] {
+  const kinds = profile.charts.map((c) => c.kind);
+  return type === "Hike" || type === "Walk" ? kinds.filter((k) => k !== "cadence") : kinds;
 }
 
-/** Values at sample `i`: distance, time, then each channel the activity has. */
-export function readout(
-  detail: DetailFile,
-  profile: Profile,
-  i: number,
-  type: string,
-): { label: string; value: string }[] {
-  const out: { label: string; value: string }[] = [];
-  const series = (kind: ChartKind) => profile.charts.find((c) => c.kind === kind)?.values[i];
-  if (detail.d) out.push({ label: "km", value: fmt(detail.d[i], (m) => formatKm(m, 2)) });
-  out.push({ label: "time", value: formatClock(detail.t[i]) });
-  if (detail.alt) out.push({ label: "m", value: fmt(detail.alt[i], formatMeters) });
-  if (detail.hr) out.push({ label: "bpm", value: fmt(detail.hr[i], (v) => String(Math.round(v))) });
-  const pace = profile.charts.some((c) => c.kind === "pace");
-  const speed = profile.charts.some((c) => c.kind === "speed");
-  if (pace) out.push({ label: "/km", value: fmt(series("pace"), formatPace) });
-  if (speed) out.push({ label: "km/h", value: fmt(series("speed"), (v) => v.toFixed(1)) });
-  if (profile.charts.some((c) => c.kind === "cadence")) {
-    out.push({ label: isFootBased(type) ? "spm" : "rpm", value: fmt(series("cadence"), (v) => String(Math.round(v))) });
-  }
-  return out;
-}

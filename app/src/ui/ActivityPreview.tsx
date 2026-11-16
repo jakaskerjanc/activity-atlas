@@ -1,31 +1,29 @@
-// The Activities page's quick look at one activity, opened under its row: the track on
-// a still image of the basemap, the activity's stat cards and its elevation chart (both
-// the map panel's own, from the same detail file), a few more facts, and the ways out:
-// the map and the provider pages. Hovering the chart moves a marker along the track, as
-// on the map.
+// The Activities page's quick look at one activity, opened under its row and hung under
+// its name. Left: the track on a still image of the basemap, with the ways out under it
+// (the map, the provider pages). Beside it, the map panel's stats (plus the time span
+// the panel puts in its subtitle) and the buttons; under both, the panel's charts,
+// side by side. Hovering a chart moves a marker along the track.
 
 import { useMemo, useState, type CSSProperties } from "react";
-import { StatGrid } from "./StatsSection";
-import { ActivityCharts, detailMessage } from "./ActivityCharts";
+import { ActivityChartsBlock, ActivityStats } from "./ActivitySummary";
 import { useActivityDetail } from "./useActivityDetail";
-import { ExternalIcon, MapIcon } from "./icons";
-import { FS, MONO, primaryButton, R, secondaryButton } from "./theme";
+import { useElementWidth } from "./useElementWidth";
+import { MapIcon } from "./icons";
+import { actionSize, ProviderLink } from "./ProviderLink";
+import { primaryButton, R } from "./theme";
 import { trackSketch } from "../trackSketch";
 import { projector } from "../homeCamera";
-import { buildProfile } from "../profile";
 import { cursorLngLat } from "../routeCursor";
 import type { DetailState } from "../detail";
 import { ROUTE_GLOW, ROUTE_LINE } from "../routePath";
 import { MAPBOX_TOKEN, STATIC_STYLE_URL, staticMapUrl } from "../mapStyle";
-import { activityCards } from "../stats";
-import { activityLinks, formatClock } from "../format";
+import type { StatCard } from "../stats";
+import { activityLinks, formatDuration, timeSpan } from "../format";
 import type { ActivityRecord, Theme } from "../types";
 
 /** The track box's size in CSS px (the map image's too); it scales to the box's width. */
 const TRACK_W = 320;
 const TRACK_H = 200;
-/** The preview's one chart: the map panel draws the rest too. */
-const CHART_KINDS = ["elevation"] as const;
 
 interface Props {
   activity: ActivityRecord;
@@ -41,6 +39,8 @@ interface Props {
   theme?: Theme;
   /** The Mapbox token for the map image; without one the route sits on a plain grid. */
   token?: string;
+  /** The heart-rate zones' lower bounds (activities.json's hr_zone_limits), to color the heart-rate line. */
+  zoneLimits?: readonly number[];
 }
 
 export function ActivityPreview({
@@ -52,26 +52,23 @@ export function ActivityPreview({
   id,
   theme = "dark",
   token = MAPBOX_TOKEN,
+  zoneLimits,
 }: Props) {
   const sketch = useMemo(() => (coords ? trackSketch(coords, TRACK_W, TRACK_H, 20, 1.5) : null), [coords]);
   // The basemap under the route (mapStyle.ts: STATIC_STYLE_URL), taken with the camera
   // the route was drawn with. The grid shows until it loads, and stays if it fails.
   const mapUrl = sketch && token ? staticMapUrl(STATIC_STYLE_URL[theme], sketch.camera, TRACK_W, TRACK_H, token) : null;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
-  // Only the cards with a value: an indoor session has no distance, and a row of dashes
-  // says nothing.
-  const cards = useMemo(() => activityCards(a).filter((c) => c.value !== "—"), [a]);
   const links = activityLinks(a.sources);
 
   // The samples, as the map panel loads them when an activity is selected.
   const fetched = useActivityDetail(givenDetail ? null : a.id, a.detail === true);
   const detailState = givenDetail ?? fetched;
   const detail = detailState.status === "ready" ? detailState.detail : null;
-  const profile = useMemo(() => (detail ? buildProfile(detail, a.type) : null), [detail, a.type]);
-  const charted = profile?.charts.some((c) => c.kind === "elevation") === true;
-  // Elapsed and the averages are in the chart's readout when it is there.
-  const facts = previewFacts(a, charted);
-  const message = a.detail ? detailMessage(detailState, charted) : null;
+  const time = useMemo(() => timeCard(a), [a]);
+  const extra = useMemo(() => (time ? [time] : []), [time]);
+  // Five stats share one row where the column is wide enough; three to a row otherwise.
+  const [sideRef, sideW] = useElementWidth<HTMLDivElement>(800);
 
   // The chart's cursor, and where it sits on the track, through the sketch's camera.
   const [cursor, setCursor] = useState<number | null>(null);
@@ -80,27 +77,54 @@ export function ActivityPreview({
     return at && sketch ? projector(sketch.camera, TRACK_W, TRACK_H)(at[0], at[1]) : null;
   }, [detail, sketch, cursor]);
 
+  // Short labels, at their own width beside the track; on a phone they fill its width.
+  const stretch = mobile;
+  const actionButton: CSSProperties = { ...actionSize, flex: stretch ? "1 1 auto" : "none" };
+  const actions = (onShowOnMap || links.length > 0) && (
+    <div style={actionRow}>
+      {onShowOnMap && (
+        <button
+          type="button"
+          className="ctl-accent"
+          // On a phone, with two provider links, it takes its own line and they share the next.
+          style={{ ...primaryButton, ...actionButton, ...(stretch && links.length > 1 && { flexBasis: "100%" }) }}
+          onClick={onShowOnMap}
+        >
+          <MapIcon />
+          Show on map
+        </button>
+      )}
+      {links.map((l) => (
+        <ProviderLink key={l.url} link={l} style={{ flex: actionButton.flex }} />
+      ))}
+    </div>
+  );
+
   return (
     <div
       id={id}
       className="activities__preview"
-      style={{ gridTemplateColumns: mobile || !sketch ? "minmax(0, 1fr)" : "260px minmax(0, 1fr)" }}
+      data-track={sketch ? "" : undefined}
+      data-compact={mobile ? "" : undefined}
     >
       {/* No route, no box: the row already says "No route". */}
       {sketch && (
-        <div style={{ alignSelf: "start", minWidth: 0 }}>
-          <div style={trackBox}>
+        // A click on the track does what the Show on map button says; the button is the
+        // keyboard's and the screen reader's way in, so the box takes no focus.
+        <div className="activities__track" style={{ ...trackBox, cursor: onShowOnMap ? "pointer" : undefined }} onClick={onShowOnMap}>
             {mapUrl && (
               <img
                 src={mapUrl}
                 alt=""
                 decoding="async"
                 onLoad={() => setLoadedUrl(mapUrl)}
-                style={{ ...fill, opacity: loadedUrl === mapUrl ? 1 : 0, transition: "opacity .25s" }}
+                style={{ ...fill, objectFit: "cover", opacity: loadedUrl === mapUrl ? 1 : 0, transition: "opacity .25s" }}
               />
             )}
+            {/* Cropped like the image (cover), so the route stays on its roads. */}
             <svg
               viewBox={`0 0 ${TRACK_W} ${TRACK_H}`}
+              preserveAspectRatio="xMidYMid slice"
               style={fill}
               role="img"
               aria-label={`Route of ${a.name}`}
@@ -116,88 +140,53 @@ export function ActivityPreview({
                 <circle cx={marker[0]} cy={marker[1]} r={5} fill="var(--text-strong)" stroke="var(--accent)" strokeWidth={2.5} />
               )}
             </svg>
-          </div>
         </div>
       )}
 
-      {/* One column, as wide as the preview gives it: an implicit auto column would
-          grow to the chart caption's unwrapped width and push everything off a phone. */}
-      <div style={{ minWidth: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12, alignContent: "start" }}>
-        {cards.length > 0 && (
-          <StatGrid cards={cards} compact columns={mobile ? Math.min(2, cards.length) : cards.length} />
-        )}
-        {facts.length > 0 && (
-          <dl style={factRow}>
-            {facts.map((f) => (
-              <div key={f.label} style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
-                <dt style={{ color: "var(--text-muted)" }}>{f.label}</dt>
-                <dd style={{ margin: 0, fontFamily: MONO, color: "var(--text)" }}>{f.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {detail && profile && charted ? (
-          // ActivityCharts sets its own top margin for the map panel; the gap does it here.
-          <div style={{ marginTop: -14 }}>
-            <ActivityCharts
-              detail={detail}
-              profile={profile}
-              type={a.type}
-              cursor={cursor}
-              onCursor={setCursor}
-              kinds={CHART_KINDS}
-              routeLinked={false}
-            />
-          </div>
-        ) : (
-          // Loading or failed; an activity without elevation samples just has no chart.
-          message && detailState.status !== "ready" && <p style={statusLine}>{message}</p>
-        )}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {onShowOnMap && (
-            <button type="button" className="ctl-accent" style={primaryButton} onClick={onShowOnMap}>
-              <MapIcon />
-              Show on map
-            </button>
-          )}
-          {links.map((l) => (
-            <a
-              key={l.url}
-              href={l.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ctl"
-              style={{ ...secondaryButton, height: 36, textDecoration: "none" }}
-            >
-              {l.label}
-              <ExternalIcon />
-            </a>
-          ))}
-        </div>
+      <div ref={sideRef} style={{ ...side, maxWidth: sketch || mobile ? undefined : 720 }}>
+        <ActivityStats activity={a} extraCards={extra} columns={mobile || sideW < 560 ? 3 : undefined} />
+        {!mobile && actions}
       </div>
+
+      {/* The charts span the preview, the track box's column too: side by side, three
+          across where they fit. */}
+      <div className="activities__preview-wide">
+        <ActivityChartsBlock
+          activity={a}
+          detail={detailState}
+          cursor={cursor}
+          onCursor={setCursor}
+          minColumn={240}
+          routeLinked={false}
+          zoneLimits={zoneLimits}
+        />
+      </div>
+      {mobile && actions && <div className="activities__preview-wide">{actions}</div>}
     </div>
   );
 }
 
+/** Stops long enough to mention: elapsed this much past moving time. */
+const STOPPED_S = 120;
+
 /**
- * The facts the stat cards leave out, each only when known. With the chart shown
- * (`charted`), elapsed and average heart rate are left to its readout.
+ * When: the local start to finish, naming the elapsed time when it stopped along the
+ * way; just the start without an elapsed time; nothing without a local start.
  */
-export function previewFacts(a: ActivityRecord, charted = false): { label: string; value: string }[] {
-  const facts: { label: string; value: string }[] = [];
-  // Local wall-clock start, as recorded ("2024-08-18T07:42:10" -> "07:42").
-  if (a.start_local) facts.push({ label: "Started", value: a.start_local.slice(11, 16) });
-  if (!charted && a.elapsed_time !== undefined) facts.push({ label: "Elapsed", value: formatClock(a.elapsed_time) });
-  if (!charted && a.avg_hr !== undefined) facts.push({ label: "Avg HR", value: `${Math.round(a.avg_hr)} bpm` });
-  if (a.max_hr !== undefined) facts.push({ label: "Max HR", value: `${Math.round(a.max_hr)} bpm` });
-  return facts;
+export function timeCard(a: ActivityRecord): StatCard | null {
+  const span = timeSpan(a.start_local, a.elapsed_time);
+  if (!span) return null;
+  if (a.elapsed_time === undefined) return { value: span, label: "Start time" };
+  const stopped = a.moving_time !== undefined && a.elapsed_time - a.moving_time >= STOPPED_S;
+  return { value: span, label: stopped ? `Time · ${formatDuration(a.elapsed_time)} elapsed` : "Time", wide: true };
 }
 
-// The box keeps the image's shape (it never stretches beside taller stats, which would
-// distort the map), and the image and the route drawing both fill it exactly.
+
+// Beside the stats, the box takes their height (index.css: .activities__track), within
+// limits that crop no more than the sketch's margin; the image and the route drawing
+// both fill it and crop alike. Stacked, it keeps the image's shape.
 const trackBox: CSSProperties = {
   position: "relative",
-  aspectRatio: `${TRACK_W} / ${TRACK_H}`,
   borderRadius: R.md,
   border: "1px solid var(--card-grid)",
   overflow: "hidden",
@@ -217,17 +206,16 @@ const fill: CSSProperties = {
   height: "100%",
 };
 
-const factRow: CSSProperties = {
+const side: CSSProperties = {
+  minWidth: 0,
   display: "flex",
-  flexWrap: "wrap",
-  columnGap: 18,
-  rowGap: 4,
-  margin: 0,
-  fontSize: FS.sm,
+  flexDirection: "column",
+  gap: 18,
 };
 
-const statusLine: CSSProperties = {
-  margin: 0,
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
-};
+
+const actionRow: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8 };
+
+
+
+

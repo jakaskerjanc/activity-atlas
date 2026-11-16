@@ -4,7 +4,8 @@
 // segment or a row highlights both. Then one stacked
 // bar per month from the first month with zone time, in hours or as each month's own
 // 100%, below zone 1 at the bottom. Colors are one violet ramp, ordered with the zones
-// (--zone-0 … --zone-5 in index.css).
+// (--zone-0 … --zone-5 in index.css). One activity's heart-rate chart draws
+// its line in the same colors (ActivityCharts).
 
 import { useState, type CSSProperties, type PointerEvent } from "react";
 import { FS, MONO, pillStyle } from "./theme";
@@ -13,7 +14,7 @@ import { formatMonth } from "../format";
 import { niceTicks } from "../profile";
 import { formatHours, formatShare, ZONE_BANDS, type ZoneBand, type ZoneSummary } from "../hrZones";
 
-const zoneColor = (i: number) => `var(--zone-${i})`;
+export const zoneColor = (i: number) => `var(--zone-${i})`;
 const BANDS = Array.from({ length: ZONE_BANDS }, (_, i) => i);
 
 /** The monthly bars' scale: hours out, or each month as its own 100%. */
@@ -33,30 +34,14 @@ export function HeartRateZones({
   const [scale, setScale] = useState<BarScale>("hours");
   return (
     <>
-      <div
-        role="img"
-        aria-label={`Time in heart-rate zones: ${bands
+      <ZoneStrip
+        seconds={seconds}
+        label={`Time in heart-rate zones: ${bands
           .map((b, i) => `${b.label} ${formatShare(seconds[i], total)}`)
           .join(", ")}`}
-        style={strip}
-        onPointerLeave={() => setHovered(null)}
-      >
-        {BANDS.map((i) =>
-          seconds[i] > 0 ? (
-            <div
-              key={i}
-              onPointerEnter={() => setHovered(i)}
-              style={{
-                flex: `${seconds[i]} 1 0`,
-                minWidth: 2,
-                background: zoneColor(i),
-                opacity: hovered == null || hovered === i ? 1 : 0.45,
-                transition: "opacity 120ms",
-              }}
-            />
-          ) : null,
-        )}
-      </div>
+        hovered={hovered}
+        onHover={setHovered}
+      />
       <ul style={rows}>
           {bands.map((b, i) => (
             <li
@@ -104,6 +89,47 @@ export function HeartRateZones({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The split as one strip: a segment per band with time, as wide as its share, in the
+ * band's color. Pointing at or tapping a segment reports its band; `hovered` dims the
+ * others.
+ */
+export function ZoneStrip({
+  seconds,
+  label,
+  hovered,
+  onHover,
+  height = 16,
+}: {
+  seconds: readonly number[];
+  label: string;
+  hovered: number | null;
+  onHover: (band: number | null) => void;
+  height?: number;
+}) {
+  return (
+    <div role="img" aria-label={label} style={{ ...strip, height }} onPointerLeave={() => onHover(null)}>
+      {BANDS.map((i) =>
+        seconds[i] > 0 ? (
+          <div
+            key={i}
+            onPointerEnter={() => onHover(i)}
+            // A tap on a touch screen reads the band too.
+            onPointerDown={() => onHover(i)}
+            style={{
+              flex: `${seconds[i]} 1 0`,
+              minWidth: 2,
+              background: zoneColor(i),
+              opacity: hovered == null || hovered === i ? 1 : 0.45,
+              transition: "opacity 120ms",
+            }}
+          />
+        ) : null,
+      )}
+    </div>
   );
 }
 

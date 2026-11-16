@@ -18,12 +18,25 @@ export interface ZoneBand {
   range: string;
 }
 
+/** A band's name: "Below zone 1", then "Zone 1" … "Zone 5". */
+export const zoneLabel = (band: number): string => (band === 0 ? "Below zone 1" : `Zone ${band}`);
+
+/**
+ * The band a heart rate falls in against the reference limits (lower bounds of zones
+ * 1–5): 0 below zone 1, then 1–5.
+ */
+export function zoneBand(bpm: number, limits: readonly number[]): number {
+  let band = 0;
+  for (const lo of limits) if (bpm >= lo) band += 1;
+  return Math.min(band, ZONE_BANDS - 1);
+}
+
 /** The six bands' names and bpm ranges, from the reference limits (lower bounds of zones 1–5). */
 export function zoneBands(limits: readonly number[]): ZoneBand[] {
   return Array.from({ length: ZONE_BANDS }, (_, i) => {
-    if (i === 0) return { label: "Below zone 1", range: `under ${limits[0]} bpm` };
+    if (i === 0) return { label: zoneLabel(0), range: `under ${limits[0]} bpm` };
     const range = i < ZONE_BANDS - 1 ? `${limits[i - 1]}–${limits[i]} bpm` : `${limits[i - 1]}+ bpm`;
-    return { label: `Zone ${i}`, range };
+    return { label: zoneLabel(i), range };
   });
 }
 
@@ -53,7 +66,8 @@ export interface ZoneSummary {
   missing: number;
 }
 
-function validZones(z: number[] | undefined): z is number[] {
+/** Whether an activity's hr_zones holds six usable band totals with some time in them. */
+export function validZones(z: number[] | undefined): z is number[] {
   return (
     Array.isArray(z) && z.length === ZONE_BANDS && z.every((s) => Number.isFinite(s) && s >= 0) && z.some((s) => s > 0)
   );

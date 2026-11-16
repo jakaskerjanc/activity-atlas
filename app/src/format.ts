@@ -65,6 +65,20 @@ export function formatClock(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
+/**
+ * The local wall-clock span of an activity: "07:42–08:44" from its local start and
+ * elapsed time, or just "07:42" without the elapsed time. Undefined without a local
+ * start. A span past midnight wraps ("23:30–00:21").
+ */
+export function timeSpan(startLocal: string | undefined, elapsed: number | undefined): string | undefined {
+  const start = startLocal?.slice(11, 16);
+  if (!start || !/^\d\d:\d\d$/.test(start)) return undefined;
+  if (elapsed === undefined) return start;
+  const [h, m] = start.split(":").map(Number);
+  const end = (h * 60 + m + Math.round(elapsed / 60)) % (24 * 60);
+  return `${start}–${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+}
+
 /** km/h with one decimal. Dash when either input is unknown or time is zero. */
 export function speedKmh(meters: number | undefined, seconds: number | undefined): string {
   if (meters == null || seconds == null || seconds <= 0) return DASH;

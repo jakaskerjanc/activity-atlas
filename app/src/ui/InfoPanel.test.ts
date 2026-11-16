@@ -69,14 +69,20 @@ describe("InfoPanel body", () => {
     expect(html).not.toContain(">Activities<");
   });
 
-  test("the activity's pages show as G and S badges next to each other", () => {
+  test("the activity's pages are buttons at the foot of the body, Garmin first", () => {
     const html = render({
+      body: createElement("p", null, "charts"),
       links: [
         { url: "https://connect.garmin.com/modern/activity/2", label: "View on Garmin Connect", short: "G" },
         { url: "https://www.strava.com/activities/1", label: "View on Strava", short: "S" },
       ],
     });
-    expect(html).toMatch(/href="https:\/\/connect\.garmin\.com[^"]*"[^>]*aria-label="View on Garmin Connect"[^>]*>G<\/a><a[^>]*href="https:\/\/www\.strava\.com\/activities\/1"[^>]*>S<\/a>/);
-    expect(html).not.toContain("View on Strava</a>");
+    expect(html).toMatch(/charts<\/p>.*aria-label="View on Garmin Connect"[^>]*>Garmin Connect<svg.*aria-label="View on Strava"[^>]*>Strava<svg/);
+  });
+
+  test("no cards, no boxes: a selected activity's body carries its own stats", () => {
+    const html = render({ cards: [], body: createElement("p", null, "summary") });
+    expect(html).not.toContain("border-radius:12px;overflow:hidden");
+    expect(html).toContain("summary");
   });
 });

@@ -37,16 +37,15 @@ import type {
   Theme,
 } from "./types";
 import { joinActivities } from "./tracks";
-import { formatDate, formatMonthShort, activityLinks, typeLabel, type ActivityLink } from "./format";
-import { activityCards, totalCards, type StatCard } from "./stats";
+import { formatDate, formatMonthShort, activityLinks, timeSpan, typeLabel, type ActivityLink } from "./format";
+import { totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
 import { buildTimeline, frameAt, totalDurationMs } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
-import { ActivityCharts, detailMessage } from "./ui/ActivityCharts";
 import { GroupRows } from "./ui/GroupRows";
 import { placeLine, routeTable } from "./routeGroup";
-import { buildProfile } from "./profile";
+import { ActivitySummary } from "./ui/ActivitySummary";
 import { markerPoint } from "./routeCursor";
 import { gradeRoutes } from "./grade";
 import { chromeInsets } from "./ui/layout";
@@ -449,16 +448,9 @@ export default function App() {
     [data, selectedId],
   );
 
-  // The selected activity's samples and the charts built from them.
+  // The selected activity's samples, for the charts and the cursor on the route.
   const detailState = useActivityDetail(selectedId, selectedFeature?.properties.detail === true);
   const selectedDetail = detailState.status === "ready" ? detailState.detail : null;
-  const profile = useMemo(
-    () =>
-      selectedDetail && selectedFeature
-        ? buildProfile(selectedDetail, selectedFeature.properties.type)
-        : null,
-    [selectedDetail, selectedFeature],
-  );
 
   const selectedShown = useMemo(
     () => selectedId != null && visibleOnMap.some((f) => f.properties.id === selectedId),
@@ -508,27 +500,16 @@ export default function App() {
     selectActivity(id);
   };
 
-  const charts = useMemo(() => {
-    if (!selectedFeature) {
-      return undefined;
-    }
-    if (selectedDetail && profile) {
-      return (
-        <ActivityCharts
-          detail={selectedDetail}
-          profile={profile}
-          type={selectedFeature.properties.type}
-          cursor={cursor}
-          onCursor={setCursor}
-        />
-      );
-    }
-    return <p style={statusLine}>{detailMessage(detailState, profile != null)}</p>;
-  }, [selectedFeature, selectedDetail, profile, cursor, detailState, shownCity]);
-  // The place and route rows above the charts. Outside the memo: their handlers read
-  // the current filter and panel layout.
+  // The selected activity's stats, zones and charts, with its place and route rows
+  // under the stats (their handlers read the current filter and panel layout).
   const panelBody = selectedFeature ? (
-    <>
+    <ActivitySummary
+      activity={selectedFeature.properties}
+      detail={detailState}
+      cursor={cursor}
+      onCursor={setCursor}
+      zoneLimits={zoneLimits}
+    >
       <GroupRows
         place={selectedPlaceLine}
         route={selectedRouteTable}
@@ -537,8 +518,7 @@ export default function App() {
         onPickPlace={pickPlace}
         onSelect={selectRouteMate}
       />
-      {charts}
-    </>
+    </ActivitySummary>
   ) : undefined;
 
   // InfoPanel content: selected activity, else the shown city route, else aggregate totals.
@@ -552,8 +532,9 @@ export default function App() {
       const p = selectedFeature.properties;
       return {
         title: p.name,
-        subtitle: `${typeLabel(p.type)} on ${formatDate(p.ts)}`,
-        cards: activityCards(p),
+        subtitle: [typeLabel(p.type), formatDate(p.ts), timeSpan(p.start_local, p.elapsed_time)].filter(Boolean).join(" · "),
+        // The summary in the body carries the activity's stats.
+        cards: [],
         links: activityLinks(p.sources),
       };
     }
@@ -695,6 +676,7 @@ export default function App() {
           onResetFilter={resetFilter}
           onClearPlace={clearPlace}
           theme={theme}
+          zoneLimits={zoneLimits}
         />
       )}
 
@@ -871,11 +853,4 @@ const pulseDot: CSSProperties = {
   height: 8,
   borderRadius: "50%",
   background: "var(--accent)",
-};
-
-// The muted line in place of charts (loading, failed, or no samples).
-const statusLine: CSSProperties = {
-  margin: "14px 0 0",
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
 };

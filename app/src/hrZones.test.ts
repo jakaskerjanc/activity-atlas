@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatHours, formatShare, zoneBands, zoneSummary } from "./hrZones";
+import { formatHours, formatShare, zoneBand, zoneBands, zoneSummary } from "./hrZones";
 import { monthIndex } from "./format";
 import { record } from "./testFixtures";
 
@@ -82,5 +82,12 @@ describe("formatting", () => {
     expect(formatHours(3590)).toBe("1.0 h");
     expect(formatHours(5400)).toBe("1.5 h");
     expect(formatHours(36000 * 12.4)).toBe("124 h");
+  });
+});
+
+describe("zoneBand", () => {
+  test("below zone 1, each zone from its lower bound, and zone 5 above its top", () => {
+    const limits = [100, 120, 140, 160, 180];
+    expect([99, 100, 139, 140, 179, 180, 230].map((b) => zoneBand(b, limits))).toEqual([0, 1, 2, 3, 4, 5, 5]);
   });
 });

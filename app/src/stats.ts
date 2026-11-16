@@ -21,6 +21,8 @@ export interface StatCard {
   label: string;
   /** true = render in accent color */
   accent?: boolean;
+  /** Takes two columns in a grid of stats (a long value: a time span). */
+  wide?: boolean;
 }
 
 /** A sum over the activities that have a value, and how many those are. */
@@ -90,7 +92,8 @@ export function activityCards(p: ActivityRecord): StatCard[] {
   return [
     { value: formatKm(p.distance), unit: "km", label: "Distance", accent: true },
     withParts({ value: formatDuration(p.moving_time), label: "Moving time" }, p.moving_time),
-    { value: formatMeters(p.elevation_gain), unit: "m", label: "Elevation gain" },
+    // "Climb", as the Activities list's column: four of these share one panel row.
+    { value: formatMeters(p.elevation_gain), unit: "m", label: "Climb" },
     foot
       ? { value: pacePerKm(p.distance, p.moving_time), unit: "/km", label: "Pace" }
       : { value: speedKmh(p.distance, p.moving_time), unit: "km/h", label: "Speed" },
