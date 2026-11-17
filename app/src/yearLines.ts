@@ -25,13 +25,13 @@ function refDay(ts: number): number {
 
 const yearOf = (ts: number) => new Date(ts * 1000).getUTCFullYear();
 
+// Built once, as the chart's tooltip formats a day on every pointer move (a
+// toLocaleDateString with options builds a new formatter per call).
+const REF_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 /** A day of the reference year as "Nov 15". */
 export function formatRefDay(day: number): string {
-  return new Date(Date.UTC(REF_YEAR, 0, 1 + day)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return REF_DAY.format(Date.UTC(REF_YEAR, 0, 1 + day));
 }
 
 export interface YearLine {

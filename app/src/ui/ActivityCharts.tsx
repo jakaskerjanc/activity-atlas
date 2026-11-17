@@ -8,7 +8,7 @@
 // Where there is room (minColumn), the charts sit side by side, each with its own
 // x axis, in rows they fill; otherwise they stack on one. Model: ../profile.ts.
 
-import type { CSSProperties, PointerEvent, ReactNode } from "react";
+import { useMemo, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { FS, MONO } from "./theme";
 import { Reading } from "./StatsSection";
 import { useElementWidth } from "./useElementWidth";
@@ -133,7 +133,9 @@ export function ActivityCharts({
   const x0 = x[0];
   const x1 = x[x.length - 1] > x0 ? x[x.length - 1] : x0 + 1;
   const plotW = Math.max(1, chartW - PAD_L - PAD_R);
-  const sx = (v: number) => PAD_L + ((v - x0) / (x1 - x0)) * plotW;
+  // The same function until the width or the samples change, so the charts' paths (keyed
+  // on it) aren't rebuilt as the cursor moves.
+  const sx = useMemo(() => (v: number) => PAD_L + ((v - x0) / (x1 - x0)) * plotW, [x0, x1, plotW]);
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     onCursor(nearestIndex(x, x0 + ((e.clientX - rect.left - PAD_L) / plotW) * (x1 - x0)));
@@ -238,13 +240,28 @@ function Chart({ series, x, width, height: h, sx, cursor, onMove, onLeave, aside
   const top = PAD_Y;
   const bottom = h - PAD_Y;
   const [lo, hi] = domain;
-  // Values outside the domain (pace beyond p5..p95) are clipped to its edge.
-  const sy = (v: number) => {
-    const f = (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1);
-    return invert ? top + f * (bottom - top) : bottom - f * (bottom - top);
-  };
+  // Values outside the domain (pace beyond p5..p95) are clipped to its edge. Kept, like
+  // sx, so the paths below are built only when the chart changes.
+  const sy = useMemo(
+    () => (v: number) => {
+      const f = (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo || 1);
+      return invert ? top + f * (bottom - top) : bottom - f * (bottom - top);
+    },
+    [lo, hi, invert, top, bottom],
+  );
   const color = COLOR[kind];
   const ticks = kind === "pace" ? paceTicks(lo, hi) : niceTicks(lo, hi, 3);
+  // The lines and the area, a path string over every sample each: built when the chart's
+  // size, samples or zones change, not on each cursor move, which only moves the cursor's
+  // line and dot below.
+  const paths = useMemo(
+    () => ({
+      area: kind === "elevation" ? areaPath(x, values, sx, sy, bottom) : null,
+      bands: limits ? bandedLinePaths(x, values, sx, sy, (v) => zoneBand(v, limits), ZONE_BANDS) : null,
+      line: limits ? null : linePath(x, values, sx, sy),
+    }),
+    [kind, x, values, sx, sy, bottom, limits],
+  );
   const cx = cursor == null ? null : sx(x[cursor]);
   const cv = cursor == null ? null : values[cursor];
 
@@ -274,18 +291,16 @@ function Chart({ series, x, width, height: h, sx, cursor, onMove, onLeave, aside
             </text>
           </g>
         ))}
-        {kind === "elevation" && (
-          <path d={areaPath(x, values, sx, sy, bottom)} fill={color} fillOpacity={0.12} stroke="none" />
-        )}
-        {limits ? (
-          bandedLinePaths(x, values, sx, sy, (v) => zoneBand(v, limits), ZONE_BANDS).map((d, band) =>
+        {paths.area && <path d={paths.area} fill={color} fillOpacity={0.12} stroke="none" />}
+        {paths.bands ? (
+          paths.bands.map((d, band) =>
             d ? (
               <path key={band} d={d} fill="none" stroke={`var(--zone-line-${band})`} strokeWidth={1.75} strokeLinecap="round" />
             ) : null,
           )
         ) : (
           <path
-            d={linePath(x, values, sx, sy)}
+            d={paths.line ?? undefined}
             fill="none"
             stroke={color}
             strokeWidth={kind === "elevation" ? 2 : 1.5}

@@ -4,8 +4,9 @@
 // this module only applies the expression it is handed. In the Grade color mode the
 // routes are drawn as grade runs (grade.ts) instead of whole lines. A distance
 // comparison's city route, when shown, is drawn dashed on top with its two ends labelled.
+// While another page covers the map it is frozen (`active`, see the export at the end).
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import type { ExpressionSpecification, FilterSpecification } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -46,10 +47,6 @@ const ACTIVE_GLOW_ID = "activities-active-glow";
 const ACTIVE_CORE_ID = "activities-active-core";
 const HOVER_GLOW_ID = "activities-hover-glow";
 const HOVER_CORE_ID = "activities-hover-core";
-// The chart/map cursor (#17): a ringed dot on the selected route at the hovered sample.
-const CURSOR_SOURCE_ID = "activity-cursor";
-const CURSOR_RING_ID = "activity-cursor-ring";
-const CURSOR_DOT_ID = "activity-cursor-dot";
 // A comparison city's route: a dashed line over a casing, in the theme's strongest ink so
 // it reads apart from the activities in every color mode.
 const CITY_SOURCE_ID = "city-route";
@@ -65,7 +62,6 @@ const CITY_LABEL_ROOM = 90;
 const MUTED_ROUTE: Record<Theme, string> = { dark: "#6b6f7a", light: "#8b909b" };
 const FADE_MS = 1200;
 
-const NO_POINTS: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 const NO_LINES: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Per-feature highlight gate. Toggling feature-state is cheap; swapping paint
@@ -97,6 +93,23 @@ function cityMarker(name: string, end: "origin" | "city", side: "left" | "right"
   return el;
 }
 
+/**
+ * The chart/map cursor (#17): a light ring under an accent dot, on the selected route at
+ * the cursor's sample (styled in index.css). A DOM marker rather than a map layer, so a
+ * move only shifts a transform: a layer's source would go to the worker and repaint the
+ * whole map on every pointer move. Being DOM, it also outlives a style swap.
+ */
+function cursorElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "map-cursor";
+  el.setAttribute("aria-hidden", "true");
+  // Inline as well as in the CSS: under fog or terrain Mapbox writes an inline
+  // pointer-events onto a marker that has none, and this one sits right under the
+  // pointer moving along the route, whose mousemove must reach the map.
+  el.style.pointerEvents = "none";
+  return el;
+}
+
 /** Point the four base route layers (glow, core, and their hover twins) at one filter. */
 function applyBaseFilter(map: mapboxgl.Map, expr: FilterSpecification | null) {
   map.setFilter(GLOW_ID, expr);
@@ -105,7 +118,12 @@ function applyBaseFilter(map: mapboxgl.Map, expr: FilterSpecification | null) {
   map.setFilter(HOVER_CORE_ID, expr);
 }
 
-interface Props {
+export interface MapViewProps {
+  /**
+   * Whether the map is the page shown. While false (Analytics or Activities covers it)
+   * the map is frozen: it takes no new props until it is shown again.
+   */
+  active: boolean;
   /** Selects the Mapbox base style; the panels themselves are themed in CSS. */
   theme: Theme;
   data: ActivityFeatureCollection | null;
@@ -167,7 +185,7 @@ const SLOVENIA_CENTER: [number, number] = [14.5058, 46.0569];
 const SLOVENIA_ZOOM = 7.6;
 
 /** What the route layers draw: grade runs or whole routes. */
-function routesFor(p: Props): GeoJSON.FeatureCollection | null {
+function routesFor(p: MapViewProps): GeoJSON.FeatureCollection | null {
   if (p.colorMode === "grade" && p.grade) return p.grade.collection;
   return p.data;
 }
@@ -176,7 +194,7 @@ const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-export function MapView(props: Props) {
+function MapViewInner(props: MapViewProps) {
   const { data, mapFilter, colorMode, colorDomain, hoverId, groupIds, selectedId } = props;
   const { replaying, replayFrame, replayEpoch } = props;
   const routeData = routesFor(props);
@@ -205,6 +223,8 @@ export function MapView(props: Props) {
   const mapOwnsCursorRef = useRef(false);
   // The city route's end markers (DOM overlays, so they survive a style swap).
   const cityMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  // The cursor marker (cursorElement), made the first time there is a cursor.
+  const cursorMarkerRef = useRef<mapboxgl.Marker | null>(null);
   // The hover label (a DOM overlay positioned by hand, so a pointer move never re-renders).
   const tipRef = useRef<HTMLDivElement | null>(null);
   const tipIdRef = useRef<string | null>(null);
@@ -452,22 +472,18 @@ export function MapView(props: Props) {
     map.setPaintProperty(ACTIVE_CORE_ID, "line-trim-offset", tail);
   }
 
-  /** Show the cursor dot at cursorPoint; hidden while replaying. */
+  /** Show the cursor marker at cursorPoint; taken off the map without one and while replaying. */
   function applyCursor() {
     const map = mapRef.current;
-    const src = map?.getSource(CURSOR_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
-    if (!src) return;
+    if (!map) return;
     const { cursorPoint, replaying } = propsRef.current;
-    src.setData(
-      cursorPoint && !replaying
-        ? {
-            type: "FeatureCollection",
-            features: [
-              { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: cursorPoint } },
-            ],
-          }
-        : NO_POINTS,
-    );
+    if (!cursorPoint || replaying) {
+      cursorMarkerRef.current?.remove();
+      return;
+    }
+    cursorMarkerRef.current ??= new mapboxgl.Marker({ element: cursorElement() });
+    // addTo does nothing when the marker is already on this map.
+    cursorMarkerRef.current.setLngLat(cursorPoint).addTo(map);
   }
 
   /** Draw the city route (or nothing) and move its end markers. */
@@ -758,7 +774,7 @@ export function MapView(props: Props) {
         },
       });
     }
-    // City route — over the activities, under the cursor.
+    // City route — over the activities.
     if (!map.getSource(CITY_SOURCE_ID)) {
       map.addSource(CITY_SOURCE_ID, { type: "geojson", data: NO_LINES });
     }
@@ -781,31 +797,10 @@ export function MapView(props: Props) {
         paint: { "line-color": ink.line, "line-width": 2.4, "line-dasharray": [2, 1.6] },
       });
     }
-    // Cursor marker — topmost: a light ring under an accent dot.
-    if (!map.getSource(CURSOR_SOURCE_ID)) {
-      map.addSource(CURSOR_SOURCE_ID, { type: "geojson", data: NO_POINTS });
-    }
-    if (!map.getLayer(CURSOR_RING_ID)) {
-      map.addLayer({
-        id: CURSOR_RING_ID,
-        type: "circle",
-        source: CURSOR_SOURCE_ID,
-        paint: { "circle-radius": 7.5, "circle-color": "#ffffff", "circle-opacity": 0.95, "circle-stroke-width": 1, "circle-stroke-color": "rgba(0,0,0,0.35)" },
-      });
-    }
-    if (!map.getLayer(CURSOR_DOT_ID)) {
-      map.addLayer({
-        id: CURSOR_DOT_ID,
-        type: "circle",
-        source: CURSOR_SOURCE_ID,
-        paint: { "circle-radius": 4.5, "circle-color": ACCENT },
-      });
-    }
     applyBaseFilter(map, propsRef.current.mapFilter);
     // A rebuilt layer starts with no line-gradient, whatever was last set.
     gradientKeyRef.current = null;
     applyColor(propsRef.current.colorMode, propsRef.current.colorDomain);
-    applyCursor();
     applyCityRoute();
   }
 
@@ -904,6 +899,8 @@ export function MapView(props: Props) {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       for (const m of cityMarkersRef.current) m.remove();
       cityMarkersRef.current = [];
+      cursorMarkerRef.current?.remove();
+      cursorMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
@@ -913,7 +910,7 @@ export function MapView(props: Props) {
   // Swap the base map style when the theme changes. setStyle drops our source and
   // layers, so rebuild them on the next style.load and restore the current data,
   // color, filter/replay state, and resting paint — without moving the camera or
-  // re-running the fade-in reveal.
+  // re-running the fade-in reveal. The DOM markers (city route ends, cursor) stay put.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
@@ -931,7 +928,6 @@ export function MapView(props: Props) {
       fadeRef.current = 1;
       if (propsRef.current.replaying) applyReplay(propsRef.current.replayFrame);
       applyPaint();
-      applyCursor();
     });
     map.setStyle(url);
   }, [props.theme]);
@@ -991,9 +987,8 @@ export function MapView(props: Props) {
     syncFeatureState();
   }, [hoverId, groupIds, selectedId, replaying]);
 
-  // Move (or hide) the cursor marker.
+  // Move (or hide) the cursor marker. A DOM marker needs no style, so not gated on load.
   useEffect(() => {
-    if (!loadedRef.current) return;
     applyCursor();
   }, [props.cursorPoint, replaying]);
 
@@ -1103,3 +1098,14 @@ export function MapView(props: Props) {
   }
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
 }
+
+/**
+ * The map, frozen while another page covers it (`active` false): React skips it, so a
+ * filter, color or theme change made on Analytics or Activities re-filters, repaints or
+ * reloads nothing underneath. On the way back it renders once with the props as they are
+ * by then, and each effect whose inputs changed meanwhile brings the map up to date
+ * (several at once, in the order they are declared: a theme swap's style.load rebuilds
+ * from the props as they are then, and a selection or city route asked for from another
+ * page flies there). While active it renders on every parent render, as before.
+ */
+export const MapView = memo(MapViewInner, (_prev, next) => !next.active);

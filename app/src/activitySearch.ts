@@ -38,8 +38,12 @@ export function searchText(a: ActivityRecord, names: SearchNames): string {
   return normalizeName(parts.join("\n"));
 }
 
+// Built once: toLocaleDateString with options builds a formatter per call, and the
+// search index calls this once per activity.
+const LONG_MONTH = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" });
+
 function longMonth(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+  return LONG_MONTH.format(ts * 1000);
 }
 
 /** Each activity's search text by id: build once per data load, match against it per key. */

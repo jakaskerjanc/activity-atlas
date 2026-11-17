@@ -137,6 +137,8 @@ const Y_AXIS_W = 40;
 const X_AXIS_H = 20;
 /** Gap between stacked segments, and between bars at most. */
 const GAP = 2;
+// A month bar's short label, "Aug". Built once rather than per bar per render.
+const MONTH_NAME = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" });
 
 function MonthBars({
   summary,
@@ -214,10 +216,7 @@ function MonthBars({
             // The first month's year only when the next January is far enough not to collide.
             const yearLabel = m.month % 12 === 0 || (i === 0 && !months.slice(1, firstClear).some((n) => n.month % 12 === 0));
             const label = short
-              ? new Date(Date.UTC(Math.floor(m.month / 12), m.month % 12, 1)).toLocaleDateString("en-US", {
-                  month: "short",
-                  timeZone: "UTC",
-                })
+              ? MONTH_NAME.format(Date.UTC(Math.floor(m.month / 12), m.month % 12, 1))
               : yearLabel
                 ? String(Math.floor(m.month / 12))
                 : null;

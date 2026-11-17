@@ -55,10 +55,10 @@ interface Props {
 /** Gap between the docked filters panel and the content column, as on analytics. */
 const GUTTER = 24;
 
-/** The list's columns: date, activity, distance, moving time, climb, then the chevron. */
-const GRID = "96px minmax(0, 1fr) 84px 92px 72px 16px";
-/** On a phone: activity, distance and the chevron; the date moves under the name. */
-const GRID_COMPACT = "minmax(0, 1fr) auto 16px";
+// The list's columns are in index.css (.activities__head, .activities__row): date,
+// activity, distance, moving time, climb, then the chevron; on a phone (data-compact)
+// activity, distance and the chevron, with the date under the name. The rows' fixed
+// look is there too: set inline, every style property cost a write per row (~450).
 
 const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "date", label: "Date", numeric: false },
@@ -265,7 +265,7 @@ export function ActivitiesView({
 
                 <section style={{ ...card, padding: 0, overflow: "hidden" }} aria-label="Activity list">
                   {!mobile && (
-                    <div className="activities__head" role="group" aria-label="Sort by" style={{ gridTemplateColumns: GRID }}>
+                    <div className="activities__head" role="group" aria-label="Sort by">
                       {COLUMNS.map((c) => {
                         const on = sort.key === c.key;
                         return (
@@ -289,12 +289,18 @@ export function ActivitiesView({
                     </div>
                   )}
                   {rows.length > 0 ? (
-                    <ol id="activity-list" className="activities__list" ref={listRef} onKeyDown={onListKey} style={list}>
+                    <ol
+                      id="activity-list"
+                      className="activities__list"
+                      data-compact={mobile ? "" : undefined}
+                      ref={listRef}
+                      onKeyDown={onListKey}
+                    >
                       {rows.map((a) => {
                         const open = a.id === openId;
                         const coords = routes.get(a.id);
                         return (
-                          <li key={a.id}>
+                          <li key={a.id} className="activities__item">
                             <ActivityRow
                               activity={a}
                               query={shownQuery}
@@ -395,21 +401,21 @@ const ActivityRow = memo(function ActivityRow({
   if (mobile) meta.push(<Highlight key="date" text={date} query={query} />);
   if (place) meta.push(<Highlight key="place" text={place} query={query} />);
   else if (route) meta.push(<Highlight key="route" text={route} query={query} />);
-  if (!onMap) meta.push(<span key="noroute" style={{ color: "var(--text-faint)" }}>No route</span>);
+  if (!onMap) meta.push(<span key="noroute" className="activities__faint">No route</span>);
 
-  const columns = mobile ? GRID_COMPACT : GRID;
   const body = (
     <>
-      {!mobile && <span style={dateCell}>{date}</span>}
-      <span style={{ minWidth: 0 }}>
-        <span style={nameLine}>
+      {!mobile && <span className="activities__date">{date}</span>}
+      <span className="activities__what">
+        <span className="activities__name">
           <Highlight text={a.name || "Untitled"} query={query} />
         </span>
-        <span style={metaLine}>
-          <span aria-hidden="true" style={{ ...dot, background: typeColor(a.type, theme, rowOf) }} />
+        <span className="activities__meta">
+          {/* The one style that differs per row: the type's color. */}
+          <span aria-hidden="true" className="activities__dot" style={{ background: typeColor(a.type, theme, rowOf) }} />
           {meta.map((m, i) => (
-            <span key={i} style={{ whiteSpace: "nowrap" }}>
-              {i > 0 && <span style={{ color: "var(--text-faint)", margin: "0 6px" }}>·</span>}
+            <span key={i} className="activities__meta-item">
+              {i > 0 && <span className="activities__sep">·</span>}
               {m}
             </span>
           ))}
@@ -418,12 +424,13 @@ const ActivityRow = memo(function ActivityRow({
       <Num value={formatKm(a.distance)} unit={a.distance !== undefined ? "km" : undefined} />
       {!mobile && <Num value={formatDuration(a.moving_time)} />}
       {!mobile && <Num value={formatMeters(a.elevation_gain)} unit={a.elevation_gain !== undefined ? "m" : undefined} />}
-      <span style={{ display: "flex", color: open ? "var(--accent-text)" : "var(--text-faint)" }} aria-hidden="true">
+      <span className="activities__chevron" aria-hidden="true">
         <ChevronIcon dir={open ? "up" : "down"} size={14} />
       </span>
     </>
   );
 
+  // An open row's tint and accent chevron key off aria-expanded (index.css).
   return (
     <button
       type="button"
@@ -432,11 +439,6 @@ const ActivityRow = memo(function ActivityRow({
       onClick={() => onToggle(a.id)}
       aria-expanded={open}
       aria-controls={open ? previewId(a.id) : undefined}
-      style={{
-        ...rowStyle,
-        gridTemplateColumns: columns,
-        background: open ? "var(--accent-tint-weak)" : "transparent",
-      }}
     >
       {body}
     </button>
@@ -445,9 +447,9 @@ const ActivityRow = memo(function ActivityRow({
 
 function Num({ value, unit }: { value: string; unit?: string }) {
   return (
-    <span style={numCell}>
+    <span className="activities__num">
       {value}
-      {unit && <span style={{ color: "var(--text-muted)", marginLeft: 3, fontSize: FS.xs }}>{unit}</span>}
+      {unit && <span className="activities__unit">{unit}</span>}
     </span>
   );
 }
@@ -461,7 +463,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   for (const [s, e] of ranges) {
     if (s > at) out.push(text.slice(at, s));
     out.push(
-      <mark key={s} style={mark}>
+      <mark key={s} className="activities__mark">
         {text.slice(s, e)}
       </mark>,
     );
@@ -570,70 +572,6 @@ function headButton(on: boolean, numeric: boolean): CSSProperties {
     whiteSpace: "nowrap",
   };
 }
-
-const list: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
-
-const rowStyle: CSSProperties = {
-  appearance: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  border: 0,
-  background: "transparent",
-  color: "var(--text)",
-  font: "inherit",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const dateCell: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
-  whiteSpace: "nowrap",
-};
-
-const nameLine: CSSProperties = {
-  display: "block",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: FS.md,
-  fontWeight: 600,
-  color: "var(--text-strong)",
-};
-
-const metaLine: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  flexWrap: "wrap",
-  rowGap: 2,
-  marginTop: 3,
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
-};
-
-const dot: CSSProperties = {
-  width: 8,
-  height: 8,
-  flex: "0 0 auto",
-  borderRadius: "50%",
-  marginRight: 7,
-};
-
-const numCell: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: FS.sm + 0.5,
-  textAlign: "right",
-  whiteSpace: "nowrap",
-  color: "var(--text)",
-};
-
-const mark: CSSProperties = {
-  background: "var(--accent-tint)",
-  color: "var(--accent-text)",
-  borderRadius: 3,
-  padding: "0 1px",
-};
 
 const outsideNote: CSSProperties = {
   margin: "12px 4px 0",

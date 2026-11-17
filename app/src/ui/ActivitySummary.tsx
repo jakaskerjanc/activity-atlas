@@ -6,7 +6,7 @@
 // The map panel shows it all in one column (ActivitySummary); the preview puts the
 // stats beside its track and the charts under both (ActivityStats, ActivityChartsBlock).
 
-import { useMemo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { Reading, StatList } from "./StatsSection";
 import { ActivityCharts, detailMessage } from "./ActivityCharts";
 import { FS } from "./theme";
@@ -31,8 +31,14 @@ interface StatsProps {
   children?: ReactNode;
 }
 
-/** The stats row and anything under it. */
-export function ActivityStats({ activity: a, extraCards = [], columns, children }: StatsProps) {
+const NO_CARDS: StatCard[] = [];
+
+/**
+ * The stats row and anything under it. Memoized: it sits beside the charts, which
+ * re-render on every cursor move, and its props don't change with the cursor (hence the
+ * one empty default, not a new [] per render).
+ */
+export const ActivityStats = memo(function ActivityStats({ activity: a, extraCards = NO_CARDS, columns, children }: StatsProps) {
   // Only the stats with a value: an indoor session has no distance.
   const cards = useMemo(() => [...activityCards(a).filter((c) => c.value !== "—"), ...extraCards], [a, extraCards]);
   return (
@@ -41,7 +47,7 @@ export function ActivityStats({ activity: a, extraCards = [], columns, children 
       {children}
     </>
   );
-}
+});
 
 interface ChartsProps {
   activity: ActivityRecord;
