@@ -45,6 +45,22 @@ Measured on the real database (541 activities, 452 with a route) on 2026-11-17.
 
 Part D first (largest saving per write, and independent of the app), then A, C, B. Part B's production task depends on its prototype's result. Task 0 comes before A and B.
 
+## Status (2026-11-18)
+
+Done on branch `t3/performance-analysis` (PR #53). The work landed as two combined commits, not one per task, so the per-task "Commit" steps stay unticked. Ticked boxes mean the code and tests exist and pass; the by-hand checks and measurements were not recorded.
+
+| Part | State | Left |
+| --- | --- | --- |
+| Task 0 | Scripts and README are in `scripts/perf/` | Step 2 and 3: build the 10× site and record the baseline |
+| A (Activities list) | A1 and A2 done: `listWindow.ts`, windowed `ActivitiesView`, `@tanstack/react-virtual` | A2 step 5 (by hand, desktop and 390 px) and A3 (measure against the bar, put the numbers in a PR) |
+| B (replay) | Not started | All of it: B1 baseline, B2 prototype, B3 decide, B4 fallback if needed, B5 production |
+| C (load less) | C1 and C2 done: `useRoutes.ts`, `loadCityRoute`, `city-distances.json` v2, 253 files in `city-routes/` | By-hand checks in C1 step 5 and C2 step 5 |
+| D (database, refresh) | Not started; `SCHEMA_VERSION` is still 5 | D1 to D5, including the rollout in D5 (run `pnpm run rebuild` right after merging; the 04:17 UTC fetch must not be the first writer) |
+
+The not-yet-done parts are independent of each other except as noted in "Order". Part D is the biggest saving per write and does not touch the app; do it next. Part B starts with a prototype whose result decides the rest.
+
+Merging what is done needs no data step: no schema bump, no rebuild. It ships `city-distances.json` v2 and `city-routes/` together with the app code that reads them, in one deploy.
+
 ---
 
 ### Task 0: Keep the 10× benchmark in the repo
@@ -61,7 +77,7 @@ The earlier analysis measured with two scripts that live in a temp folder a rebo
 - Produces: `BASE=<url> THROTTLE=<n> ONLY=<step,…> node scripts/perf/interact.mjs`. It prints one line per step: `wall`, `script`, `layout+style`, `frames`, `slow>34ms`, `p95`, `worst`, `long=[…]`, `nodes`. Steps Parts A and B need: `replay` (5 s of playback, at 1× and at 8×), `activities-open` (switch to Activities), `activities-sort`, `activities-clear-search`, `activities-preview`.
 - Playwright comes from `PLAYWRIGHT_DIR` (default `/home/jakas/.local/share/mise/installs/playwright/latest/node_modules/`), Chromium from `/usr/bin/chromium` with `--headless=new --no-sandbox --enable-gpu --use-angle=gl`. Without the GPU flags Mapbox renders in software and the numbers mean nothing.
 
-- [ ] **Step 1:** Add the two scripts and the README.
+- [x] **Step 1:** Add the two scripts and the README.
 - [ ] **Step 2:** Build a 10× site: `pnpm run build`, copy `app/dist` to a scratch folder, run the scaler over its `data/`, serve it with `npx serve@14 <folder> -l 4173`.
 - [ ] **Step 3:** Run `BASE=http://localhost:4173/ THROTTLE=1 node scripts/perf/interact.mjs` on the current branch and keep the output as the baseline for A3 and B1.
 - [ ] **Step 4:** Commit: `chore: keep the 10x benchmark scripts in the repo`.
@@ -88,7 +104,7 @@ Not chosen: an invisible `hidden="until-found"` copy of each undrawn row's text,
 - Produces: `withPinned(indexes: number[], pinned: readonly (number | null)[], count: number): number[]`: the union, ascending, without duplicates, nulls, or indexes outside `0..count-1`.
 - Produces: `nextRowIndex(i: number, key: "ArrowDown" | "ArrowUp", count: number): number`: the row to focus, or `-1` for the search box (ArrowUp from row 0).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 test("withPinned adds pinned rows in order, once", () => {
@@ -103,9 +119,9 @@ test("nextRowIndex stops at the last row and leaves the first for the search box
 });
 ```
 
-- [ ] **Step 2:** Run `pnpm --filter app exec vitest run src/ui/listWindow.test.ts`. Expected: FAIL, module not found.
-- [ ] **Step 3:** Implement both functions.
-- [ ] **Step 4:** Run the test again. Expected: PASS.
+- [x] **Step 2:** Run `pnpm --filter app exec vitest run src/ui/listWindow.test.ts`. Expected: FAIL, module not found.
+- [x] **Step 3:** Implement both functions.
+- [x] **Step 4:** Run the test again. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat: window helpers for the Activities list`.
 
 ### Task A2: Window the list
@@ -119,7 +135,7 @@ test("nextRowIndex stops at the last row and leaves the first for the search box
 **Interfaces:**
 - Consumes: `withPinned`, `nextRowIndex` from Task A1.
 
-- [ ] **Step 1: Write the failing tests** (add to `ActivitiesView.test.ts`; `render` gains a `visible` override)
+- [x] **Step 1: Write the failing tests** (add to `ActivitiesView.test.ts`; `render` gains a `visible` override)
 
 ```ts
 test("draws only the first rows of a long list, and says how long it is", () => {
@@ -131,8 +147,8 @@ test("draws only the first rows of a long list, and says how long it is", () => 
 });
 ```
 
-- [ ] **Step 2:** Run `pnpm --filter app exec vitest run src/ui/ActivitiesView.test.ts`. Expected: FAIL (500 rows drawn).
-- [ ] **Step 3: Implement.** The decisions:
+- [x] **Step 2:** Run `pnpm --filter app exec vitest run src/ui/ActivitiesView.test.ts`. Expected: FAIL (500 rows drawn).
+- [x] **Step 3: Implement.** The decisions:
   - The scroll element is the page's `<main>` (it has `overflow-y: auto`); give it a ref.
   - `useVirtualizer({ count: rows.length, getScrollElement, estimateSize: () => 55, overscan: 8, getItemKey: (i) => rows[i].id, scrollMargin, initialRect: { width: 0, height: 900 }, rangeExtractor })`. `initialRect` is what makes the server-rendered tests draw the first rows.
   - `scrollMargin` is the list's top inside the scroll element: `list.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop`, measured in a layout effect and again when the column resizes (the lede can wrap).
@@ -142,7 +158,7 @@ test("draws only the first rows of a long list, and says how long it is", () => 
   - Keyboard: replace `rowButtons()` with indexes. The current index comes from `document.activeElement.dataset.row` through a `Map` of id to index. To focus row `i`: `virtualizer.scrollToIndex(i)`, then focus `button[data-row="<id>"]` on the next animation frame, retrying until it is mounted. ArrowDown in the search box focuses row 0; `nextRowIndex` returning `-1` focuses the search box.
   - The preview's `scrollIntoView` effect stays as it is.
   - Find: extend the existing `"/"` key handler. Ctrl+F or Cmd+F (`e.key === "f"` with `ctrlKey` or `metaKey`, without `altKey` or `shiftKey`) calls `preventDefault`, then focuses and selects the search box, unless the box is already focused; in that case the handler does nothing and the browser's find opens. The placeholder gains the hint: "Search by name, place, type or date (Ctrl+F)", or "⌘F" when `navigator.platform` starts with "Mac".
-- [ ] **Step 4:** Run the whole file. Expected: PASS, including the five existing tests.
+- [x] **Step 4:** Run the whole file. Expected: PASS, including the five existing tests.
 - [ ] **Step 5: Check by hand on the 10× site**, desktop and a 390 px wide window:
   - Hold ArrowDown from the search box through 100 rows: focus never drops, the list follows.
   - Focus a row, scroll it far away with the wheel, press ArrowDown: the list returns to the next row.
@@ -258,7 +274,7 @@ test("windowFor keeps a window until the last quarter, then starts one at the dr
 - A routes error no longer fails the site. On the map page it shows the alert chip "Couldn't load the routes: …"; Analytics and Activities work without routes.
 - `ActivitiesView` takes `routes: ReadonlyMap<…> | null`; `null` means still loading. A row then says "No route" only when the record has no `gps` channel.
 
-- [ ] **Step 1: Write the failing tests** (the file's `render` helper gains a `routes` override that may be `null`)
+- [x] **Step 1: Write the failing tests** (the file's `render` helper gains a `routes` override that may be `null`)
 
 ```ts
 test("while the routes load, a row with GPS doesn't claim to have no route", () => {
@@ -271,9 +287,9 @@ test("while the routes load, a row without GPS already says so", () => {
 });
 ```
 
-- [ ] **Step 2:** Run them. Expected: FAIL (type error on `routes: null`).
-- [ ] **Step 3:** Implement `useRoutes`, the split load in `App`, and the `null` case in `ActivitiesView`.
-- [ ] **Step 4:** Run `pnpm run typecheck && pnpm --filter app run test`. Expected: PASS.
+- [x] **Step 2:** Run them. Expected: FAIL (type error on `routes: null`).
+- [x] **Step 3:** Implement `useRoutes`, the split load in `App`, and the `null` case in `ActivitiesView`.
+- [x] **Step 4:** Run `pnpm run typecheck && pnpm --filter app run test`. Expected: PASS.
 - [ ] **Step 5: Check by hand** with `routes.json` delayed 5 s (DevTools request throttling, or a Playwright `page.route` that waits): opening on `/analytics` draws the charts at once; opening on Activities lists the rows, and an open preview gains its track when the routes arrive; the map page shows its spinner until then. With `routes.json` blocked: Analytics and Activities work, the map page shows the routes error.
 - [ ] **Step 6:** Commit: `perf: Analytics and Activities start without the routes`.
 
@@ -295,7 +311,7 @@ The OSRM cache the build script reads (`scripts/data/.city-distances-cache.jsonl
 - Produces (app): `loadCityRoute(id: number, profile: Profile): Promise<[number, number][]>`: fetches `city-routes/<id>.json`, decodes that profile's line to `[lng, lat]`, caches per `id:profile`, forgets a failed load, and rejects when the file has no line for the profile or fewer than 2 points.
 - `App`: when the shown city changes, load its line; `cityRoute` is `null` until the line for the current key is in. A failed load leaves the panel as it is, draws no line, and logs a warning (as `fetchPlaces` does).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // scripts/build-city-distances.test.ts
@@ -312,9 +328,9 @@ test("decodeCities reads a v2 index and refuses v1", () => {
 });
 ```
 
-- [ ] **Step 2:** Run both test files. Expected: FAIL.
-- [ ] **Step 3:** Implement, then run `pnpm exec tsx scripts/build-city-distances.ts --resplit`.
-- [ ] **Step 4:** Run `pnpm run test:all`. Expected: PASS. Check `gzip -9c app/public/city-distances.json | wc -c` is about 10,000 (was 301,143).
+- [x] **Step 2:** Run both test files. Expected: FAIL.
+- [x] **Step 3:** Implement, then run `pnpm exec tsx scripts/build-city-distances.ts --resplit`.
+- [x] **Step 4:** Run `pnpm run test:all`. Expected: PASS. Check `gzip -9c app/public/city-distances.json | wc -c` is about 10,000 (was 301,143).
 - [ ] **Step 5: Check by hand:** on Analytics, "Show on map" for the ride comparison and for the on-foot one each draw their dashed route and fit it; narrowing the date range moves the route to the new city; the network panel shows one `city-routes/<id>.json` per city shown.
 - [ ] **Step 6:** Commit: `perf: fetch a city's route only when it is shown`.
 
