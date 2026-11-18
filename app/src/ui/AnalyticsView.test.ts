@@ -99,7 +99,7 @@ describe("AnalyticsView", () => {
       "Couldn&#x27;t load the city distances.",
     );
 
-    const route = (km: number) => ({ m: km * 1000, coords: [[14.5, 46], [15, 45]] as [number, number][] });
+    const route = (km: number) => ({ m: km * 1000 });
     const data: CityData = {
       origin: { name: "Ljubljana", lat: 46.0569, lon: 14.5058 },
       cities: [

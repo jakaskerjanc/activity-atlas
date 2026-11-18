@@ -267,6 +267,9 @@ export function Ridgeline({
 }
 
 const TIP_W = 240;
+// Built once: the tooltip follows the pointer, and toLocaleDateString with options
+// builds a new formatter per call.
+const WEEKDAY = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" });
 
 /** The hovered day: its date, its climbing, and each activity with its own gain. */
 function DayTooltip({
@@ -286,7 +289,7 @@ function DayTooltip({
   const list = ridge.byDay?.[hover.day - 1] ?? [];
   const gain = ridge.daily[hover.day - 1] ?? 0;
   const ts = monthStart(ridge.month) + (hover.day - 1) * 86400;
-  const weekday = new Date(ts * 1000).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+  const weekday = WEEKDAY.format(ts * 1000);
   const left = Math.min(Math.max(hover.x, TIP_W / 2), width - TIP_W / 2);
   return (
     <div role="tooltip" style={{ ...tipBox, left, top: hover.y }}>

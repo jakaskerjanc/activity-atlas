@@ -70,7 +70,7 @@ function c(
 ): CityDistance {
   return {
     id, name: `C${id}`, country: "XX", fc: "PPL", lat: 0, lon: 0, population: 100,
-    cycling: cyclingKm === null ? null : { m: cyclingKm * 1000, coords: [[0, 0], [1, 1]] },
+    cycling: cyclingKm === null ? null : { m: cyclingKm * 1000 },
     walking: null,
     ...over,
   };
@@ -138,7 +138,7 @@ describe("pickCity", () => {
 
   test("profile isolation: cities without a route for the profile are ignored", () => {
     const bikeOnly = c(1, 100);
-    const footOnly = c(2, null, { walking: { m: km(100), coords: [[0, 0], [1, 1]] } });
+    const footOnly = c(2, null, { walking: { m: km(100) } });
     expect(pickCity([bikeOnly, footOnly], km(100), "walking", first)).toMatchObject({ city: { id: 2 } });
     expect(pickCity([bikeOnly, footOnly], km(100), "cycling", first)).toMatchObject({ city: { id: 1 } });
   });
@@ -157,7 +157,7 @@ describe("pickCity", () => {
 
 describe("cityComparisons", () => {
   const cities = [
-    c(1, 100, { walking: { m: km(90), coords: [[0, 0], [1, 1]] } }),
+    c(1, 100, { walking: { m: km(90) } }),
     c(2, 2_000),
   ];
 

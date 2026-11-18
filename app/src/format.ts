@@ -4,19 +4,31 @@ import type { ActivitySource } from "./types";
 
 const DASH = "—";
 
+// The formatters are built once and reused. toLocaleString / toLocaleDateString with
+// options build a new Intl formatter on every call (tens of µs each, against about 1 µs
+// for a kept one), and these run per row of the Activities page, per search-index entry
+// and per tooltip move. Same locale and options, so the strings are the same.
+
+/** One km formatter per decimal count, made on first use. */
+const kmFormats = new Map<number, Intl.NumberFormat>();
+
 /** meters -> km string, `digits` decimals (default 1), thousands separated: "2,540". Dash when unknown. */
 export function formatKm(meters: number | undefined, digits = 1): string {
   if (meters == null) return DASH;
-  return (meters / 1000).toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  let f = kmFormats.get(digits);
+  if (!f) {
+    f = new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    kmFormats.set(digits, f);
+  }
+  return f.format(meters / 1000);
 }
+
+const WHOLE = new Intl.NumberFormat("en-US");
 
 /** meters -> rounded whole meters with thousands separators, e.g. "1,204". */
 export function formatMeters(meters: number | undefined): string {
   if (meters == null) return DASH;
-  return Math.round(meters).toLocaleString("en-US");
+  return WHOLE.format(Math.round(meters));
 }
 
 /** seconds -> "1h 39m" or "47m". Dash when unknown. */
@@ -85,14 +97,11 @@ export function speedKmh(meters: number | undefined, seconds: number | undefined
   return (meters / 1000 / (seconds / 3600)).toFixed(1);
 }
 
+const DATE = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+
 /** epoch seconds -> "Aug 18, 2024" (UTC, deterministic). */
 export function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return DATE.format(new Date(ts * 1000));
 }
 
 // --- Months ---------------------------------------------------------------
@@ -118,26 +127,17 @@ export function monthEnd(index: number): number {
   return monthStart(index + 1) - 1;
 }
 
+const MONTH = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", timeZone: "UTC" });
+const MONTH_SHORT = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", timeZone: "UTC" });
+
 /** month index -> "August 2024" (UTC, deterministic). */
 export function formatMonth(index: number): string {
-  const year = Math.floor(index / 12);
-  const month = index - year * 12;
-  return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    timeZone: "UTC",
-  });
+  return MONTH.format(monthStart(index) * 1000);
 }
 
 /** month index -> "Aug 2024" (UTC, deterministic). */
 export function formatMonthShort(index: number): string {
-  const year = Math.floor(index / 12);
-  const month = index - year * 12;
-  return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
+  return MONTH_SHORT.format(monthStart(index) * 1000);
 }
 
 /** Whether a Strava sport_type is measured by pace (foot) vs speed (wheel/water). */

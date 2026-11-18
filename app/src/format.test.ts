@@ -11,6 +11,7 @@ import {
   monthStart,
   monthEnd,
   formatMonth,
+  formatMonthShort,
   isFootBased,
   typeLabel,
   activityLinks,
@@ -191,8 +192,39 @@ describe("activityLinks", () => {
 });
 
 describe("formatMonthShort", () => {
-  test("abbreviates the month for tight labels", async () => {
-    const { formatMonthShort, monthIndex } = await import("./format");
+  test("abbreviates the month for tight labels", () => {
     expect(formatMonthShort(monthIndex(Date.UTC(2025, 7, 15) / 1000))).toBe("Aug 2025");
+  });
+});
+
+// The formatters are kept instances (built once, not per call); they must read exactly
+// as the per-call toLocaleString / toLocaleDateString they replaced.
+describe("kept formatters match the per-call ones", () => {
+  test("formatKm at each digit count, in any order", () => {
+    for (const digits of [2, 0, 1, 0, 2]) {
+      for (const m of [0, 4.9, 999.5, 9944, 123_456.7, 2_540_123]) {
+        expect(formatKm(m, digits)).toBe(
+          (m / 1000).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+        );
+      }
+    }
+  });
+  test("formatMeters", () => {
+    for (const m of [0, 0.5, 1204.4, 98_765.5, -3.2]) {
+      expect(formatMeters(m)).toBe(Math.round(m).toLocaleString("en-US"));
+    }
+  });
+  test("dates and months across years", () => {
+    for (let i = 1990 * 12; i < 2031 * 12; i += 7) {
+      const d = new Date(monthStart(i) * 1000);
+      expect(formatMonth(i)).toBe(d.toLocaleDateString("en-US", { year: "numeric", month: "long", timeZone: "UTC" }));
+      expect(formatMonthShort(i)).toBe(
+        d.toLocaleDateString("en-US", { year: "numeric", month: "short", timeZone: "UTC" }),
+      );
+      const ts = monthStart(i) + 86400 * 13 + 3600 * 23;
+      expect(formatDate(ts)).toBe(
+        new Date(ts * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }),
+      );
+    }
   });
 });

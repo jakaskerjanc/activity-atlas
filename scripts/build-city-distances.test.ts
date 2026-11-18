@@ -397,13 +397,21 @@ import {
   coverageHoles,
   coverageTargets,
   formatReport,
+  ROUTE_FILE_VERSION,
   sanityWarnings,
+  splitPayload,
   type EnrichStats,
 } from "./build-city-distances.ts";
 import type { EncodedCity } from "./city-types.ts";
 
+/** A drawable two-point line (Ljubljana → Zagreb), as stage B encodes one. */
+const POLY = polyline.encode([
+  [46.0569, 14.5058],
+  [45.815, 15.9819],
+]);
+
 function encCity(id: number, cyclingKm: number | null, walkingKm: number | null = null, at = 100): EncodedCity {
-  const route = (km: number | null) => (km === null ? null : { m: km * 1000, poly: "" });
+  const route = (km: number | null) => (km === null ? null : { m: km * 1000, poly: POLY });
   return { ...cityAt(id, at), cycling: route(cyclingKm), walking: route(walkingKm) };
 }
 
@@ -452,7 +460,7 @@ test("sanityWarnings: route shorter than great-circle, and > 3x detour", () => {
 });
 
 test("buildPayload: header fields and cycling-asc order, null cycling last", () => {
-  const p = buildPayload([encCity(1, 300), encCity(2, null, 50), encCity(3, 100)], "2026-10-04");
+  const { index: p } = buildPayload([encCity(1, 300), encCity(2, null, 50), encCity(3, 100)], "2026-10-04");
   assert.equal(p.v, PAYLOAD_VERSION);
   assert.equal(p.router, "osrm-fossgis");
   assert.equal(p.simplifyM, 500);
@@ -471,12 +479,41 @@ test("blockingProblems: failures and holes block the write; clean run doesn't", 
 test("formatReport: lists counts, rejections, range and size", () => {
   const stats = { ...emptyStats(), candidates: 3, kept: 2, rejected: { cycling: { ferry: 2 }, walking: {} } };
   const p = buildPayload([encCity(1, 100, 90), encCity(2, 2500, 2400)], "2026-10-04");
-  const out = formatReport(stats, p, JSON.stringify(p), { cycling: [], walking: [] }, []);
+  const out = formatReport(stats, p, { cycling: [], walking: [] }, []);
   assert.match(out, /candidates 3/);
   assert.match(out, /kept 2/);
   assert.match(out, /ferry: 2/);
   assert.match(out, /100 km .. 2500 km/);
   assert.match(out, /gz/);
+  assert.match(out, /2 route files/);
+});
+
+const HEADER = {
+  generated: "2026-10-04",
+  router: "osrm-fossgis",
+  simplifyM: 500,
+  origin: { name: "Ljubljana", lat: 46.0569, lon: 14.5058 },
+};
+
+test("splitPayload: moves the lines out and keeps the distances", () => {
+  const { index, routes } = splitPayload({ ...HEADER, cities: [encCity(7, 1)] });
+  assert.equal(index.v, PAYLOAD_VERSION);
+  assert.deepEqual(index.origin, HEADER.origin);
+  assert.deepEqual(index.cities[0].cycling, { m: 1000 });
+  assert.equal(index.cities[0].walking, null);
+  assert.equal(index.cities[0].name, "C7");
+  assert.deepEqual(routes.get(7), { v: ROUTE_FILE_VERSION, cycling: POLY });
+});
+
+test("splitPayload: an undrawable line counts as no route; a city with none is dropped", () => {
+  const onePoint = polyline.encode([[46, 14]]);
+  const half = { ...encCity(1, 10, 12), walking: { m: 12_000, poly: onePoint } };
+  const none = { ...encCity(2, null, 5), walking: { m: 5_000, poly: onePoint } };
+  const { index, routes } = splitPayload({ ...HEADER, cities: [half, none] });
+  assert.deepEqual(index.cities.map((c) => c.id), [1]);
+  assert.equal(index.cities[0].walking, null);
+  assert.deepEqual(routes.get(1), { v: ROUTE_FILE_VERSION, cycling: POLY });
+  assert.equal(routes.has(2), false);
 });
 
 test("fetchRoute: a non-400 error status (e.g. JSON 403) is retried, then failed — never cached as a rejection", async () => {

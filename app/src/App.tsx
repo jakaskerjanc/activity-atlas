@@ -3,8 +3,8 @@
 // (activityFilter.ts); this file holds it and hands its results to the map, the
 // analytics page, and the panels.
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { CityRouteLine } from "./MapView";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from "react";
+import type { CityRouteLine, MapViewProps } from "./MapView";
 import { Header } from "./ui/Header";
 import { SidePanel } from "./ui/SidePanel";
 import { InfoPanel } from "./ui/InfoPanel";
@@ -32,14 +32,14 @@ import type {
   Place,
   PlacesFile,
   Profile,
-  RoutesFile,
   Theme,
 } from "./types";
-import { joinActivities } from "./tracks";
+import { checkActivitiesFile, joinActivities } from "./tracks";
+import { useRoutes } from "./ui/useRoutes";
 import { formatDate, formatMonthShort, activityLinks, timeSpan, typeLabel, type ActivityLink } from "./format";
 import { totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
-import { buildTimeline, frameAt, totalDurationMs } from "./replay";
+import { buildTimeline, frameAt, totalDurationMs, type ReplayStep } from "./replay";
 import { useCollapsiblePanels } from "./ui/useCollapsiblePanels";
 import { useActivityDetail } from "./ui/useActivityDetail";
 import { GroupRows } from "./ui/GroupRows";
@@ -54,22 +54,24 @@ import { HAS_TOKEN } from "./mapStyle";
 import { ArrowRightIcon } from "./ui/icons";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
+import { loadCityRoute } from "./cities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle } from "./places";
+import { liveValue, useLiveValue, type LiveValue } from "./ui/liveValue";
 
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
 // user heads for the map (hovering the Map tab starts it early). On the map it loads
-// alongside routes.json, since the page shows only a spinner until both are in.
+// alongside routes.json, since the map page shows only a spinner until both are in.
 let mapViewImport: Promise<typeof import("./MapView")> | null = null;
 const loadMapView = () => (mapViewImport ??= import("./MapView"));
+// m.MapView is the memo wrapper that freezes the map while it is covered.
 const MapView = lazy(() => loadMapView().then((m) => ({ default: m.MapView })));
 // An early start on intent. A failure surfaces when the map mounts (MapErrorBoundary),
 // so don't also report it here as an unhandled rejection.
 const prefetchMapView = () => void loadMapView().catch(() => {});
 
-const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -99,9 +101,12 @@ function initialTheme(): Theme {
 }
 
 export default function App() {
-  const [data, setData] = useState<ActivityFeatureCollection | null>(null);
+  const [activitiesFile, setActivitiesFile] = useState<ActivitiesFile | null>(null);
   const [zoneLimits, setZoneLimits] = useState<number[] | undefined>(undefined);
+  // activities.json or places.json failed: nothing can be shown.
   const [error, setError] = useState<string | null>(null);
+  // routes.json, fetched alongside but not waited for: only the map needs it.
+  const routes = useRoutes();
   const [mapFailed, setMapFailed] = useState(false);
 
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -115,7 +120,8 @@ export default function App() {
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
   // Map or analytics page. The map mounts the first time it is shown, then stays mounted
-  // underneath analytics, so switching back keeps its camera and selection.
+  // underneath analytics, so switching back keeps its camera and selection. While covered
+  // it is frozen (MapView's `active`) and catches up on the way back.
   const [view, setView] = useView();
   const [mapMounted, setMapMounted] = useState(view === "map");
   useEffect(() => {
@@ -178,28 +184,28 @@ export default function App() {
   const [colorMode, setColorMode] = useState<ColorMode>("uniform");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoverId, setHoverId] = useState<string | null>(null);
-  // The shared chart/map cursor: an index into the selected activity's detail samples.
-  const [cursor, setCursor] = useState<number | null>(null);
-  useEffect(() => setCursor(null), [selectedId]);
+  // The hovered route, and the shared chart/map cursor (an index into the selected
+  // activity's detail samples). Both change with every pointer move, so they are live
+  // values rather than state: a move re-renders the map and the charts that read them
+  // (LiveMapView, LiveActivitySummary), not App and every panel under it.
+  const [hover] = useState(() => liveValue<string | null>(null));
+  const [cursor] = useState(() => liveValue<number | null>(null));
+  useEffect(() => cursor.set(null), [selectedId, cursor]);
 
   // Replay transport. `progress` is the single source of truth (0..1); App runs
   // the rAF clock while playing and MapView renders whatever frame it resolves to.
+  // A live value for the same reason as the cursor: each frame re-renders only the
+  // replay bar and the map (LiveReplayBar, LiveMapView).
   const [replaying, setReplaying] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [progress, setProgress] = useState(0);
+  const [progress] = useState(() => liveValue(0));
   const [replayEpoch, setReplayEpoch] = useState(0);
 
   useEffect(() => {
-    Promise.all([
-      fetchJson<RoutesFile>(ROUTES_URL),
-      fetchJson<ActivitiesFile>(ACTIVITIES_URL),
-      fetchPlaces(),
-    ])
-      .then(([routes, activities, places]) => {
-        const decoded = joinActivities(routes, activities);
-        setData(decoded);
+    Promise.all([fetchJson<ActivitiesFile>(ACTIVITIES_URL), fetchPlaces()])
+      .then(([activities, places]) => {
+        setActivitiesFile(checkActivitiesFile(activities));
         setPlacesFile(places);
         setZoneLimits(activities.hr_zone_limits);
         // Over every record, routed or not: the analytics page reads them all, and the
@@ -208,6 +214,19 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   }, []);
+
+  // The map's features, once both the routes and the activities are in. A routes file
+  // this app can't read fails the map alone, like one that didn't load.
+  const joined = useMemo<{ data: ActivityFeatureCollection } | { error: string } | null>(() => {
+    if (routes.status !== "ready" || !activitiesFile) return null;
+    try {
+      return { data: joinActivities(routes.file, activitiesFile) };
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }, [routes, activitiesFile]);
+  const data = joined && "data" in joined ? joined.data : null;
+  const routesError = routes.status === "error" ? routes.message : joined && "error" in joined ? joined.error : null;
 
   // Visible activities: what both pages count and total. The map draws the subset with
   // a route.
@@ -257,17 +276,34 @@ export default function App() {
   useEffect(() => {
     if (cityProfile && cities.status === "ready" && !shownCity) setCityProfile(null);
   }, [cityProfile, cities.status, shownCity]);
+  // The shown city's line, fetched when it is shown (city-routes/<id>.json). The map
+  // draws nothing until it is in; a failed load leaves the panel as it is.
+  const cityKey = shownCity ? `${shownCity.profile}:${shownCity.pick.city.id}` : null;
+  const [cityLine, setCityLine] = useState<{ key: string; coords: [number, number][] } | null>(null);
+  useEffect(() => {
+    if (!shownCity || cityKey === null) return;
+    let live = true;
+    loadCityRoute(shownCity.pick.city.id, shownCity.profile).then(
+      (coords) => live && setCityLine({ key: cityKey, coords }),
+      (e) => console.warn(`Couldn't load the route to ${shownCity.pick.city.name}: ${String(e)}`),
+    );
+    return () => {
+      live = false;
+    };
+    // Keyed on the city and profile alone: shownCity is a new object whenever the
+    // comparisons are recomputed, and that must not fetch the line again.
+  }, [cityKey]);
   const cityRoute = useMemo<CityRouteLine | null>(
     () =>
-      shownCity && cities.status === "ready"
+      shownCity && cities.status === "ready" && cityLine?.key === cityKey
         ? {
-            key: `${shownCity.profile}:${shownCity.pick.city.id}`,
-            coords: shownCity.pick.route.coords,
+            key: cityLine.key,
+            coords: cityLine.coords,
             originName: cities.data.origin.name,
             cityName: shownCity.pick.city.name,
           }
         : null,
-    [shownCity, cities],
+    [shownCity, cities, cityLine, cityKey],
   );
   // "Show on map" on the analytics page. The route and a selected activity share the
   // bottom panel, so one replaces the other.
@@ -297,19 +333,11 @@ export default function App() {
     setCityProfile(null);
   };
 
-  // Chronological step list for the visible activities, and the frame the
-  // current progress resolves to. Memoized so MapView's frame effect only fires
-  // when the resolved frame actually changes.
+  // Chronological step list for the visible activities. The frame the current progress
+  // resolves to is worked out where it is shown (LiveMapView, LiveReplayBar).
   const timeline = useMemo(() => buildTimeline(visibleOnMap), [visibleOnMap]);
-  const replayFrame = useMemo(
-    () => (replaying ? frameAt(timeline, progress) : null),
-    [replaying, timeline, progress],
-  );
-  const atEnd = progress >= 1;
 
   // The rAF transport: while playing, advance progress by dt / (duration / speed).
-  const progressRef = useRef(progress);
-  progressRef.current = progress;
   const speedRef = useRef(speed);
   speedRef.current = speed;
   const replayingRef = useRef(replaying);
@@ -324,26 +352,26 @@ export default function App() {
     const tick = (now: number) => {
       const dt = now - last;
       last = now;
-      const next = progressRef.current + (dt * speedRef.current) / duration;
+      const next = progress.get() + (dt * speedRef.current) / duration;
       if (next >= 1) {
-        setProgress(1);
+        progress.set(1);
         setPlaying(false); // rest at the end; play acts as restart from here
         return;
       }
-      setProgress(next);
+      progress.set(next);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, timeline.length]);
+  }, [playing, timeline.length, progress]);
 
   const startReplay = () => {
     if (timeline.length === 0) return;
     setSelectedId(null);
     setCityProfile(null);
-    setHoverId(null);
-    setCursor(null);
-    setProgress(0);
+    hover.set(null);
+    cursor.set(null);
+    progress.set(0);
     setReplaying(true);
     setReplayEpoch((n) => n + 1);
     // Playback starts from onReplayReady once MapView's fit-to-cluster fly-to lands, so
@@ -359,17 +387,17 @@ export default function App() {
   const exitReplay = () => {
     setPlaying(false);
     setReplaying(false);
-    setProgress(0);
+    progress.set(0);
   };
 
   const togglePlay = () => {
-    if (atEnd && !playing) setProgress(0); // restart from the beginning
+    if (!playing && progress.get() >= 1) progress.set(0); // restart from the beginning
     setPlaying((v) => !v);
   };
 
   const seek = (g: number) => {
     setPlaying(false);
-    setProgress(Math.min(1, Math.max(0, g)));
+    progress.set(Math.min(1, Math.max(0, g)));
   };
 
   // The other pages hide the replay transport and cover the map, so leave replay and drop the
@@ -378,8 +406,8 @@ export default function App() {
   useEffect(() => {
     if (view === "map") return;
     exitReplay();
-    setHoverId(null);
-    setCursor(null);
+    hover.set(null);
+    cursor.set(null);
   }, [view]);
 
   // If the filter empties the set mid-replay, back out gracefully.
@@ -426,19 +454,16 @@ export default function App() {
     document.documentElement.style.setProperty("--map-bottom-inset", `${Math.round(mapBottomInset)}px`);
   }, [mapBottomInset]);
 
-  // The drawing activity, for the replay transport's readout.
+  // Activity names by id, for the replay transport's readout of the drawing activity.
   const namesById = useMemo(
     () => new Map((data?.features ?? []).map((f) => [f.properties.id, f.properties.name])),
     [data],
   );
-  const replayCurrent = replayFrame
-    ? { ts: replayFrame.ts, index: replayFrame.index, name: namesById.get(replayFrame.id) ?? "" }
-    : null;
 
   // The routes the map can draw, by id: the list's previews sketch them, and only these
-  // can be shown on the map.
+  // can be shown on the map. null until they are in (or if they failed).
   const routeCoords = useMemo(
-    () => new Map((data?.features ?? []).map((f) => [f.properties.id, f.geometry.coordinates as [number, number][]])),
+    () => (data ? new Map(data.features.map((f) => [f.properties.id, f.geometry.coordinates as [number, number][]])) : null),
     [data],
   );
 
@@ -454,13 +479,10 @@ export default function App() {
   const detailState = useActivityDetail(selectedId, selectedFeature?.properties.detail === true);
   const selectedDetail = detailState.status === "ready" ? detailState.detail : null;
 
+  // Whether the selected activity is drawn, so the map marks the cursor on it (LiveMapView).
   const selectedShown = useMemo(
     () => selectedId != null && visibleOnMap.some((f) => f.properties.id === selectedId),
     [visibleOnMap, selectedId],
-  );
-  const cursorPoint = useMemo(
-    () => markerPoint(selectedDetail, cursor, selectedShown),
-    [selectedDetail, cursor, selectedShown],
   );
 
   // The selected activity's place and same-route rows. The route table is open while
@@ -505,11 +527,10 @@ export default function App() {
   // The selected activity's stats, zones and charts, with its place and route rows
   // under the stats (their handlers read the current filter and panel layout).
   const panelBody = selectedFeature ? (
-    <ActivitySummary
+    <LiveActivitySummary
       activity={selectedFeature.properties}
       detail={detailState}
       cursor={cursor}
-      onCursor={setCursor}
       zoneLimits={zoneLimits}
     >
       <GroupRows
@@ -520,7 +541,7 @@ export default function App() {
         onPickPlace={pickPlace}
         onSelect={selectRouteMate}
       />
-    </ActivitySummary>
+    </LiveActivitySummary>
   ) : undefined;
 
   // InfoPanel content: selected activity, else the shown city route, else aggregate totals.
@@ -685,13 +706,13 @@ export default function App() {
       {filter &&
         view === "map" &&
         (replaying ? (
-          <ReplayBar
-            playing={playing}
+          <LiveReplayBar
             progress={progress}
-            current={replayCurrent}
+            timeline={timeline}
+            names={namesById}
+            playing={playing}
             total={timeline.length}
             speed={speed}
-            atEnd={atEnd}
             onPlayPause={togglePlay}
             onSeek={seek}
             onSpeed={setSpeed}
@@ -721,8 +742,8 @@ export default function App() {
           />
         ))}
 
-      {/* On the map page, up until both the routes and the basemap are in. */}
-      {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed)) && (
+      {/* Until the activities are in; on the map page, until the routes and the basemap are. */}
+      {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed && !routesError)) && (
         <div role="status" style={{ ...chip, top: "50%", transform: "translate(-50%, -50%)" }}>
           <span className="spinner" aria-hidden="true" />
           {filter ? "Loading map…" : "Loading activities…"}
@@ -735,8 +756,15 @@ export default function App() {
         </div>
       )}
 
+      {/* The other pages don't need the routes, so they say nothing about them. */}
+      {routesError && !error && view === "map" && (
+        <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
+          Couldn't load the routes: {routesError}
+        </div>
+      )}
+
       {/* A data error already explains the empty map; don't stack a second chip on it. */}
-      {mapFailed && !error && view === "map" && (
+      {mapFailed && !error && !routesError && view === "map" && (
         <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
           Couldn't load the map.
           <button
@@ -754,10 +782,11 @@ export default function App() {
       {mapMounted && (
         <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
           {/* Once the routes are in (it opens framed on them), or at once if they failed. */}
-          {(data != null || error != null) && (
+          {(data != null || error != null || routesError != null) && (
             <MapErrorBoundary onError={() => setMapFailed(true)}>
               <Suspense fallback={null}>
-                <MapView
+                <LiveMapView
+                  active={view === "map"}
                   theme={theme}
                   data={data}
                   mapFilter={mapFilter}
@@ -765,22 +794,21 @@ export default function App() {
                   colorMode={colorMode}
                   colorDomain={colorDomain}
                   grade={grade}
-                  hoverId={hoverId}
+                  hover={hover}
                   groupIds={groupIds}
                   selectedId={selectedId}
-                  onHover={setHoverId}
                   onSelect={selectActivity}
                   onDeselect={deselect}
                   replaying={replaying}
-                  replayFrame={replayFrame}
+                  progress={progress}
                   replayTimeline={timeline}
                   replayEpoch={replayEpoch}
                   placeFlyEpoch={placeFlyEpoch}
                   onReplayReady={onReplayReady}
                   insets={insets}
-                  cursorPoint={cursorPoint}
+                  cursor={cursor}
                   selectedDetail={selectedDetail}
-                  onCursor={setCursor}
+                  selectedShown={selectedShown}
                   cityRoute={cityRoute}
                   cityRouteEpoch={cityEpoch}
                   onRoutesShown={() => setMapDrawn(true)}
@@ -805,6 +833,71 @@ export default function App() {
       />
     </div>
   );
+}
+
+// The readers of the live values (ui/liveValue.ts). Each subscribes to the ones it shows,
+// so a replay frame, a cursor move or a hover re-renders it and what it renders, while
+// App and the panels it doesn't contain stay as they were.
+
+/** The replay transport at the current progress: the frame it resolves to names the drawing activity. */
+function LiveReplayBar({
+  progress,
+  timeline,
+  names,
+  ...props
+}: Omit<ComponentProps<typeof ReplayBar>, "progress" | "current" | "atEnd"> & {
+  progress: LiveValue<number>;
+  timeline: ReplayStep[];
+  names: ReadonlyMap<string, string>;
+}) {
+  const g = useLiveValue(progress);
+  const frame = frameAt(timeline, g);
+  const current = frame ? { ts: frame.ts, index: frame.index, name: names.get(frame.id) ?? "" } : null;
+  return <ReplayBar {...props} progress={g} current={current} atEnd={g >= 1} />;
+}
+
+/** The map, given the replay frame, the hovered route and the cursor's point as they are now. */
+function LiveMapView({
+  progress,
+  hover,
+  cursor,
+  selectedShown,
+  ...props
+}: Omit<MapViewProps, "replayFrame" | "hoverId" | "onHover" | "cursorPoint" | "onCursor"> & {
+  progress: LiveValue<number>;
+  hover: LiveValue<string | null>;
+  cursor: LiveValue<number | null>;
+  /** Whether the selected activity is drawn: the cursor is marked only on a drawn route. */
+  selectedShown: boolean;
+}) {
+  const g = useLiveValue(progress);
+  const hoverId = useLiveValue(hover);
+  const i = useLiveValue(cursor);
+  const { replaying, replayTimeline, selectedDetail } = props;
+  // Memoized so MapView's frame effect only fires when the resolved frame actually changes.
+  const replayFrame = useMemo(
+    () => (replaying ? frameAt(replayTimeline, g) : null),
+    [replaying, replayTimeline, g],
+  );
+  const cursorPoint = useMemo(() => markerPoint(selectedDetail, i, selectedShown), [selectedDetail, i, selectedShown]);
+  return (
+    <MapView
+      {...props}
+      replayFrame={replayFrame}
+      hoverId={hoverId}
+      onHover={hover.set}
+      cursorPoint={cursorPoint}
+      onCursor={cursor.set}
+    />
+  );
+}
+
+/** The selected activity's summary with the shared cursor: its charts read and set it. */
+function LiveActivitySummary({
+  cursor,
+  ...props
+}: Omit<ComponentProps<typeof ActivitySummary>, "cursor" | "onCursor"> & { cursor: LiveValue<number | null> }) {
+  return <ActivitySummary {...props} cursor={useLiveValue(cursor)} onCursor={cursor.set} />;
 }
 
 /** "Ljubljana → Dnipro", with the same arrow the analytics page uses. */

@@ -32,7 +32,8 @@ interface Props {
 }
 
 export function FilterSection({ filter, onChange, places, colorMode, theme = "dark" }: Props) {
-  // Memoized: App re-renders every replay frame, and the filter only changes on input.
+  // Memoized: the side panel re-renders with App (a selection, a page switch, a panel
+  // opening), and the filter only changes on input.
   const counts = useMemo(() => typeCounts(filter), [filter]);
   const rows = useMemo(() => typeRows(filter), [filter]);
   const byType = colorMode === "type";

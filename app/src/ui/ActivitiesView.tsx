@@ -3,13 +3,30 @@
 // search narrows the visible activities further (activitySearch.ts); it never changes
 // the Activity filter itself, so the map and analytics stay as they were. A row opens a
 // quick preview under it (ActivityPreview), and from there the activity on the map.
+// Only the rows near the screen are drawn (TanStack Virtual): at ten times today's
+// activities, drawing every row was ~120,000 elements and a five-second task.
 
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { EmptyPage } from "./AnalyticsView";
 import { ActivityPreview } from "./ActivityPreview";
 import { ChevronIcon, CloseIcon, SearchIcon } from "./icons";
 import { card, FS, MONO, R, secondaryButton } from "./theme";
 import { SIDE_PANEL_CLEARANCE } from "./layout";
+import { nextRowIndex, withPinned } from "./listWindow";
 import { isVisible, type ActivityFilter } from "../activityFilter";
 import {
   activityMatcher,
@@ -33,8 +50,11 @@ interface Props {
   visible: ActivityRecord[];
   /** Place and same-route names, to show and to search by. */
   names: SearchNames;
-  /** The routes the map can draw, as [lng, lat] points by activity id. */
-  routes: ReadonlyMap<string, readonly (readonly [number, number])[]>;
+  /**
+   * The routes the map can draw, as [lng, lat] points by activity id. null while they
+   * load (the list doesn't wait for them) or when they failed to.
+   */
+  routes: ReadonlyMap<string, readonly (readonly [number, number])[]> | null;
   query: string;
   onQueryChange: (query: string) => void;
   sort: Sort;
@@ -55,10 +75,10 @@ interface Props {
 /** Gap between the docked filters panel and the content column, as on analytics. */
 const GUTTER = 24;
 
-/** The list's columns: date, activity, distance, moving time, climb, then the chevron. */
-const GRID = "96px minmax(0, 1fr) 84px 92px 72px 16px";
-/** On a phone: activity, distance and the chevron; the date moves under the name. */
-const GRID_COMPACT = "minmax(0, 1fr) auto 16px";
+// The list's columns are in index.css (.activities__head, .activities__row): date,
+// activity, distance, moving time, climb, then the chevron; on a phone (data-compact)
+// activity, distance and the chevron, with the date under the name. The rows' fixed
+// look is there too: set inline, every style property cost a write per row (~450).
 
 const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "date", label: "Date", numeric: false },
@@ -67,6 +87,20 @@ const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "time", label: "Moving time", numeric: true },
   { key: "elevation", label: "Climb", numeric: true },
 ];
+
+/**
+ * A closed row's height: the name line, the meta line and the padding, the same in the
+ * compact rows, whose date joins the meta line. Rows are measured once drawn, so a
+ * compact row whose meta line wraps (72px) or an open preview takes its real height.
+ */
+const ROW_ESTIMATE = 55;
+/** Rows drawn past each edge of the screen, so a quick scroll doesn't show a gap. */
+const OVERSCAN = 8;
+/**
+ * The window's height before the page is laid out: what the server-rendered markup
+ * (and the tests) draw from. About a laptop screen's worth of rows.
+ */
+const INITIAL_RECT = { width: 0, height: 900 };
 
 /** The phone's sort menu: one entry per useful column and direction. */
 const SORT_OPTIONS: { value: string; label: string; sort: Sort }[] = [
@@ -99,6 +133,8 @@ export function ActivitiesView({
   const left = sidePanelExpanded && !mobile ? SIDE_PANEL_CLEARANCE + GUTTER : GUTTER;
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const ledeRef = useRef<HTMLParagraphElement>(null);
 
   // Built once per data load (the filter keeps its activities array as it changes).
   const index = useMemo(() => searchIndex(filter?.activities ?? [], names), [filter?.activities, names]);
@@ -114,6 +150,7 @@ export function ActivitiesView({
     [filter, shownQuery, match],
   );
   const searching = shownQuery.trim() !== "";
+  const indexOf = useMemo(() => new Map(rows.map((a, i) => [a.id, i])), [rows]);
 
   // The one activity previewed under its row, if any.
   const [openId, setOpenId] = useState<string | null>(null);
@@ -125,20 +162,103 @@ export function ActivitiesView({
     if (openId) document.getElementById(previewId(openId))?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [openId]);
 
+  // The row holding keyboard focus. It stays drawn while scrolled away (pinned, below),
+  // so the arrow keys still move from it and focus never drops to the page.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const onListFocus = (e: FocusEvent<HTMLOListElement>) => {
+    const id = (e.target as HTMLElement).dataset.row;
+    if (id !== undefined) setFocusId(id);
+  };
+  const onListBlur = (e: FocusEvent<HTMLOListElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusId(null);
+  };
+
+  // Where the list starts inside the page's scroll area (<main>): the title, the lede,
+  // the search bar and the column head are above it. Measured when the list appears and
+  // when the page or the lede (which can wrap) changes size, never per render: each
+  // measurement forces a layout, and the list re-renders on every scroll step.
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const hasList = rows.length > 0;
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    const list = listRef.current;
+    if (!main || !list) return;
+    const measure = () => {
+      const top = list.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+      setScrollMargin((m) => (Math.abs(m - top) < 0.5 ? m : top));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(main);
+    if (ledeRef.current) ro.observe(ledeRef.current);
+    return () => ro.disconnect();
+  }, [hasList, mobile]);
+
+  // The window: the rows on screen, a few either side, and the focused and open rows.
+  const focusIndex = focusId !== null ? indexOf.get(focusId) : undefined;
+  const openIndex = openId !== null ? indexOf.get(openId) : undefined;
+  const rangeExtractor = useCallback(
+    (range: Range) => withPinned(defaultRangeExtractor(range), [focusIndex, openIndex], range.count),
+    [focusIndex, openIndex],
+  );
+  const getItemKey = useCallback((i: number) => rows[i].id, [rows]);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => mainRef.current,
+    estimateSize: () => ROW_ESTIMATE,
+    overscan: OVERSCAN,
+    getItemKey,
+    rangeExtractor,
+    scrollMargin,
+    initialRect: INITIAL_RECT,
+  });
+
+  const rowButton = (id: string) =>
+    [...(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? [])].find((b) => b.dataset.row === id);
+
+  // Focus row `i`. A row that isn't drawn is scrolled to first, then focused once it is.
+  const focusRow = (i: number) => {
+    const id = rows[i]?.id;
+    if (id === undefined) return;
+    const now = rowButton(id);
+    if (now) {
+      now.focus();
+      return;
+    }
+    virtualizer.scrollToIndex(i, { align: "center" });
+    let tries = 0;
+    const retry = () => {
+      const b = rowButton(id);
+      if (b) b.focus();
+      else if (++tries < 10) requestAnimationFrame(retry);
+    };
+    requestAnimationFrame(retry);
+  };
+
   // "/" jumps to the search box from anywhere on the page, as on most sites with one.
+  // Ctrl+F (Cmd+F) does too: the browser's find sees only the rows drawn, the search box
+  // every row. Pressed again in the box, it is left to the browser's find.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if (e.defaultPrevented || e.altKey) return;
+      const input = inputRef.current;
+      if (!input) return;
+      if (e.key.toLowerCase() === "f" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        if (document.activeElement === input) return;
+        e.preventDefault();
+        input.focus();
+        input.select();
+        return;
+      }
+      if (e.key !== "/" || e.ctrlKey || e.metaKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.preventDefault();
-      inputRef.current?.focus();
+      input.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const rowButtons = () => [...(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-row]") ?? [])];
 
   // Esc clears the box first (and keeps App from backing out of anything else); arrow
   // down steps into the results.
@@ -146,12 +266,9 @@ export function ActivitiesView({
     if (e.key === "Escape" && query) {
       e.preventDefault();
       onQueryChange("");
-    } else if (e.key === "ArrowDown") {
-      const first = rowButtons()[0];
-      if (first) {
-        e.preventDefault();
-        first.focus();
-      }
+    } else if (e.key === "ArrowDown" && rows.length > 0) {
+      e.preventDefault();
+      focusRow(0);
     }
   };
   // Arrow keys move between rows; up from the first goes back to the search box. Esc
@@ -161,19 +278,17 @@ export function ActivitiesView({
       e.preventDefault();
       const id = openId;
       setOpenId(null);
-      rowButtons()
-        .find((b) => b.dataset.row === id)
-        ?.focus();
+      rowButton(id)?.focus();
       return;
     }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    const buttons = rowButtons();
-    const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    if (i === -1) return;
+    const id = (document.activeElement as HTMLElement | null)?.dataset.row;
+    const i = id !== undefined ? indexOf.get(id) : undefined;
+    if (i === undefined) return;
     e.preventDefault();
-    if (e.key === "ArrowDown") buttons[Math.min(i + 1, buttons.length - 1)].focus();
-    else if (i === 0) inputRef.current?.focus();
-    else buttons[i - 1].focus();
+    const next = nextRowIndex(i, e.key, rows.length);
+    if (next === -1) inputRef.current?.focus();
+    else focusRow(next);
   };
 
   const total = visible.length;
@@ -185,6 +300,7 @@ export function ActivitiesView({
 
   return (
     <main
+      ref={mainRef}
       aria-label="Activities"
       className="analytics activities"
       style={{ ["--analytics-left" as string]: `${left}px` }}
@@ -193,7 +309,7 @@ export function ActivitiesView({
         <h1 className="analytics__intro" style={heading}>Activities</h1>
         {filter && (
           <>
-            <p className="analytics__intro" style={ledeStyle} aria-live="polite">
+            <p ref={ledeRef} className="analytics__intro" style={ledeStyle} aria-live="polite">
               {lede}
             </p>
             {total === 0 ? (
@@ -265,7 +381,7 @@ export function ActivitiesView({
 
                 <section style={{ ...card, padding: 0, overflow: "hidden" }} aria-label="Activity list">
                   {!mobile && (
-                    <div className="activities__head" role="group" aria-label="Sort by" style={{ gridTemplateColumns: GRID }}>
+                    <div className="activities__head" role="group" aria-label="Sort by">
                       {COLUMNS.map((c) => {
                         const on = sort.key === c.key;
                         return (
@@ -289,17 +405,35 @@ export function ActivitiesView({
                     </div>
                   )}
                   {rows.length > 0 ? (
-                    <ol id="activity-list" className="activities__list" ref={listRef} onKeyDown={onListKey} style={list}>
-                      {rows.map((a) => {
+                    <ol
+                      id="activity-list"
+                      className="activities__list"
+                      data-compact={mobile ? "" : undefined}
+                      ref={listRef}
+                      onKeyDown={onListKey}
+                      onFocus={onListFocus}
+                      onBlur={onListBlur}
+                      style={{ height: virtualizer.getTotalSize() }}
+                    >
+                      {virtualizer.getVirtualItems().map((item) => {
+                        const a = rows[item.index];
                         const open = a.id === openId;
-                        const coords = routes.get(a.id);
+                        const coords = routes?.get(a.id);
                         return (
-                          <li key={a.id}>
+                          <li
+                            key={a.id}
+                            ref={virtualizer.measureElement}
+                            data-index={item.index}
+                            aria-setsize={rows.length}
+                            aria-posinset={item.index + 1}
+                            className="activities__item"
+                            style={{ transform: `translateY(${item.start - scrollMargin}px)` }}
+                          >
                             <ActivityRow
                               activity={a}
                               query={shownQuery}
                               names={names}
-                              onMap={coords !== undefined}
+                              onMap={coords !== undefined || (routes === null && a.channels.includes("gps"))}
                               open={open}
                               onToggle={toggle}
                               mobile={mobile}
@@ -380,6 +514,7 @@ const ActivityRow = memo(function ActivityRow({
   activity: ActivityRecord;
   query: string;
   names: SearchNames;
+  /** Has a route, or, while the routes load, a GPS track that will make one. */
   onMap: boolean;
   open: boolean;
   onToggle: (id: string) => void;
@@ -395,21 +530,21 @@ const ActivityRow = memo(function ActivityRow({
   if (mobile) meta.push(<Highlight key="date" text={date} query={query} />);
   if (place) meta.push(<Highlight key="place" text={place} query={query} />);
   else if (route) meta.push(<Highlight key="route" text={route} query={query} />);
-  if (!onMap) meta.push(<span key="noroute" style={{ color: "var(--text-faint)" }}>No route</span>);
+  if (!onMap) meta.push(<span key="noroute" className="activities__faint">No route</span>);
 
-  const columns = mobile ? GRID_COMPACT : GRID;
   const body = (
     <>
-      {!mobile && <span style={dateCell}>{date}</span>}
-      <span style={{ minWidth: 0 }}>
-        <span style={nameLine}>
+      {!mobile && <span className="activities__date">{date}</span>}
+      <span className="activities__what">
+        <span className="activities__name">
           <Highlight text={a.name || "Untitled"} query={query} />
         </span>
-        <span style={metaLine}>
-          <span aria-hidden="true" style={{ ...dot, background: typeColor(a.type, theme, rowOf) }} />
+        <span className="activities__meta">
+          {/* The one style that differs per row: the type's color. */}
+          <span aria-hidden="true" className="activities__dot" style={{ background: typeColor(a.type, theme, rowOf) }} />
           {meta.map((m, i) => (
-            <span key={i} style={{ whiteSpace: "nowrap" }}>
-              {i > 0 && <span style={{ color: "var(--text-faint)", margin: "0 6px" }}>·</span>}
+            <span key={i} className="activities__meta-item">
+              {i > 0 && <span className="activities__sep">·</span>}
               {m}
             </span>
           ))}
@@ -418,12 +553,13 @@ const ActivityRow = memo(function ActivityRow({
       <Num value={formatKm(a.distance)} unit={a.distance !== undefined ? "km" : undefined} />
       {!mobile && <Num value={formatDuration(a.moving_time)} />}
       {!mobile && <Num value={formatMeters(a.elevation_gain)} unit={a.elevation_gain !== undefined ? "m" : undefined} />}
-      <span style={{ display: "flex", color: open ? "var(--accent-text)" : "var(--text-faint)" }} aria-hidden="true">
+      <span className="activities__chevron" aria-hidden="true">
         <ChevronIcon dir={open ? "up" : "down"} size={14} />
       </span>
     </>
   );
 
+  // An open row's tint and accent chevron key off aria-expanded (index.css).
   return (
     <button
       type="button"
@@ -432,11 +568,6 @@ const ActivityRow = memo(function ActivityRow({
       onClick={() => onToggle(a.id)}
       aria-expanded={open}
       aria-controls={open ? previewId(a.id) : undefined}
-      style={{
-        ...rowStyle,
-        gridTemplateColumns: columns,
-        background: open ? "var(--accent-tint-weak)" : "transparent",
-      }}
     >
       {body}
     </button>
@@ -445,9 +576,9 @@ const ActivityRow = memo(function ActivityRow({
 
 function Num({ value, unit }: { value: string; unit?: string }) {
   return (
-    <span style={numCell}>
+    <span className="activities__num">
       {value}
-      {unit && <span style={{ color: "var(--text-muted)", marginLeft: 3, fontSize: FS.xs }}>{unit}</span>}
+      {unit && <span className="activities__unit">{unit}</span>}
     </span>
   );
 }
@@ -461,7 +592,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   for (const [s, e] of ranges) {
     if (s > at) out.push(text.slice(at, s));
     out.push(
-      <mark key={s} style={mark}>
+      <mark key={s} className="activities__mark">
         {text.slice(s, e)}
       </mark>,
     );
@@ -570,70 +701,6 @@ function headButton(on: boolean, numeric: boolean): CSSProperties {
     whiteSpace: "nowrap",
   };
 }
-
-const list: CSSProperties = { listStyle: "none", margin: 0, padding: 0 };
-
-const rowStyle: CSSProperties = {
-  appearance: "none",
-  width: "100%",
-  boxSizing: "border-box",
-  border: 0,
-  background: "transparent",
-  color: "var(--text)",
-  font: "inherit",
-  textAlign: "left",
-  cursor: "pointer",
-};
-
-const dateCell: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
-  whiteSpace: "nowrap",
-};
-
-const nameLine: CSSProperties = {
-  display: "block",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: FS.md,
-  fontWeight: 600,
-  color: "var(--text-strong)",
-};
-
-const metaLine: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  flexWrap: "wrap",
-  rowGap: 2,
-  marginTop: 3,
-  fontSize: FS.sm,
-  color: "var(--text-muted)",
-};
-
-const dot: CSSProperties = {
-  width: 8,
-  height: 8,
-  flex: "0 0 auto",
-  borderRadius: "50%",
-  marginRight: 7,
-};
-
-const numCell: CSSProperties = {
-  fontFamily: MONO,
-  fontSize: FS.sm + 0.5,
-  textAlign: "right",
-  whiteSpace: "nowrap",
-  color: "var(--text)",
-};
-
-const mark: CSSProperties = {
-  background: "var(--accent-tint)",
-  color: "var(--accent-text)",
-  borderRadius: 3,
-  padding: "0 1px",
-};
 
 const outsideNote: CSSProperties = {
   margin: "12px 4px 0",

@@ -1,12 +1,16 @@
 // Build app/public/city-distances.json: recognizable cities at real bike/foot
-// route distances from Ljubljana, with simplified route lines, so the app can
-// say "you rode X km — that's Ljubljana → Y". Network-bound and slow (~18 min),
-// so it runs manually (`pnpm run build:cities`) and its output is committed.
+// route distances from Ljubljana, so the app can say "you rode X km — that's
+// Ljubljana → Y". Each city's simplified route lines go in their own file,
+// app/public/city-routes/<id>.json, fetched only when the map shows that city.
+// Network-bound and slow (~18 min), so it runs manually (`pnpm run build:cities`)
+// and its output is committed.
 // See docs/2026-09-19-distance-city-comparison-design.md.
 //
 // To measure from another home city, change ORIGIN and re-run; the app reads
 // the origin from the JSON. Flags: --dry-run (stage A only), --fresh (ignore
-// the measurement cache). It is resumable after an interruption. To refresh the
+// the measurement cache), --resplit (split a v1 city-distances.json, lines
+// inline, into the index and the route files, without the network). It is
+// resumable after an interruption. To refresh the
 // vendored GeoNames subset first, download cities15000.zip from
 // download.geonames.org/export/dump and run scripts/prepare-geonames.ts on it.
 // Routes come from the public FOSSGIS OSRM server; keep to its usage policy
@@ -16,7 +20,7 @@
 //   stage B (network) measure each with OSRM bike + foot, 1 req/s, cached
 //   stage C (pure)    validate coverage + sanity, report, write
 
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -25,6 +29,8 @@ import { simplifyLngLat } from "./simplify.ts";
 import type {
   Candidate,
   CityDistancePayload,
+  CityDistancePayloadV1,
+  CityRouteFile,
   EncodedCity,
   EncodedCityRoute,
   GeoCity,
@@ -383,7 +389,9 @@ export async function enrich(
 // --- Stage C: validation + output ------------------------------------------
 
 /** Wire-format version written to city-distances.json (see app/src/cities.ts). */
-export const PAYLOAD_VERSION = 1;
+export const PAYLOAD_VERSION = 2;
+/** Wire-format version of the route files (see app/src/cities.ts). */
+export const ROUTE_FILE_VERSION = 1;
 const COVERAGE_MIN_M = 20_000;
 const COVERAGE_MAX_M = 6_000_000;
 const COVERAGE_PER_DECADE = 50;
@@ -431,8 +439,43 @@ export function sanityWarnings(cities: EncodedCity[], origin: LatLon = ORIGIN): 
   return out;
 }
 
+/** The index (city-distances.json) and each city's route file, by city id. */
+export interface SplitPayload {
+  index: CityDistancePayload;
+  routes: Map<number, CityRouteFile>;
+}
+
+/** Whether an encoded line decodes to something drawable (>= 2 points). */
+function drawable(poly: string): boolean {
+  return polyline.decode(poly).length >= 2;
+}
+
+/**
+ * Move the lines out of a dataset: the index keeps every field but the lines, and each
+ * city with a line gets a route file. A route whose line can't be drawn is dropped from
+ * both, as the app would treat it as missing; a city left with no route is dropped.
+ */
+export function splitPayload(full: Omit<CityDistancePayloadV1, "v">): SplitPayload {
+  const routes = new Map<number, CityRouteFile>();
+  const cities: CityDistancePayload["cities"] = [];
+  for (const { cycling, walking, ...city } of full.cities) {
+    const file: CityRouteFile = { v: ROUTE_FILE_VERSION };
+    const keep = (profile: Profile, route: EncodedCityRoute | null) => {
+      if (!route || !drawable(route.poly)) return null;
+      file[profile] = route.poly;
+      return { m: route.m };
+    };
+    const entry = { ...city, cycling: keep("cycling", cycling), walking: keep("walking", walking) };
+    if (!entry.cycling && !entry.walking) continue;
+    cities.push(entry);
+    routes.set(city.id, file);
+  }
+  const { generated, router, simplifyM, origin } = full;
+  return { index: { v: PAYLOAD_VERSION, generated, router, simplifyM, origin, cities }, routes };
+}
+
 /** Wire payload; cities sorted by cycling.m asc with cycling: null last. */
-export function buildPayload(cities: EncodedCity[], generated: string): CityDistancePayload {
+export function buildPayload(cities: EncodedCity[], generated: string): SplitPayload {
   // Infinity - Infinity is NaN, which is falsy, so ties fall through to the next key.
   const sorted = [...cities].sort(
     (a, b) =>
@@ -440,14 +483,13 @@ export function buildPayload(cities: EncodedCity[], generated: string): CityDist
       (a.walking?.m ?? Infinity) - (b.walking?.m ?? Infinity) ||
       a.id - b.id,
   );
-  return {
-    v: PAYLOAD_VERSION,
+  return splitPayload({
     generated,
     router: "osrm-fossgis",
     simplifyM: SIMPLIFY_M,
     origin: { name: ORIGIN.name, lat: ORIGIN.lat, lon: ORIGIN.lon },
     cities: sorted,
-  };
+  });
 }
 
 /** Reasons not to write the output. Empty → safe to write. */
@@ -463,8 +505,7 @@ export function blockingProblems(stats: EnrichStats, holes: Record<Profile, numb
 
 export function formatReport(
   stats: EnrichStats,
-  payload: CityDistancePayload,
-  json: string,
+  payload: SplitPayload,
   holes: Record<Profile, number[]>,
   warnings: string[],
 ): string {
@@ -472,16 +513,28 @@ export function formatReport(
     `candidates ${stats.candidates}, kept ${stats.kept}, dropped ${stats.dropped}, failed ${stats.failed.length}`,
   ];
   for (const profile of PROFILES) {
-    const ms = payload.cities.flatMap((c) => (c[profile] ? [c[profile]!.m] : []));
+    const ms = payload.index.cities.flatMap((c) => (c[profile] ? [c[profile]!.m] : []));
     const rejected = Object.entries(stats.rejected[profile]).map(([r, n]) => `${r}: ${n}`).join(", ") || "none";
     const range = ms.length ? `${fmtKm(Math.min(...ms))} .. ${fmtKm(Math.max(...ms))}` : "—";
     lines.push(`${profile}: ${ms.length} routes, ${range}; rejected ${rejected}; holes ${holes[profile].length}`);
   }
-  const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
-  lines.push(`size ${kb(Buffer.byteLength(json))} raw / ${kb(gzipSync(json).length)} gz`);
+  lines.push(sizeLine(payload));
   for (const f of stats.failed) lines.push(`FAILED ${f}`);
   for (const w of warnings) lines.push(`WARN ${w}`);
   return lines.join("\n");
+}
+
+/** The index's size, and the route files' in all, raw and gzipped. */
+function sizeLine({ index, routes }: SplitPayload): string {
+  const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
+  const json = JSON.stringify(index);
+  const files = [...routes.values()].map((f) => JSON.stringify(f));
+  const raw = files.reduce((n, f) => n + Buffer.byteLength(f), 0);
+  const gz = files.reduce((n, f) => n + gzipSync(f).length, 0);
+  return (
+    `size ${kb(Buffer.byteLength(json))} raw / ${kb(gzipSync(json).length)} gz; ` +
+    `${files.length} route files ${kb(raw)} raw / ${kb(gz)} gz in all`
+  );
 }
 
 // --- main ------------------------------------------------------------------
@@ -490,6 +543,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const GEONAMES_PATH = resolve(__dirname, "data/geonames-cities.json");
 const CACHE_PATH = resolve(__dirname, "data/.city-distances-cache.jsonl");
 const OUT_PATH = resolve(__dirname, "../app/public/city-distances.json");
+const ROUTES_DIR = resolve(__dirname, "../app/public/city-routes");
+
+/** Write the index and the route files, replacing every route file there was. */
+async function writeOutput({ index, routes }: SplitPayload): Promise<void> {
+  await mkdir(dirname(OUT_PATH), { recursive: true });
+  await rm(ROUTES_DIR, { recursive: true, force: true });
+  await mkdir(ROUTES_DIR, { recursive: true });
+  for (const [id, file] of routes) await writeFile(resolve(ROUTES_DIR, `${id}.json`), JSON.stringify(file));
+  await writeFile(OUT_PATH, JSON.stringify(index));
+  console.log(`Wrote ${index.cities.length} cities to ${OUT_PATH} and ${routes.size} route files to ${ROUTES_DIR}.`);
+}
+
+/** --resplit: the committed v1 file, lines inline, into the index and the route files. */
+async function resplit(): Promise<void> {
+  const v1 = JSON.parse(await readFile(OUT_PATH, "utf8")) as CityDistancePayloadV1;
+  if (v1.v !== 1) throw new Error(`${OUT_PATH} is version ${v1.v}; --resplit reads version 1 only`);
+  const split = splitPayload(v1);
+  const dropped = v1.cities.length - split.index.cities.length;
+  console.log(sizeLine(split) + (dropped ? `; dropped ${dropped} cities with no drawable route` : ""));
+  await writeOutput(split);
+}
 
 async function readCacheText(): Promise<string> {
   try {
@@ -502,6 +576,7 @@ async function readCacheText(): Promise<string> {
 
 async function main() {
   const args = new Set(process.argv.slice(2));
+  if (args.has("--resplit")) return resplit();
   const geo = JSON.parse(await readFile(GEONAMES_PATH, "utf8")) as GeoCity[];
   const candidates = selectCandidates(geo);
   console.log(`Stage A: ${candidates.length} candidates from ${geo.length} cities.`);
@@ -532,9 +607,8 @@ async function main() {
   });
 
   const payload = buildPayload(cities, new Date().toISOString().slice(0, 10));
-  const json = JSON.stringify(payload);
   const holes = { cycling: coverageHoles(cities, "cycling"), walking: coverageHoles(cities, "walking") };
-  console.log("\nStage C:\n" + formatReport(stats, payload, json, holes, sanityWarnings(cities)));
+  console.log("\nStage C:\n" + formatReport(stats, payload, holes, sanityWarnings(cities)));
 
   const problems = blockingProblems(stats, holes);
   if (problems.length) {
@@ -542,9 +616,7 @@ async function main() {
     console.error(`Not writing ${OUT_PATH}.`);
     process.exit(1);
   }
-  await mkdir(dirname(OUT_PATH), { recursive: true });
-  await writeFile(OUT_PATH, json);
-  console.log(`Wrote ${payload.cities.length} cities to ${OUT_PATH}.`);
+  await writeOutput(payload);
 }
 
 // Only run when executed directly, so tests can import the stages without I/O.

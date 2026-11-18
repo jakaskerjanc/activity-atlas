@@ -5,18 +5,24 @@ import { ActivitiesView } from "./ActivitiesView";
 import { createActivityFilter } from "../activityFilter";
 import { DEFAULT_SORT } from "../activitySearch";
 import { record } from "../testFixtures";
+import type { ActivityRecord } from "../types";
 
 const run = record({ id: "a", name: "Morning Run", type: "Run" });
 const swim = record({ id: "b", name: "Pool swim", type: "Swim" });
 const filter = createActivityFilter([run, swim]); // Swim is off by default
 
-const render = (over: { query?: string; routed?: string[]; mobile?: boolean } = {}) =>
+const render = (
+  over: { query?: string; routed?: string[] | null; mobile?: boolean; visible?: ActivityRecord[] } = {},
+) =>
   renderToStaticMarkup(
     createElement(ActivitiesView, {
       filter,
-      visible: [run],
+      visible: over.visible ?? [run],
       names: { places: new Map(), routes: new Map() },
-      routes: new Map((over.routed ?? ["a"]).map((id) => [id, [[14, 46], [14.1, 46.1]] as [number, number][]])),
+      routes:
+        over.routed === null
+          ? null
+          : new Map((over.routed ?? ["a"]).map((id) => [id, [[14, 46], [14.1, 46.1]] as [number, number][]])),
       query: over.query ?? "",
       onQueryChange: () => {},
       sort: DEFAULT_SORT,
@@ -44,6 +50,16 @@ describe("ActivitiesView", () => {
     expect(html).toContain("No route");
   });
 
+  test("while the routes load, a row with GPS doesn't claim to have no route", () => {
+    const html = render({ routed: null, visible: [record({ id: "a", type: "Run", channels: ["gps"] })] });
+    expect(html).toMatch(/<button[^>]*data-row="a"/);
+    expect(html).not.toContain("No route");
+  });
+
+  test("while the routes load, a row without GPS already says so", () => {
+    expect(render({ routed: null, visible: [record({ id: "a", type: "Run", channels: [] })] })).toContain("No route");
+  });
+
   test("marks the query in the names", () => {
     expect(render({ query: "morn" })).toContain("<mark");
   });
@@ -53,6 +69,16 @@ describe("ActivitiesView", () => {
     expect(html).toContain("No visible activity matches “swim”.");
     expect(html).toContain("1 more activity outside the filter matches.");
     expect(html).toContain("Show it");
+  });
+
+  test("draws only the first rows of a long list, and says how long it is", () => {
+    const many = Array.from({ length: 500 }, (_, i) => record({ id: `r${i}`, name: `Run ${i}`, type: "Run", ts: 1_700_000_000 - i * 86_400 }));
+    const html = render({ visible: many, routed: [] });
+    const drawn = html.match(/data-row="/g)?.length ?? 0;
+    expect(drawn).toBeGreaterThan(5);
+    expect(drawn).toBeLessThan(60);
+    expect(html).toContain('aria-setsize="500"');
+    expect(html).toContain('aria-posinset="1"');
   });
 
   test("on a phone, sorts from a menu instead of column headers", () => {
