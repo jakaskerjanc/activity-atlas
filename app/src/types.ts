@@ -145,11 +145,10 @@ export type ActivityFeatureCollection = GeoJSON.FeatureCollection<
 /** Comparison group; also the per-city route key in city-distances.json. */
 export type Profile = "cycling" | "walking";
 
+/** A route in the index: its distance only. The line is in the city's route file. */
 export interface EncodedCityRoute {
   /** OSRM route distance, meters */
   m: number;
-  /** Google-encoded polyline of the route, [lat,lng] precision-5. */
-  poly: string;
 }
 
 export interface EncodedCity {
@@ -167,7 +166,7 @@ export interface EncodedCity {
   walking: EncodedCityRoute | null;
 }
 
-/** Root shape of app/public/city-distances.json. */
+/** Root shape of app/public/city-distances.json: every city's distances, no lines. */
 export interface CityDistancePayload {
   /** Wire-format version, bumped on breaking shape changes. */
   v: number;
@@ -176,4 +175,12 @@ export interface CityDistancePayload {
   simplifyM: number;
   origin: { name: string; lat: number; lon: number };
   cities: EncodedCity[];
+}
+
+/** app/public/city-routes/<id>.json: one city's lines, fetched when the map shows it. */
+export interface CityRouteFile {
+  v: number;
+  /** Google-encoded polyline, [lat,lng] precision-5. */
+  cycling?: string;
+  walking?: string;
 }

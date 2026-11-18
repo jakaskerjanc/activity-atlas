@@ -32,10 +32,10 @@ import type {
   Place,
   PlacesFile,
   Profile,
-  RoutesFile,
   Theme,
 } from "./types";
-import { joinActivities } from "./tracks";
+import { checkActivitiesFile, joinActivities } from "./tracks";
+import { useRoutes } from "./ui/useRoutes";
 import { formatDate, formatMonthShort, activityLinks, timeSpan, typeLabel, type ActivityLink } from "./format";
 import { totalCards, type StatCard } from "./stats";
 import { computeDomain, type ColorMode } from "./colors";
@@ -54,6 +54,7 @@ import { HAS_TOKEN } from "./mapStyle";
 import { ArrowRightIcon } from "./ui/icons";
 import { useRouteProfiles } from "./ui/useRouteProfiles";
 import { useCities } from "./ui/useCities";
+import { loadCityRoute } from "./cities";
 import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle } from "./places";
@@ -62,7 +63,7 @@ import { liveValue, useLiveValue, type LiveValue } from "./ui/liveValue";
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
 // user heads for the map (hovering the Map tab starts it early). On the map it loads
-// alongside routes.json, since the page shows only a spinner until both are in.
+// alongside routes.json, since the map page shows only a spinner until both are in.
 let mapViewImport: Promise<typeof import("./MapView")> | null = null;
 const loadMapView = () => (mapViewImport ??= import("./MapView"));
 // m.MapView is the memo wrapper that freezes the map while it is covered.
@@ -71,7 +72,6 @@ const MapView = lazy(() => loadMapView().then((m) => ({ default: m.MapView })));
 // so don't also report it here as an unhandled rejection.
 const prefetchMapView = () => void loadMapView().catch(() => {});
 
-const ROUTES_URL = `${import.meta.env.BASE_URL}data/routes.json`;
 const ACTIVITIES_URL = `${import.meta.env.BASE_URL}data/activities.json`;
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -101,9 +101,12 @@ function initialTheme(): Theme {
 }
 
 export default function App() {
-  const [data, setData] = useState<ActivityFeatureCollection | null>(null);
+  const [activitiesFile, setActivitiesFile] = useState<ActivitiesFile | null>(null);
   const [zoneLimits, setZoneLimits] = useState<number[] | undefined>(undefined);
+  // activities.json or places.json failed: nothing can be shown.
   const [error, setError] = useState<string | null>(null);
+  // routes.json, fetched alongside but not waited for: only the map needs it.
+  const routes = useRoutes();
   const [mapFailed, setMapFailed] = useState(false);
 
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -200,14 +203,9 @@ export default function App() {
   const [replayEpoch, setReplayEpoch] = useState(0);
 
   useEffect(() => {
-    Promise.all([
-      fetchJson<RoutesFile>(ROUTES_URL),
-      fetchJson<ActivitiesFile>(ACTIVITIES_URL),
-      fetchPlaces(),
-    ])
-      .then(([routes, activities, places]) => {
-        const decoded = joinActivities(routes, activities);
-        setData(decoded);
+    Promise.all([fetchJson<ActivitiesFile>(ACTIVITIES_URL), fetchPlaces()])
+      .then(([activities, places]) => {
+        setActivitiesFile(checkActivitiesFile(activities));
         setPlacesFile(places);
         setZoneLimits(activities.hr_zone_limits);
         // Over every record, routed or not: the analytics page reads them all, and the
@@ -216,6 +214,19 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   }, []);
+
+  // The map's features, once both the routes and the activities are in. A routes file
+  // this app can't read fails the map alone, like one that didn't load.
+  const joined = useMemo<{ data: ActivityFeatureCollection } | { error: string } | null>(() => {
+    if (routes.status !== "ready" || !activitiesFile) return null;
+    try {
+      return { data: joinActivities(routes.file, activitiesFile) };
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }, [routes, activitiesFile]);
+  const data = joined && "data" in joined ? joined.data : null;
+  const routesError = routes.status === "error" ? routes.message : joined && "error" in joined ? joined.error : null;
 
   // Visible activities: what both pages count and total. The map draws the subset with
   // a route.
@@ -265,17 +276,34 @@ export default function App() {
   useEffect(() => {
     if (cityProfile && cities.status === "ready" && !shownCity) setCityProfile(null);
   }, [cityProfile, cities.status, shownCity]);
+  // The shown city's line, fetched when it is shown (city-routes/<id>.json). The map
+  // draws nothing until it is in; a failed load leaves the panel as it is.
+  const cityKey = shownCity ? `${shownCity.profile}:${shownCity.pick.city.id}` : null;
+  const [cityLine, setCityLine] = useState<{ key: string; coords: [number, number][] } | null>(null);
+  useEffect(() => {
+    if (!shownCity || cityKey === null) return;
+    let live = true;
+    loadCityRoute(shownCity.pick.city.id, shownCity.profile).then(
+      (coords) => live && setCityLine({ key: cityKey, coords }),
+      (e) => console.warn(`Couldn't load the route to ${shownCity.pick.city.name}: ${String(e)}`),
+    );
+    return () => {
+      live = false;
+    };
+    // Keyed on the city and profile alone: shownCity is a new object whenever the
+    // comparisons are recomputed, and that must not fetch the line again.
+  }, [cityKey]);
   const cityRoute = useMemo<CityRouteLine | null>(
     () =>
-      shownCity && cities.status === "ready"
+      shownCity && cities.status === "ready" && cityLine?.key === cityKey
         ? {
-            key: `${shownCity.profile}:${shownCity.pick.city.id}`,
-            coords: shownCity.pick.route.coords,
+            key: cityLine.key,
+            coords: cityLine.coords,
             originName: cities.data.origin.name,
             cityName: shownCity.pick.city.name,
           }
         : null,
-    [shownCity, cities],
+    [shownCity, cities, cityLine, cityKey],
   );
   // "Show on map" on the analytics page. The route and a selected activity share the
   // bottom panel, so one replaces the other.
@@ -433,9 +461,9 @@ export default function App() {
   );
 
   // The routes the map can draw, by id: the list's previews sketch them, and only these
-  // can be shown on the map.
+  // can be shown on the map. null until they are in (or if they failed).
   const routeCoords = useMemo(
-    () => new Map((data?.features ?? []).map((f) => [f.properties.id, f.geometry.coordinates as [number, number][]])),
+    () => (data ? new Map(data.features.map((f) => [f.properties.id, f.geometry.coordinates as [number, number][]])) : null),
     [data],
   );
 
@@ -714,8 +742,8 @@ export default function App() {
           />
         ))}
 
-      {/* On the map page, up until both the routes and the basemap are in. */}
-      {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed)) && (
+      {/* Until the activities are in; on the map page, until the routes and the basemap are. */}
+      {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed && !routesError)) && (
         <div role="status" style={{ ...chip, top: "50%", transform: "translate(-50%, -50%)" }}>
           <span className="spinner" aria-hidden="true" />
           {filter ? "Loading map…" : "Loading activities…"}
@@ -728,8 +756,15 @@ export default function App() {
         </div>
       )}
 
+      {/* The other pages don't need the routes, so they say nothing about them. */}
+      {routesError && !error && view === "map" && (
+        <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
+          Couldn't load the routes: {routesError}
+        </div>
+      )}
+
       {/* A data error already explains the empty map; don't stack a second chip on it. */}
-      {mapFailed && !error && view === "map" && (
+      {mapFailed && !error && !routesError && view === "map" && (
         <div role="alert" style={{ ...chip, top: 76, color: "var(--accent-text)" }}>
           Couldn't load the map.
           <button
@@ -747,7 +782,7 @@ export default function App() {
       {mapMounted && (
         <div inert={view !== "map"} style={{ position: "absolute", inset: 0, zIndex: 0 }}>
           {/* Once the routes are in (it opens framed on them), or at once if they failed. */}
-          {(data != null || error != null) && (
+          {(data != null || error != null || routesError != null) && (
             <MapErrorBoundary onError={() => setMapFailed(true)}>
               <Suspense fallback={null}>
                 <LiveMapView

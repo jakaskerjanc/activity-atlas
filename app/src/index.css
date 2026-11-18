@@ -515,22 +515,20 @@ input[type="range"].range-dual::-moz-range-thumb {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--divider);
 }
+/* Only the activities near the screen are drawn (ActivitiesView): the list is as tall
+   as all of them, and each drawn item (its row, and its preview when open) is placed
+   at its offset with a transform. */
 .activities__list {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
 }
-/* Each activity (its row, and its preview when open) is laid out and painted only near
-   the viewport: the list holds every visible activity (~450, ~7,000 elements), and
-   opening the page, sorting or clearing the search otherwise lays out all of them.
-   Until it is first drawn an item stands in at a closed row's height: 55px, the name
-   line, the meta line and the padding, the same in the compact rows, whose date joins
-   the meta line rather than adding one. Once drawn the browser keeps its real height
-   (auto), so an open preview, or a compact row whose meta line wraps (72px), keeps its
-   size off screen and the scroll doesn't jump back past it. */
 .activities__item {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 55px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
 }
 .activities__row {
   appearance: none;

@@ -17,7 +17,7 @@ const origin = { name: "Ljubljana", lat: 46.0569, lon: 14.5058 };
 const lisbon: CityDistance = {
   id: 2267057, name: "Lisbon", country: "PT", fc: "PPLC",
   lat: 38.7167, lon: -9.1333, population: 517802,
-  cycling: { m: 2_818_000, coords: [[14.5, 46], [-9.1, 38.7]] },
+  cycling: { m: 2_818_000 },
   walking: null,
 };
 

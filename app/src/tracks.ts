@@ -26,6 +26,14 @@ function toFeature(record: ActivityRecord, poly: string): ActivityFeature | null
   return { type: "Feature", geometry: { type: "LineString", coordinates }, properties: record };
 }
 
+/** activities.json as given, or an error for a version this app doesn't read. */
+export function checkActivitiesFile(activities: ActivitiesFile): ActivitiesFile {
+  if (activities.v !== ACTIVITIES_VERSION) {
+    throw new Error(`Unsupported activities version ${activities.v} (expected ${ACTIVITIES_VERSION})`);
+  }
+  return activities;
+}
+
 /** Activities with a route, in activities.json order, as map features. */
 export function joinActivities(
   routes: RoutesFile,
@@ -34,9 +42,7 @@ export function joinActivities(
   if (routes.v !== ROUTES_VERSION) {
     throw new Error(`Unsupported routes version ${routes.v} (expected ${ROUTES_VERSION})`);
   }
-  if (activities.v !== ACTIVITIES_VERSION) {
-    throw new Error(`Unsupported activities version ${activities.v} (expected ${ACTIVITIES_VERSION})`);
-  }
+  checkActivitiesFile(activities);
   const features: ActivityFeature[] = [];
   for (const record of activities.activities) {
     const poly = routes.routes[record.id];

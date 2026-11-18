@@ -28,7 +28,7 @@ export interface Candidate extends GeoCity {
   gcM: number;
 }
 
-/** One measured route on the wire. */
+/** One measured route, with its line (the cache, stage C, and the v1 wire format). */
 export interface EncodedCityRoute {
   /** OSRM route distance, meters */
   m: number;
@@ -36,14 +36,26 @@ export interface EncodedCityRoute {
   poly: string;
 }
 
-/** One city on the wire; a profile is null when OSRM had no acceptable route. */
+/** One measured city; a profile is null when OSRM had no acceptable route. */
 export interface EncodedCity extends GeoCity {
   cycling: EncodedCityRoute | null;
   walking: EncodedCityRoute | null;
 }
 
-/** Root shape of app/public/city-distances.json. */
-export interface CityDistancePayload {
+/** A route in the index: its distance only. The line is in the city's route file. */
+export interface IndexedCityRoute {
+  /** OSRM route distance, meters */
+  m: number;
+}
+
+/** One city in the index; a profile is null when OSRM had no acceptable route. */
+export interface IndexedCity extends GeoCity {
+  cycling: IndexedCityRoute | null;
+  walking: IndexedCityRoute | null;
+}
+
+/** What the index and the v1 file share. */
+interface CityDistanceHeader {
   /** Wire-format version, bumped on breaking shape changes. */
   v: number;
   /** ISO date (YYYY-MM-DD) the dataset was built */
@@ -52,6 +64,25 @@ export interface CityDistancePayload {
   /** Douglas–Peucker tolerance (meters) applied before encoding */
   simplifyM: number;
   origin: { name: string } & LatLon;
-  /** Sorted by cycling.m asc; cities with cycling: null last. */
+}
+
+/**
+ * Root shape of app/public/city-distances.json (v2): every city's distances, no lines.
+ * Sorted by cycling.m asc; cities with cycling: null last.
+ */
+export interface CityDistancePayload extends CityDistanceHeader {
+  cities: IndexedCity[];
+}
+
+/** The v1 file: the same, with every route's line inline. Read by `--resplit` only. */
+export interface CityDistancePayloadV1 extends CityDistanceHeader {
   cities: EncodedCity[];
+}
+
+/** app/public/city-routes/<id>.json: one city's lines, fetched when it is shown. */
+export interface CityRouteFile {
+  v: number;
+  /** Google-encoded polyline, [lat,lng] precision-5. */
+  cycling?: string;
+  walking?: string;
 }

@@ -226,6 +226,14 @@ at street zoom.
 
 ## Output: `app/public/city-distances.json`
 
+> **Since 2026-11-17 (payload v2):** the lines are no longer inline. `city-distances.json`
+> keeps every field below except `poly` (`"cycling": { "m": 153000 }`), about 10 KB
+> gzipped. Each city's lines are in `app/public/city-routes/<id>.json` as
+> `{ "v": 1, "cycling"?: "…", "walking"?: "…" }`, and the app fetches a city's file only
+> when the map shows its route (`loadCityRoute` in `app/src/cities.ts`). A route whose line
+> decodes to fewer than 2 points is written as `null`. `--resplit` makes the v2 files from
+> a v1 file without the network. The v1 shape follows.
+
 ```jsonc
 {
   "v": 1,
