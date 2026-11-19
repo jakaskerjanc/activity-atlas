@@ -15,6 +15,7 @@ import type { Profile } from "../types";
 import type { CitiesState } from "./useCities";
 import { FS, R } from "./theme";
 import { ArrowRightIcon, MapIcon } from "./icons";
+import { RouteLoader } from "./RouteLoader";
 
 interface Props {
   cities: CitiesState;
@@ -28,7 +29,7 @@ export function CityComparisons({ cities, comparisons, onShowOnMap }: Props) {
   if (cities.status === "loading") {
     return (
       <p role="status" style={{ ...statusText, display: "flex", alignItems: "center", gap: 10 }}>
-        <span className="spinner" aria-hidden="true" />
+        <RouteLoader />
         Loading cities…
       </p>
     );
