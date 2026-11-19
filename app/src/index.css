@@ -726,20 +726,68 @@ input[type="range"].range-dual::-moz-range-thumb {
   }
 }
 
-/* The loading chip's spinner. */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+/* The loading indicator (RouteLoader): a route draws in, its finish ring pops, then the
+   line wipes away from the start. The line's pathLength is 1, so a dash of 1 with a gap
+   of 1 is the whole route: offset 1 hides it, 0 shows it, -1 has wiped it off again. */
+.route-loader {
+  flex: none;
+  overflow: visible;
+  --route-loop: 2.4s;
+}
+.route-loader path,
+.route-loader circle {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-loader__track {
+  stroke: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke-width: 7;
+}
+.route-loader__line {
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-dasharray: 1 1;
+  animation: route-draw var(--route-loop) cubic-bezier(0.55, 0, 0.35, 1) infinite;
+}
+.route-loader__finish {
+  stroke: var(--accent);
+  stroke-width: 4;
+  fill: var(--panel-bg, var(--bg));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: route-finish var(--route-loop) ease-out infinite;
+}
+@keyframes route-draw {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  60%,
+  72% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1;
   }
 }
-.spinner {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
+@keyframes route-finish {
+  0%,
+  56% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  64% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  70%,
+  84% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 
 /* Read by screen readers, not shown: words an icon stands for. */
@@ -755,8 +803,8 @@ input[type="range"].range-dual::-moz-range-thumb {
   border: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation-duration: 2.4s;
+  .route-loader {
+    --route-loop: 7s;
   }
   .panel,
   .panel[data-hidden="true"] {

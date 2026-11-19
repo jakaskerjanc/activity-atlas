@@ -59,6 +59,7 @@ import { cityComparisons } from "./cityMatch";
 import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle } from "./places";
 import { liveValue, useLiveValue, type LiveValue } from "./ui/liveValue";
+import { RouteLoader } from "./ui/RouteLoader";
 
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
@@ -744,8 +745,8 @@ export default function App() {
 
       {/* Until the activities are in; on the map page, until the routes and the basemap are. */}
       {!error && (!filter || (view === "map" && HAS_TOKEN && !mapDrawn && !mapFailed && !routesError)) && (
-        <div role="status" style={{ ...chip, top: "50%", transform: "translate(-50%, -50%)" }}>
-          <span className="spinner" aria-hidden="true" />
+        <div role="status" style={loadingCard}>
+          <RouteLoader width={112} />
           {filter ? "Loading map…" : "Loading activities…"}
         </div>
       )}
@@ -914,7 +915,7 @@ function RouteTitle({ from, to }: { from: string; to: string }) {
   );
 }
 
-// A small floating status chip (loading, load error).
+// A small floating status chip (load errors).
 const chip: CSSProperties = {
   position: "absolute",
   left: "50%",
@@ -933,4 +934,15 @@ const chip: CSSProperties = {
   boxShadow: "var(--panel-shadow)",
   backdropFilter: "var(--panel-blur)",
   WebkitBackdropFilter: "var(--panel-blur)",
+};
+
+// The centred loading card: the route drawing in, its caption underneath.
+const loadingCard: CSSProperties = {
+  ...chip,
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+  flexDirection: "column",
+  gap: 12,
+  padding: "18px 26px 14px",
+  borderRadius: 18,
 };
