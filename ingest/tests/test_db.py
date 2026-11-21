@@ -42,8 +42,14 @@ def test_v4_database_needs_rebuild(tmp_path):
         db.open_db(str(p))
 
 
-def test_v5_has_group_tables():
+def test_schema_has_group_tables():
     conn = db.connect(":memory:"); db.init_schema(conn)
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"osm_points", "places", "route_groups", "activity_groups", "group_overrides"} <= names
-    assert db.SCHEMA_VERSION == 5
+    assert db.SCHEMA_VERSION == 6
+
+
+def test_v6_activities_have_top_columns():
+    conn = db.connect(":memory:"); db.init_schema(conn)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(activities)")}
+    assert {"top_lat", "top_lon", "top_ele", "top_climb"} <= cols

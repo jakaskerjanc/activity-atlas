@@ -346,7 +346,7 @@ def test_local_run_refreshes(tmp_path, db_path):
 def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_path):
     """The first daily job after the upgrade: R2 holds a v4 database and the archive the records behind it,
     among them a walk that climbs 106 m. The job opens the database as the fetchers do, which rebuilds it
-    to v5; the run's refresh then fills the group tables, and the upload carries both."""
+    to the current schema; the run's refresh then fills the group tables, and the upload carries both."""
     from ingest.tests.test_rebuild import NOW, _imported
     (tmp_path / "import").mkdir()
     with warnings.catch_warnings():
@@ -376,7 +376,7 @@ def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_pa
     assert writer.run(db_path, archive, work, today=TODAY) == "fetched"
     for key in (writer.DB_KEY, f"db/snapshots/{TODAY}.sqlite"):
         data = store.get(key)[0]
-        assert _read(data, tmp_path, "PRAGMA user_version") == [(db.SCHEMA_VERSION,)] == [(5,)]
+        assert _read(data, tmp_path, "PRAGMA user_version") == [(db.SCHEMA_VERSION,)] == [(6,)]
         assert _read(data, tmp_path, "SELECT id, name, name_source, kind FROM places") == [
             (walk, "Top at 410 m", "fallback", "top")]
         assert _read(data, tmp_path, "SELECT * FROM activity_groups") == [(walk, walk, None)]

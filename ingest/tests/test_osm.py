@@ -196,7 +196,7 @@ def test_main_rebuilds_a_v4_database_and_loads_points(cli, monkeypatch, capsys):
     monkeypatch.setattr(osm, "_http_post", lambda url, data, headers: (200, body(peak(1), peak(2))))
     run("SI")
     c = sqlite3.connect(db_path)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
+    assert c.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 6
     assert rows(c, "SI") == ["P1", "P2"]
     c.close()
     assert "SI: 2 points" in capsys.readouterr().out

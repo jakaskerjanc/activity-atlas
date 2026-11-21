@@ -1,4 +1,4 @@
-"""The v5 SQLite schema. Everything is derived from the archive except the
+"""The v6 SQLite schema. Everything is derived from the archive except the
 identity columns of activity_sources (provider, provider_activity_id,
 activity_id, pinned, deleted_at) and activity_overrides, which a rebuild
 carries over.
@@ -13,13 +13,17 @@ the groups, activity_groups maps each activity to its place and route, and
 group_overrides holds the owner's names and merges. Everything but
 group_overrides is derived and recomputed by a refresh; a rebuild carries
 group_overrides over.
+
+Highest point (schema v6): top_lat, top_lon, top_ele and top_climb on activities
+hold geometry.track_top of the stored track, or NULL when it has no top, so a
+refresh need not decode every activity's streams.
 """
 import os
 import sqlite3
 
 from .codec import CHANNEL_SCALES
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class SchemaMismatch(Exception):
@@ -72,7 +76,11 @@ CREATE TABLE activities (
   meta_provider TEXT,
   streams_sha256 TEXT,
   calculated TEXT NOT NULL DEFAULT '[]',
-  visible INTEGER NOT NULL DEFAULT 1
+  visible INTEGER NOT NULL DEFAULT 1,
+  top_lat REAL,
+  top_lon REAL,
+  top_ele REAL,
+  top_climb REAL
 );
 CREATE INDEX idx_activities_start ON activities(start_time);
 CREATE INDEX idx_activities_end ON activities(end_time);

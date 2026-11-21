@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import calc, codec
 from .model import REPORTED_KEYS, SourceActivity
+from .geometry import track_top
 from .normalize import encode, simplify
 from .parse import ParsedFile
 
@@ -215,6 +216,9 @@ def recompute_activity(conn, activity_id: str) -> None:
         "calculated": json.dumps(calculated),
         "visible": int(has_live and not (hidden and hidden["hidden"])),
     })
+    top = track_top(lat, lon, st["altitude"]) if "altitude" in st else None
+    a.update({"top_lat": top.lat if top else None, "top_lon": top.lon if top else None,
+              "top_ele": top.ele if top else None, "top_climb": top.climb if top else None})
     for col in ("hr_zone_seconds", "hr_zone_limits"):
         a[col] = json.dumps(a[col]) if a[col] is not None else None
 
