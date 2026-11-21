@@ -65,10 +65,11 @@ def test_load_tracks_reads_visible_tracks_in_order(conn):
     assert tracks[0].top is None  # no altitude channel
 
 
-def test_missing_streams_row_loads_without_top_and_still_joins_a_route(conn):
+def test_no_stored_top_loads_without_top_and_still_joins_a_route(conn):
     insert_activity(conn, "r1", "Run", _t(1), _loop_from(A), alts=climb_alts(N, 300))
     insert_activity(conn, "r2", "Run", _t(2), _loop_from(A), alts=climb_alts(N, 300))
-    conn.execute("DELETE FROM streams WHERE file_sha256 = 'sha-r2'")
+    conn.execute("UPDATE activities SET top_lat = NULL, top_lon = NULL, top_ele = NULL, top_climb = NULL"
+                 " WHERE id = 'r2'")
     tracks = load_tracks(conn)
     assert [t.top is None for t in tracks] == [False, True]
     g = group_activities(tracks)
@@ -262,3 +263,11 @@ def test_same_route_is_the_frechet_rule_either_way_round():
             assert _same_route(anchor, anchor_xy, t) == expected, (anchor.id, t.id)
             answers.add((near, expected))
     assert answers == {(True, True), (True, False), (False, False)}
+
+
+def test_load_tracks_needs_no_streams(conn):
+    insert_activity(conn, "h1", "Hike", "2025-05-01T07:00:00+00:00", line((46.0, 14.5), 0, 3000, 60),
+                    alts=climb_alts(60, 300))
+    before = load_tracks(conn)[0].top
+    conn.execute("DELETE FROM streams")
+    assert before is not None and load_tracks(conn)[0].top == before
