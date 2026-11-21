@@ -40,6 +40,14 @@ def test_live_conditional_writes_head_and_list(tmp_path):
         assert store.get(uploaded)[0] == b"zipdata"
 
         assert store.list(prefix) == [(first, 5), (second, 1), (uploaded, 7)]
+
+        copied = prefix + "d"
+        store.copy(first, copied, if_match=new_etag)
+        assert store.get(copied)[0] == b"three"
+        assert store.head(copied)["metadata"] == {"kind": "live"}
+        with pytest.raises(PreconditionFailed):
+            store.copy(first, prefix + "e", if_match=etag)        # the stale etag
+        assert store.head(prefix + "e") is None
     finally:
         for key, _ in store.list(prefix):
             store.delete(key)

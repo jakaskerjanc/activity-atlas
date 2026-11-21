@@ -179,9 +179,9 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
                 data = fh.read()
             try:
                 if etag is None:
-                    store.put(DB_KEY, data, if_none_match="*")
+                    new_etag = store.put(DB_KEY, data, if_none_match="*")
                 else:
-                    store.put(DB_KEY, data, if_match=etag)
+                    new_etag = store.put(DB_KEY, data, if_match=etag)
             except PreconditionFailed:
                 print(
                     f"R2 database changed during the run (attempt {attempt}/{WRITE_ATTEMPTS}); redoing",
@@ -191,7 +191,10 @@ def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str,
             # The master is updated; the local copy follows it even if a snapshot step fails.
             install(tmp, db_path)
             changed = True
-            store.put(f"{SNAPSHOT_PREFIX}{today}.sqlite", data)
+            try:     # a copy inside R2, so the database is uploaded once
+                store.copy(DB_KEY, f"{SNAPSHOT_PREFIX}{today}.sqlite", if_match=new_etag)
+            except PreconditionFailed:
+                pass     # another writer has replaced the database since; it takes the snapshot itself
             _prune_snapshots(store)
             return _finish(result, refreshed)
         print(

@@ -126,6 +126,42 @@ def test_pulls_existing_db_and_uploads_the_change(store, archive, db_path, tmp_p
     assert gear_names(open(db_path, "rb").read(), tmp_path) == ["attempt-1", "old"]
 
 
+class _CallStore(MemoryStore):
+    """Records every put and copy, as (op, key) or (op, src, dst)."""
+
+    def __init__(self, copy_fails=False):
+        super().__init__()
+        self.calls, self.copy_fails = [], copy_fails
+
+    def put(self, key, data, **kw):
+        self.calls.append(("put", key))
+        return super().put(key, data, **kw)
+
+    def copy(self, src, dst, *, if_match=None):
+        self.calls.append(("copy", src, dst))
+        if self.copy_fails:      # another writer replaced the database between our put and this copy
+            super().put(src, b"theirs")
+        return super().copy(src, dst, if_match=if_match)
+
+
+def test_run_takes_the_snapshot_by_copy(tmp_path, db_path):
+    store = _CallStore()
+    seed(store, tmp_path, "old")
+    store.calls.clear()
+    assert writer.run(db_path, RemoteArchive(store, str(tmp_path / "cache")), Work(), today=TODAY) == "result-1"
+    snap = f"db/snapshots/{TODAY}.sqlite"
+    assert store.calls == [("put", writer.DB_KEY), ("copy", writer.DB_KEY, snap)]
+    assert store.get(snap)[0] == store.get(writer.DB_KEY)[0]
+
+
+def test_run_skips_the_snapshot_when_the_database_changed_since_its_put(tmp_path, db_path):
+    store = _CallStore(copy_fails=True)
+    seed(store, tmp_path, "old")
+    assert writer.run(db_path, RemoteArchive(store, str(tmp_path / "cache")), Work(), today=TODAY) == "result-1"
+    assert store.head(f"db/snapshots/{TODAY}.sqlite") is None
+    assert gear_names(open(db_path, "rb").read(), tmp_path) == ["attempt-1", "old"]
+
+
 def test_conflict_repulls_and_redoes(store, archive, db_path, tmp_path):
     seed(store, tmp_path, "old")
     work = Work(store, tmp_path, race=lambda n: n == 1)
