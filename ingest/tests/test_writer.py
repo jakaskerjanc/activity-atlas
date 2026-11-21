@@ -4,7 +4,7 @@ import warnings
 from datetime import date, timedelta
 
 import pytest
-from ingest import db, engine, writer
+from ingest import db, engine, osm, writer
 from ingest.archive import LocalArchive, RemoteArchive
 from ingest.objstore import MemoryStore
 from ingest.tests.test_grouping import A, N, _hike
@@ -266,7 +266,7 @@ def _read(data: bytes, tmp_path, sql: str) -> list[tuple]:
         conn.close()
 
 
-def _boom(path, log=print):
+def _boom(path, osm_path=None, log=print):
     raise RuntimeError("refresh boom")
 
 
@@ -301,6 +301,27 @@ def test_refresh_failure_still_uploads_and_exits_7(store, archive, db_path, tmp_
     err = capsys.readouterr().err
     assert "Traceback" in err and "refresh boom" in err and REFRESH_FAILED in err
     assert err.index("refresh boom") < err.index(REFRESH_FAILED)
+
+
+def test_run_exits_7_and_keeps_the_names_when_the_points_file_cannot_be_fetched(tmp_path, db_path, capsys):
+    class NoDerived(MemoryStore):
+        def get(self, key):
+            if key.startswith("derived/"):
+                raise OSError("R2 said no")
+            return super().get(key)
+    store = NoDerived()
+    archive = RemoteArchive(store, str(tmp_path / "cache"))
+    seed(store, tmp_path, "old")
+    archive.put_osm("SI", b'{"elements": []}', fetched_at="2026-05-01T10:00:00+00:00")
+    # another machine already stored the points file, so this run must fetch it
+    store.put("derived/osm-points/" + osm.points_file_name(archive.newest_osm_keys().values()), b"unread")
+    with pytest.raises(SystemExit) as exc:
+        writer.run(db_path, archive, _insert_hike, today=TODAY)
+    assert exc.value.code == writer.EXIT_REFRESH_FAILED
+    data = store.get(writer.DB_KEY)[0]
+    assert _read(data, tmp_path, "SELECT id FROM activities") == [("hike1",)]
+    assert _read(data, tmp_path, "SELECT * FROM places") == []
+    assert "R2 said no" in capsys.readouterr().err
 
 
 def test_refresh_failure_after_a_lost_race_still_uploads_and_exits_7(store, archive, db_path, tmp_path,
@@ -346,7 +367,7 @@ def test_local_run_refreshes(tmp_path, db_path):
 def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_path):
     """The first daily job after the upgrade: R2 holds a v4 database and the archive the records behind it,
     among them a walk that climbs 106 m. The job opens the database as the fetchers do, which rebuilds it
-    to the current schema; the run's refresh then fills the group tables, and the upload carries both."""
+    to v5; the run's refresh then fills the group tables, and the upload carries both."""
     from ingest.tests.test_rebuild import NOW, _imported
     (tmp_path / "import").mkdir()
     with warnings.catch_warnings():
@@ -359,7 +380,7 @@ def test_first_write_job_on_a_v4_remote_database(store, archive, db_path, tmp_pa
                 store.put(os.path.relpath(path, local.root).replace(os.sep, "/"), fh.read())
     conn = db.connect(dbp)
     [walk] = [r[0] for r in conn.execute("SELECT id FROM activities WHERE type = 'Walk'")]
-    for table in ("activity_groups", "route_groups", "places", "group_overrides", "osm_points"):
+    for table in ("activity_groups", "route_groups", "places", "group_overrides"):
         conn.execute(f"DROP TABLE {table}")
     conn.execute("PRAGMA user_version = 4")
     conn.commit()

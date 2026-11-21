@@ -2,15 +2,15 @@
 activity_sources and the activity_overrides and group_overrides rows are
 carried over from the current database; everything else is re-derived, so
 activity IDs never change. Records without an identity row go through the
-matcher as new. Wellness records are re-applied after the activities, then
-the OSM points from the archive's snapshots. The group tables are left to the
-refresh that writer.run does after every write job."""
+matcher as new. Wellness records are re-applied after the activities. The
+group tables are left to the refresh that writer.run does after every write
+job, which reads the OSM points from their own file (see osm.points_file)."""
 import argparse
 import os
 import warnings
 from datetime import date
 
-from . import db, engine, osm, wellness, writer
+from . import db, engine, wellness, writer
 from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .records import latest, latest_wellness
@@ -65,7 +65,6 @@ def rebuild(db_path: str, archive: Archive, *, now: str, force: bool = False) ->
             f"VALUES ({','.join('?' * len(_GROUP_OVERRIDE_COLS))})", group_overrides)
         counts = engine.apply_records(conn, archive, records, now=now)
         wellness.apply_wellness(conn, archive, latest_wellness(archive.list_wellness()))
-        osm.apply_osm(conn, archive.list_osm())
         conn.commit()
     finally:
         conn.close()

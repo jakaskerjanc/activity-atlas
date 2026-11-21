@@ -137,11 +137,12 @@ def _finish(result: T, refreshed: bool) -> T:
 
 def run(db_path: str, archive: Archive, work: Callable[[str], T], *, today: str, init_db: bool = False) -> T:
     # Imported here, not at module level, like engine.open_for_write's rebuild: no import cycle.
+    from ingest import osm
     from ingest.refresh import refresh_file
 
     def try_refresh(path: str) -> bool:
         try:
-            refresh_file(path)
+            refresh_file(path, osm.points_file(archive))
             return True
         except Exception:
             traceback.print_exc()

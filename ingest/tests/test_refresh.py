@@ -7,7 +7,9 @@ import pytest
 
 from ingest import db, grouping, naming
 from ingest import refresh as refresh_mod
+from ingest.osm import build_points_file
 from ingest.refresh import refresh, refresh_file
+from ingest.tests.test_osm import body
 from ingest.tests.test_grouping import A, N, _hike, _loop_from, _t
 from ingest.tests.track_fixture import climb_alts, insert_activity, offset
 
@@ -20,9 +22,24 @@ def sha256(path) -> str:
         return hashlib.sha256(fh.read()).hexdigest()
 
 
-def _osm(conn, osm_id, kind, name, at, ele=None):
-    conn.execute("INSERT INTO osm_points (osm_id, kind, name, lat, lon, ele, country) VALUES (?,?,?,?,?,?, 'SI')",
-                 (osm_id, kind, name, at[0], at[1], ele))
+def _el(i, tags, at, ele=None):
+    return {"type": "node", "id": i, "lat": at[0], "lon": at[1],
+            "tags": {**tags, **({"ele": str(ele)} if ele is not None else {})}}
+
+
+SLAVNIK = _el(1, {"natural": "peak", "name": "Slavnik"}, offset([A], 30, 0)[0], 1028.0)
+PODGORJE = _el(2, {"place": "village", "name": "Podgorje"}, offset([A], 0, -9000)[0])
+
+
+def points_file_of(path, *elements) -> str:
+    """An OSM points file, as osm.points_file gives the refresh, holding these Overpass elements."""
+    build_points_file({"SI": body(*elements)}, str(path))
+    return str(path)
+
+
+@pytest.fixture
+def osm_file(tmp_path):
+    return points_file_of(tmp_path / "osm-points.sqlite", SLAVNIK, PODGORJE)
 
 
 def _fill(conn):
@@ -33,8 +50,6 @@ def _fill(conn):
     insert_activity(conn, "b1", "Hike", _t(4), _hike(B, 180), alts=climb_alts(N, 300), name="Morning Hike")
     insert_activity(conn, "r1", "Run", _t(5), _loop_from(offset([A], 0, -5000)[0]), alts=climb_alts(N, 10))
     insert_activity(conn, "r2", "Run", _t(6), _loop_from(offset([A], 20, -5000)[0]), alts=climb_alts(N, 10))
-    _osm(conn, "node/1", "peak", "Slavnik", offset([A], 30, 0)[0], 1028.0)
-    _osm(conn, "node/2", "village", "Podgorje", offset([A], 0, -9000)[0])
 
 
 def build_db(tmp_path) -> str:
@@ -70,9 +85,9 @@ def test_each_module_imports_first(mod):
     subprocess.run([sys.executable, "-c", f"import ingest.{mod}"], check=True, cwd=REPO)  # no import cycle
 
 
-def test_refresh_fills_tables(conn):
+def test_refresh_fills_tables(conn, osm_file):
     _override(conn, "route", "r1", name="Track loop")
-    result = refresh(conn)
+    result = refresh(conn, osm_file)
 
     tracks = grouping.load_tracks(conn)
     groups = grouping.group_activities(tracks)
@@ -90,62 +105,62 @@ def test_refresh_fills_tables(conn):
     assert result == {"places": 2, "routes": 1, "rows_changed": 9, "no_osm_nearby": 0, "orphaned_overrides": []}
 
 
-def test_refresh_updates_only_rows_that_differ(conn):
-    refresh(conn)
+def test_refresh_updates_only_rows_that_differ(conn, osm_file):
+    refresh(conn, osm_file)
     conn.commit()
     _override(conn, "place", "b1", name="Grmada")
     conn.execute("UPDATE activities SET visible = 0 WHERE id = 'r2'")
-    result = refresh(conn)
+    result = refresh(conn, osm_file)
     # b1 renamed; route r1 is down to one activity, so it and both runs' activity_groups rows go
     assert result["rows_changed"] == 4 and result["routes"] == 0
     assert set(_rows(conn, "activity_groups")) == {"h1", "h2", "h3", "b1"}
     assert _rows(conn, "places")["b1"][:2] == ("Grmada", "owner")
 
 
-def test_second_refresh_changes_nothing(tmp_path):
+def test_second_refresh_changes_nothing(tmp_path, osm_file):
     path = build_db(tmp_path)
-    assert refresh_file(path)["rows_changed"] > 0
+    assert refresh_file(path, osm_file)["rows_changed"] > 0
     before = sha256(path)
-    assert refresh_file(path)["rows_changed"] == 0 and sha256(path) == before
+    assert refresh_file(path, osm_file)["rows_changed"] == 0 and sha256(path) == before
 
 
-def test_hiding_the_anchor_reanchors_and_reports_orphaned_name(conn):
+def test_hiding_the_anchor_reanchors_and_reports_orphaned_name(conn, osm_file):
     _override(conn, "place", "h1", name="Moj hrib")
     assert _rows(conn, "places") == {}
-    refresh(conn)
+    refresh(conn, osm_file)
     assert _rows(conn, "places")["h1"][:2] == ("Moj hrib", "owner")
     conn.execute("UPDATE activities SET visible = 0 WHERE id = 'h1'")
-    result = refresh(conn)
+    result = refresh(conn, osm_file)
     assert result["orphaned_overrides"] == ["place h1"]
     places = _rows(conn, "places")
     assert "h1" not in places and places["h2"][1] != "owner"
     assert _rows(conn, "activity_groups")["h3"] == ("h2", None)
 
 
-def test_merged_away_place_is_not_orphaned(conn):
+def test_merged_away_place_is_not_orphaned(conn, osm_file):
     _override(conn, "place", "b1", merge_into="h1")
-    result = refresh(conn)
+    result = refresh(conn, osm_file)
     assert result["orphaned_overrides"] == [] and result["places"] == 1
     assert "b1" not in _rows(conn, "places")
     assert _rows(conn, "activity_groups")["b1"] == ("h1", None)
 
 
-def test_merge_into_missing_target_is_orphaned(conn):
+def test_merge_into_missing_target_is_orphaned(conn, osm_file):
     _override(conn, "place", "b1", merge_into="h1")
     conn.execute("UPDATE activities SET visible = 0 WHERE id IN ('h1', 'h2', 'h3')")
-    result = refresh(conn)
+    result = refresh(conn, osm_file)
     assert result["orphaned_overrides"] == ["place b1"]
     assert set(_rows(conn, "places")) == {"b1"}
 
 
-def test_route_name_without_a_route_is_orphaned(conn):
+def test_route_name_without_a_route_is_orphaned(conn, osm_file):
     _override(conn, "route", "h1", name="Not a route")
-    assert refresh(conn)["orphaned_overrides"] == ["route h1"]
+    assert refresh(conn, osm_file)["orphaned_overrides"] == ["route h1"]
 
 
-def test_refresh_error_leaves_file_unchanged(tmp_path, monkeypatch):
+def test_refresh_error_leaves_file_unchanged(tmp_path, monkeypatch, osm_file):
     path = build_db(tmp_path)
-    refresh_file(path)
+    refresh_file(path, osm_file)
     c = db.connect(path)
     insert_activity(c, "h4", "Hike", _t(7), _hike(B, 0), alts=climb_alts(N, 300))
     c.execute("DELETE FROM places WHERE id = 'b1'")
@@ -157,12 +172,12 @@ def test_refresh_error_leaves_file_unchanged(tmp_path, monkeypatch):
         raise RuntimeError("naming broke")
     monkeypatch.setattr(naming, "name_routes", boom)
     with pytest.raises(RuntimeError, match="naming broke"):
-        refresh_file(path)
+        refresh_file(path, osm_file)
     assert sha256(path) == before
     assert not os.path.exists(path + "-journal")
 
 
-def test_refresh_error_after_a_write_rolls_back(tmp_path, monkeypatch):
+def test_refresh_error_after_a_write_rolls_back(tmp_path, monkeypatch, osm_file):
     path = build_db(tmp_path)
     before = sha256(path)
     real = refresh_mod._sync
@@ -175,7 +190,7 @@ def test_refresh_error_after_a_write_rolls_back(tmp_path, monkeypatch):
         return real(*a, **kw)
     monkeypatch.setattr(refresh_mod, "_sync", fail_second)
     with pytest.raises(RuntimeError, match="disk said no"):
-        refresh_file(path)
+        refresh_file(path, osm_file)
     assert sha256(path) == before
 
 
@@ -201,22 +216,27 @@ def test_refresh_skips_v4_and_missing(tmp_path):
 
 def test_no_osm_warning_only_with_osm_data(tmp_path, capsys):
     path = build_db(tmp_path)
-    c = db.connect(path)
-    c.execute("DELETE FROM osm_points")
-    c.commit()
-    c.close()
-    assert refresh_file(path)["no_osm_nearby"] == 2
+    empty = points_file_of(tmp_path / "empty.sqlite")
+    assert refresh_file(path, empty)["no_osm_nearby"] == 2
     assert "no OSM data nearby" not in capsys.readouterr().out
 
-    c = db.connect(path)
-    _osm(c, "node/9", "peak", "Far away", offset([B], 9800, 0)[0], 900.0)   # within 10 km of B only
-    c.commit()
-    c.close()
-    assert refresh_file(path)["no_osm_nearby"] == 1
+    far = points_file_of(tmp_path / "far.sqlite",
+                         _el(9, {"natural": "peak", "name": "Far away"}, offset([B], 9800, 0)[0], 900.0))
+    assert refresh_file(path, far)["no_osm_nearby"] == 1      # within 10 km of B only
     assert "1 places have no OSM data nearby; run pnpm run places:update" in capsys.readouterr().out
 
 
-def test_orphans_are_printed_with_the_command_that_clears_them(tmp_path):
+def test_refresh_without_a_points_file_uses_fallback_names(tmp_path):
+    path = build_db(tmp_path)
+    assert refresh_file(path)["no_osm_nearby"] == 2
+    c = db.connect(path)
+    sources = {r[0]: (r[1], r[2]) for r in c.execute("SELECT id, name, name_source FROM places")}
+    c.close()
+    assert sources["h1"] == ("Slavnik", "activity_names")
+    assert sources["b1"][1] == "fallback" and sources["b1"][0].startswith("Top at ")
+
+
+def test_orphans_are_printed_with_the_command_that_clears_them(tmp_path, osm_file):
     path = build_db(tmp_path)
     c = db.connect(path)
     _override(c, "place", "gone", name="Old name", merge_into="h1")
@@ -225,20 +245,20 @@ def test_orphans_are_printed_with_the_command_that_clears_them(tmp_path):
     c.commit()
     c.close()
     lines = []
-    assert refresh_file(path, log=lines.append)["orphaned_overrides"] == ["place b1", "place gone", "route h2"]
+    assert refresh_file(path, osm_file, log=lines.append)["orphaned_overrides"] == ["place b1", "place gone", "route h2"]
     assert len(lines) == 3
     assert 'unmerge-place b1' in lines[0]
     assert 'name-place gone ""' in lines[1] and "unmerge-place gone" in lines[1]
     assert 'name-route h2 ""' in lines[2]
 
 
-def test_undecodable_track_is_skipped_and_named(tmp_path):
+def test_undecodable_track_is_skipped_and_named(tmp_path, osm_file):
     path = build_db(tmp_path)
     c = db.connect(path)
     c.execute("UPDATE activities SET polyline = '_p~iF' WHERE id IN ('r2', 'h3')")
     c.commit()
     c.close()
     lines = []
-    result = refresh_file(path, log=lines.append)
+    result = refresh_file(path, osm_file, log=lines.append)
     assert result["places"] == 2 and result["routes"] == 0
     assert lines == ["skipped 2 activities whose track won't decode: h3, r2"]

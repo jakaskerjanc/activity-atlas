@@ -6,6 +6,8 @@ byte, and source records. Layout under the root:
     records/<provider>/<provider_activity_id>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
     wellness/<provider>/<source>/<key>/<YYYYMMDDTHHMMSSZ>-<content_sha[:12]>.json
     osm/<CC>/<YYYYMMDDTHHMMSSZ>-<sha256(bytes)[:12]>.json
+    derived/<folder>/<name>     files built from the rest, named by what they were built from
+                                (e.g. derived/osm-points/v1-<hash>.sqlite); one per folder
 
 Two backends share that layout: a plain folder (LocalArchive) and a private R2
 bucket fronted by a local cache folder (RemoteArchive).
@@ -19,7 +21,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Protocol
 
-from .objstore import ObjectStore, store_from_env
+from .objstore import ObjectStore, PreconditionFailed, store_from_env
 from .records import SourceRecord, WellnessRecord, latest_wellness, recency
 
 DEFAULT_URL = "file://data/archive"
@@ -37,6 +39,9 @@ class Archive(Protocol):
     def list_wellness(self) -> list[WellnessRecord]: ...
     def put_osm(self, country: str, data: bytes, *, fetched_at: str) -> bool: ...
     def list_osm(self) -> dict[str, bytes]: ...
+    def newest_osm_keys(self) -> dict[str, str]: ...
+    def get_derived(self, key: str) -> str | None: ...
+    def put_derived(self, key: str, path: str) -> None: ...
 
 
 def _safe(part: str) -> str:
@@ -49,6 +54,16 @@ def _osm_dir(country: str) -> str:
     if not re.fullmatch(r"[A-Z]{2}", country):
         raise ValueError(f"unsafe country code: {country!r}")
     return f"osm/{country}"
+
+
+def _derived_key(key: str) -> str:
+    """``derived/<key>`` for a ``<folder>/<name>`` key; ValueError for anything else."""
+    parts = key.split("/")
+    if len(parts) != 2:
+        raise ValueError(f"unsafe derived key: {key!r}")
+    for part in parts:
+        _safe(part)
+    return f"derived/{key}"
 
 
 def _stamp(fetched_at: str) -> str:
@@ -233,6 +248,41 @@ class LocalArchive:
                     out[country] = f.read()
         return out
 
+    def newest_osm_keys(self) -> dict[str, str]:
+        """Each country's newest snapshot key, e.g. {"SI": "osm/SI/20261109T100000Z-abc.json"}."""
+        base = self._path("osm")
+        if not os.path.isdir(base):
+            return {}
+        out = {}
+        for country in sorted(os.listdir(base)):
+            newest = self._newest_osm(f"osm/{country}")
+            if newest:
+                out[country] = f"osm/{country}/{newest}"
+        return out
+
+    def _local_derived(self, full: str) -> str | None:
+        path = self._path(full)
+        return path if os.path.isfile(path) else None
+
+    def get_derived(self, key: str) -> str | None:
+        """The local path of ``derived/<key>``; None when there is no such file."""
+        return self._local_derived(_derived_key(key))
+
+    def _replace_local_derived(self, full: str, write) -> None:
+        """Write ``full`` here (never to the store), then delete the folder's other files."""
+        LocalArchive._write(self, full, write)
+        folder = os.path.dirname(self._path(full))
+        for name in os.listdir(folder):
+            if name != full.rsplit("/", 1)[1] and not name.startswith(".tmp-"):
+                os.remove(os.path.join(folder, name))
+
+    def put_derived(self, key: str, path: str) -> None:
+        """Store the file at ``path`` under ``derived/<key>``, then delete the other files in its folder."""
+        def copy(f):
+            with open(path, "rb") as src:
+                shutil.copyfileobj(src, f)
+        self._replace_local_derived(_derived_key(key), copy)
+
 
 class RemoteArchive(LocalArchive):
     """The archive in an object store (R2), with ``cache_root`` as a read cache.
@@ -310,6 +360,44 @@ class RemoteArchive(LocalArchive):
     def list_osm(self) -> dict[str, bytes]:
         self._sync_osm("osm/")
         return super().list_osm()
+
+    def newest_osm_keys(self) -> dict[str, str]:
+        """As LocalArchive's, from the store's listing; downloads nothing."""
+        newest: dict[str, str] = {}
+        for key in self._list_safe("osm/"):
+            parts = key.split("/")
+            if len(parts) == 3 and key.endswith(".json") and key > newest.get(parts[1], ""):
+                newest[parts[1]] = key
+        return dict(sorted(newest.items()))
+
+    def get_derived(self, key: str) -> str | None:
+        """The cached file, else downloaded into the cache; None when the store has no such key. Derived
+        files are named by what they were built from and never change, so a cached one is never refetched."""
+        full = _derived_key(key)
+        cached = self._local_derived(full)
+        if cached:
+            return cached
+        try:
+            self._fetch(full)
+        except KeyError:
+            return None
+        return self._local_derived(full)
+
+    def put_derived(self, key: str, path: str) -> None:
+        """Put the file unless the store already has the key (another machine built the same file, which
+        then stands), delete the folder's other keys from the store, and cache what the store holds."""
+        full = _derived_key(key)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        try:
+            self.store.put(full, data, if_none_match="*")
+        except PreconditionFailed:
+            data, _ = self.store.get(full)
+        folder = full.rsplit("/", 1)[0] + "/"
+        for other in self._list_safe(folder):
+            if other != full:
+                self.store.delete(other)
+        self._replace_local_derived(full, lambda f: f.write(data))
 
     def put_record(self, rec: SourceRecord) -> bool:
         self._sync(self._record_dir(rec.provider, rec.provider_activity_id) + "/")

@@ -1,11 +1,13 @@
 """Bring the derived group tables (places, route_groups, activity_groups) up to date with the activities,
-the OSM points and the owner's group_overrides. ``writer.run`` calls ``refresh_file`` after every write
+the OSM points file (osm.points_file) and the owner's group_overrides. ``writer.run`` calls ``refresh_file`` after every write
 job. Only rows that differ are written, so a refresh with nothing new leaves the file byte-identical.
 
 The module layering keeps ``refresh`` on ``grouping``, ``naming`` and ``db``."""
 import os
+import sqlite3
 from collections.abc import Callable, Mapping
 from typing import Any
+from urllib.parse import quote
 
 from ingest import db, grouping, naming
 
@@ -51,11 +53,22 @@ def _orphan_note(kind: str, gid: str, name: str | None, merge: str | None,
     return None
 
 
-def _refresh(conn) -> tuple[dict[str, Any], list[str]]:
+def _load_points(osm_path: str | None) -> list[naming.OsmPoint]:
+    """The points in the file at ``osm_path``, opened read-only; none without a file."""
+    if osm_path is None:
+        return []
+    conn = sqlite3.connect(f"file:{quote(os.path.abspath(osm_path))}?mode=ro", uri=True)
+    try:
+        return [naming.OsmPoint(*r) for r in conn.execute(
+            "SELECT osm_id, kind, name, lat, lon, ele FROM osm_points ORDER BY osm_id")]
+    finally:
+        conn.close()
+
+
+def _refresh(conn, osm_path: str | None) -> tuple[dict[str, Any], list[str]]:
     skipped: list[str] = []
     tracks = grouping.load_tracks(conn, skipped)
-    points = [naming.OsmPoint(*r) for r in conn.execute(
-        "SELECT osm_id, kind, name, lat, lon, ele FROM osm_points ORDER BY osm_id")]
+    points = _load_points(osm_path)
     index = naming.PointIndex(points)
     overrides = [tuple(r) for r in conn.execute(
         "SELECT kind, group_id, name, merge_into FROM group_overrides ORDER BY kind, group_id")]
@@ -99,14 +112,16 @@ def _refresh(conn) -> tuple[dict[str, Any], list[str]]:
     return result, notes
 
 
-def refresh(conn) -> dict[str, Any]:
+def refresh(conn, osm_path: str | None = None) -> dict[str, Any]:
     """Recompute places, routes and their names and write the rows that differ. Doesn't commit.
+    ``osm_path`` is the OSM points file; without one, no place gets an OSM name.
     ``orphaned_overrides`` lists the group_overrides rows that point at nothing, as "{kind} {group_id}"."""
-    return _refresh(conn)[0]
+    return _refresh(conn, osm_path)[0]
 
 
-def refresh_file(path: str, log: Callable[[str], Any] = print) -> dict[str, Any] | None:
-    """Refresh the database at ``path``, committing only when a row changed. None, touching nothing, when
+def refresh_file(path: str, osm_path: str | None = None, log: Callable[[str], Any] = print) -> dict[str, Any] | None:
+    """Refresh the database at ``path`` with the OSM points file at ``osm_path``, committing only when a row
+    changed. None, touching nothing, when
     the file is missing or not a current-schema database. On an error the transaction is rolled back, so
     the file keeps its previous group tables, and the error is raised."""
     if not os.path.exists(path):
@@ -115,7 +130,7 @@ def refresh_file(path: str, log: Callable[[str], Any] = print) -> dict[str, Any]
     try:
         if conn.execute("PRAGMA user_version").fetchone()[0] != db.SCHEMA_VERSION:
             return None
-        result, notes = _refresh(conn)
+        result, notes = _refresh(conn, osm_path)
         if result["rows_changed"]:
             conn.commit()
     except BaseException:

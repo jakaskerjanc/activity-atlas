@@ -45,7 +45,8 @@ def test_v4_database_needs_rebuild(tmp_path):
 def test_schema_has_group_tables():
     conn = db.connect(":memory:"); db.init_schema(conn)
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"osm_points", "places", "route_groups", "activity_groups", "group_overrides"} <= names
+    assert {"places", "route_groups", "activity_groups", "group_overrides"} <= names
+    assert "osm_points" not in names          # v6: the OSM points have their own file
     assert db.SCHEMA_VERSION == 6
 
 
