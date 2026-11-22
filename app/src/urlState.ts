@@ -105,7 +105,10 @@ export function parseUrlState(search: string): UrlState {
   if (v !== null && v !== VERSION) return {};
   const state: { -readonly [K in keyof UrlState]: UrlState[K] } = {};
   const types = params.get("types");
-  if (types !== null) state.types = types === "" ? [] : types.split(",").filter(Boolean).sort();
+  // Only a bare `types=` is every type off; a list that names none (",,") is junk.
+  const names = types?.split(",").filter(Boolean).sort();
+  if (types === "") state.types = [];
+  else if (names?.length) state.types = names;
   const from = parseMonthKey(params.get("from") ?? "");
   if (from !== undefined) state.from = from;
   const to = parseMonthKey(params.get("to") ?? "");

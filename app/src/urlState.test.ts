@@ -185,6 +185,11 @@ describe("invalid or stale input falls back to the defaults", () => {
     expect(shape(f)).toEqual(shape(fresh()));
   });
 
+  test("a type list of nothing but commas is dropped, not read as every type off", () => {
+    expect(parseUrlState("?types=,,")).toEqual({});
+    expect(parseUrlState("?types=,Run,").types).toEqual(["Run"]);
+  });
+
   test("a place that no longer exists is no place", () => {
     expect(filterFromUrl(fresh(), parseUrlState("?place=gone"), PLACES).place).toBeNull();
   });

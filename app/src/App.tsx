@@ -489,6 +489,10 @@ export default function App() {
         : (data.features.find((f) => f.properties.id === selectedId) ?? null),
     [data, selectedId],
   );
+  // A selection needs a route to show. A link can name an activity without one (a gym
+  // session), which would grey out every route and show nothing in its place: once the
+  // routes are in, drop it (during render, so the map never draws that state).
+  if (data && selectedId != null && !selectedFeature) setSelectedId(null);
 
   // The selected activity's samples, for the charts and the cursor on the route.
   const detailState = useActivityDetail(selectedId, selectedFeature?.properties.detail === true);

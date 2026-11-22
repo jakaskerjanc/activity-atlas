@@ -36,10 +36,10 @@ page. The site is a static SPA, so all of it lives in the URL.
 
 | Key | Value | Omitted when | Invalid / unknown |
 |---|---|---|---|
-| `types` | type names, sorted, comma-separated; empty = none on | the default type set | unknown names dropped; none left → default |
+| `types` | type names, sorted, comma-separated; a bare `types=` = none on | the default type set | unknown names dropped; none left → default |
 | `from`, `to` | `YYYY-MM` | the data's first / last month | malformed → default; clamped to the data; from > to → both default |
 | `place` | place id | no place | not in places.json → none |
-| `activity` | activity id | nothing selected | not in activities.json → none |
+| `activity` | activity id | nothing selected | not in activities.json, or no route to draw → none |
 | `group` | `1` | route table shut, or no activity | ignored without a valid activity on a route |
 | `color` | color mode (`type`, `recency`, `grade`, `speed`, `heat`) | `uniform` | unknown → `uniform` |
 | `map` | `zoom/lat/lng`, 2 / 5 / 5 decimals (OSM order) | the camera hasn't left the opening frame | malformed or out of range → the home fit |
