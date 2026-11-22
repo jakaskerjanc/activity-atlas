@@ -173,7 +173,8 @@ def build_server(ctx: ServerContext) -> MCPServer:
                         types: list[str] | None = None, date_from: str | None = None,
                         date_to: str | None = None, include_hidden: bool = False, limit: int = 50) -> dict:
         """Activities that came within radius_m (default 200 m) of a point, nearest first, with the closest
-        distance and when it happened. mode: route (anywhere on the track), start, or end."""
+        distance and when it happened. mode: route (anywhere on the track), start, or end. When nothing is
+        inside, nearest is the closest matching activity within 50 km."""
         f = ActivityFilter(types=types, date_from=date_from, date_to=date_to, include_hidden=include_hidden)
         return run(lambda: geo.activities_near(ctx.db, lat, lon, radius_m, mode, f, limit))
 

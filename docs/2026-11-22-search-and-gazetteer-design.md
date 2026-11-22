@@ -357,8 +357,24 @@ would; no tool suggests one.
   never uploaded.
 - **Gazetteer and vectors:** none.
 
-The plan ends with the text-search numbers measured again on the owner's
-data and written into this section.
+Measured again after the build, read-only on the same synced copy
+(2026-11-22):
+
+- **The database: still 45,588,480 bytes** (11,130 pages of 4 KB), with
+  the same checksum before and after opening it through the server.
+- **Building `activity_text`:** 18 ms (median of 10; 17 to 25 ms), one row
+  for each of the 547 activities.
+- **A two-word `list_activities(text=…)` call:** about 4 ms, the whole call
+  with its rows ("cold rain" 3.8 ms, "smarna gora" 3.6 ms).
+- **Hits as words:** "rain" 20 and "cold" 54, as measured before the
+  build. "cold rain" together: 1.
+- **`nearest`, when nothing is inside the radius:** it searches again out
+  to 50 km, so it costs what a 50 km search costs.
+  - Hikes near Jesenice, 3,000 m: 525 ms, nearest 11.8 km away.
+  - Swims near Ljubljana: 2 ms.
+  - No type filter, 200 m, at 46.12, 14.8: 2,283 ms, nearest 1.2 km away.
+    This is the worst case: with no type filter the 50 km pass decodes many
+    tracks. It runs only when the radius finds nothing.
 
 ## Left to the builder
 

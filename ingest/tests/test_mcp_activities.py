@@ -212,11 +212,10 @@ def test_bad_period(db):
         summarize(db, ActivityFilter(), period="decade")
 
 
-def test_place_filter_by_id_and_name(db):
-    for place in ("slavnik1", "Slavnik"):
-        r = list_activities(db, ActivityFilter(place=place))
-        assert ids_of(r) == ["slavnik2", "slavnik1"]
-        assert f"place: {place}" in r["counted"]["rules"]
+def test_place_filter_by_id(db):  # by name: test_mcp_queries.py
+    r = list_activities(db, ActivityFilter(place="slavnik1"))
+    assert ids_of(r) == ["slavnik2", "slavnik1"]
+    assert "place: slavnik1" in r["counted"]["rules"]
 
 
 def test_place_filter_ignores_case_and_accents(db):
