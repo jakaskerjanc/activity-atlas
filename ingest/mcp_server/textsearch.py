@@ -8,11 +8,14 @@ from .filters import fold_name, has_group_tables
 
 _CASE_CHANGE = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
+# CASE guarantees json_valid runs before json_extract, which raises on text that isn't JSON;
+# the order of WHERE terms is not guaranteed.
 _DESCRIPTIONS = """
 SELECT activity_id, d FROM (
-  SELECT activity_id, provider_activity_id, json_extract(summary_json, '$."Activity Description"') AS d
+  SELECT activity_id, provider_activity_id,
+         CASE WHEN json_valid(summary_json) THEN json_extract(summary_json, '$."Activity Description"') END AS d
   FROM activity_sources
-  WHERE provider = 'strava' AND deleted_at IS NULL AND json_valid(summary_json)
+  WHERE provider = 'strava' AND deleted_at IS NULL
 )
 WHERE d IS NOT NULL AND d != ''
 ORDER BY activity_id, provider_activity_id

@@ -112,7 +112,8 @@ def build_server(ctx: ServerContext) -> MCPServer:
                   name_contains: str | None = None, text: str | None = None,
                   min_distance_m: float | None = None, max_distance_m: float | None = None,
                   min_moving_s: float | None = None, has_hr: bool | None = None, has_gps: bool | None = None,
-                  include_hidden: bool = False, place: str | None = None, period: str = "year", by_type: bool = True) -> dict:
+                  include_hidden: bool = False, place: str | None = None, period: str = "year",
+                  by_type: bool = True) -> dict:
         """Totals and averages per period (week, month, year, all) and per type: count, distance, moving
         and elapsed time, elevation gain, pace/speed (total moving time / total distance), avg HR (weighted
         by moving time), with how many activities each figure is based on. Use this for trends. text: words
