@@ -1,6 +1,9 @@
 import asyncio
 import json
+import os
 import sys
+import threading
+import time
 
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
@@ -11,7 +14,8 @@ from ingest.mcp_server.freshness import Syncer
 from ingest.mcp_server.guide import guide_text
 from ingest.mcp_server.places import PlaceFinder
 from ingest.mcp_server.server import ServerContext, build_server
-from ingest.tests.mcp_fixture import build_fixture_db
+from ingest.objstore import MemoryStore
+from ingest.tests.mcp_fixture import build_fixture_db, slow_store, with_extra_activity
 
 TOOLS = {"guide", "sync", "list_activities", "get_activity", "summarize", "activity_samples", "wellness",
          "wellness_series", "find_place", "activities_near", "query", "places", "same_route"}
@@ -124,38 +128,108 @@ def test_server_instructions_are_the_guide(ctx):
     assert build_server(ctx).instructions == guide_text(ctx.db)
 
 
-def test_tool_bodies_and_sync_run_under_one_lock(ctx, monkeypatch):  # review Important 1
-    seen = []
-    real_sync = ctx.syncer.maybe_sync
+def test_tools_answer_while_a_slow_download_runs(ctx, tmp_path):  # issue #54
+    store = slow_store(tmp_path, ctx.db.path)
+    ctx.syncer.store = store
+    server = build_server(ctx)
+    try:
+        t0 = time.monotonic()
+        r = json.loads(asyncio.run(server.call_tool("guide", {})).content[0].text)
+        assert store.started.wait(5)  # the first call started the check and did not wait for it
+        for name, args in [("guide", {}), ("list_activities", {})]:
+            t1 = time.monotonic()
+            r = json.loads(asyncio.run(server.call_tool(name, args)).content[0].text)
+            assert time.monotonic() - t1 < 1
+            assert r["as_of"]["sync"] == "downloading a newer database (1 of 3 MB)"
+            assert r["notice"].startswith("The local database is out of date") and "older copy" in r["notice"]
+        assert "extra" not in [row["id"] for row in r["data"]["rows"]]
+        assert time.monotonic() - t0 < 2
+    finally:
+        store.release.set()
+    assert ctx.syncer.wait(5)
+    r = json.loads(asyncio.run(server.call_tool("list_activities", {})).content[0].text)
+    assert "extra" in [row["id"] for row in r["data"]["rows"]]
+    assert r["as_of"]["sync"] == "downloaded" and "notice" not in r
 
-    def checking_sync(force=False):
-        seen.append(("sync", ctx.lock._is_owned()))
-        return real_sync(force)
 
-    monkeypatch.setattr(ctx.syncer, "maybe_sync", checking_sync)
-    real_list = __import__("ingest.mcp_server.activities", fromlist=["x"]).list_activities
+def test_first_call_waits_for_the_check_but_not_long(ctx, tmp_path):
+    release = threading.Event()
 
-    def checking_list(*a, **k):
-        seen.append(("tool", ctx.lock._is_owned()))
-        return real_list(*a, **k)
+    class SlowHead(MemoryStore):
+        def head(self, key):
+            release.wait(5)
+            return super().head(key)
 
-    monkeypatch.setattr("ingest.mcp_server.activities.list_activities", checking_list)
-    call(ctx, "list_activities", {})
-    assert seen == [("sync", True), ("tool", True)]
+    ctx.syncer.store = SlowHead()
+    try:
+        t0 = time.monotonic()
+        r = call(ctx, "guide", {})
+        assert 0.9 < time.monotonic() - t0 < 2  # waited for the check, then gave up on it
+        assert r["notice"].startswith("Still checking R2")
+    finally:
+        release.set()
+    ctx.syncer.wait(5)
+    assert "notice" not in call(ctx, "guide", {})  # R2 has no database: nothing to say
+
+
+def test_without_a_database_tools_say_it_is_downloading(tmp_path):
+    path = build_fixture_db(str(tmp_path / "seed.sqlite"))
+    target = str(tmp_path / "data" / "activities.sqlite")
+    store = slow_store(tmp_path, path)
+    c = ServerContext(db=None, syncer=Syncer(target, store), places=PlaceFinder(str(tmp_path / "p.json")))
+    server = build_server(c)
+    assert "still being downloaded" in server.instructions
+    try:
+        c.syncer.start(force=True)
+        assert store.started.wait(5)
+        for name in ("guide", "list_activities"):
+            t0 = time.monotonic()
+            with pytest.raises(ToolError, match=r"no local database yet: .* \(1 of 3 MB\)\. Try again"):
+                asyncio.run(server.call_tool(name, {}))
+            assert time.monotonic() - t0 < 1
+    finally:
+        store.release.set()
+    assert c.syncer.wait(5)
+    r = json.loads(asyncio.run(server.call_tool("list_activities", {})).content[0].text)
+    assert "extra" in [row["id"] for row in r["data"]["rows"]] and "notice" not in r
+    c.db.close()
+
+
+def test_sync_tool_waits_then_reports_progress(ctx, tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.mcp_server.server.SYNC_TOOL_WAIT_S", 0.2)
+    store = slow_store(tmp_path, ctx.db.path)
+    ctx.syncer.store = store
+    server = build_server(ctx)
+    try:
+        r = json.loads(asyncio.run(server.call_tool("sync", {})).content[0].text)
+        assert r["as_of"]["sync"].startswith("downloading a newer database")
+        threading.Timer(0.05, store.release.set).start()  # finishes while the next call waits on it
+        r = json.loads(asyncio.run(server.call_tool("sync", {})).content[0].text)
+    finally:
+        store.release.set()
+    assert r["as_of"]["sync"] == "downloaded"
+    assert r["as_of"]["newest_activity"] == "2026-11-04T08:00:00"
+
+
+def test_download_never_holds_the_tool_lock(ctx, tmp_path):
+    store = slow_store(tmp_path, ctx.db.path)
+    ctx.syncer.store = store
+    try:
+        ctx.syncer.start()
+        assert store.started.wait(5)
+        assert ctx.lock.acquire(timeout=0.5)
+        ctx.lock.release()
+    finally:
+        store.release.set()
+        ctx.syncer.wait(5)
 
 
 def test_file_replaced_by_another_process_is_reread(ctx, tmp_path):  # review Important 2
-    import sqlite3
-
     from ingest import writer
     other = str(tmp_path / "other.sqlite")
-    with open(ctx.db.path, "rb") as src, open(other, "wb") as dst:
-        dst.write(src.read())
-    c = sqlite3.connect(other)
-    c.execute("INSERT INTO activities (id, type, start_time, start_local, visible) "
-              "VALUES ('extra', 'Run', '2026-11-04T07:00:00+00:00', '2026-11-04T08:00:00', 1)")
-    c.commit()
-    c.close()
+    data = with_extra_activity(tmp_path, ctx.db.path)
+    with open(other, "wb") as fh:
+        fh.write(data)
     server = build_server(ctx)
     asyncio.run(server.call_tool("list_activities", {}))  # opens and uses the old file
     writer.install(other, ctx.db.path)  # what `npm run sync` or a local import does
@@ -164,22 +238,61 @@ def test_file_replaced_by_another_process_is_reread(ctx, tmp_path):  # review Im
     assert r["as_of"]["newest_activity"] == "2026-11-04T08:00:00"
 
 
-def test_main_does_not_sync_before_serving_when_the_db_exists(tmp_path, monkeypatch):  # review Important 5
+def test_main_does_not_wait_for_r2_before_serving(tmp_path, monkeypatch):  # review Important 5, #54
     path = build_fixture_db(str(tmp_path / "f.sqlite"))
-    heads = []
+    checking, release = threading.Event(), threading.Event()
 
     class Store:
         def head(self, key):
-            heads.append(key)
+            checking.set()
+            release.wait(5)
             return None
 
     served = []
+
+    def serve(ctx):
+        def run(self, transport):
+            assert checking.wait(5)  # the check is running, in the background
+            served.append(transport)
+            release.set()
+        return type("S", (), {"run": run})()
+
     monkeypatch.setattr("ingest.mcp_server.__main__.store_from_env", lambda read_only: Store())
-    monkeypatch.setattr("ingest.mcp_server.__main__.build_server",
-                        lambda ctx: type("S", (), {"run": lambda self, t: served.append(t)})())
+    monkeypatch.setattr("ingest.mcp_server.__main__.build_server", serve)
     monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path])
-    main()
-    assert served == ["stdio"] and heads == []
+    try:
+        main()
+    finally:
+        release.set()
+    assert served == ["stdio"]
+
+
+def test_main_serves_at_once_without_a_database(tmp_path, monkeypatch):  # #54
+    seed = build_fixture_db(str(tmp_path / "seed.sqlite"))
+    path = str(tmp_path / "data" / "activities.sqlite")
+    store = slow_store(tmp_path, seed)
+    served = []
+
+    def serve(ctx):
+        def run(self, transport):
+            assert ctx.db is None and store.started.wait(5)  # downloading, in the background
+            served.append(transport)
+        return type("S", (), {"run": run})()
+
+    monkeypatch.setattr("ingest.mcp_server.__main__.store_from_env", lambda read_only: store)
+    monkeypatch.setattr("ingest.mcp_server.__main__.build_server", serve)
+    monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path])
+    main()  # stops the download on the way out
+    assert served == ["stdio"]
+    assert not os.path.exists(path) and [f for f in os.listdir(os.path.dirname(path)) if ".pull-" in f] == []
+
+
+def test_main_refuses_missing_db_with_no_sync(tmp_path, monkeypatch):
+    monkeypatch.setattr("ingest.mcp_server.__main__.store_from_env", lambda read_only: MemoryStore())
+    monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", str(tmp_path / "missing.sqlite"), "--no-sync"])
+    with pytest.raises(SystemExit) as e:
+        main()
+    assert e.value.code == 2
 
 
 def test_main_refuses_missing_db_without_r2(tmp_path, monkeypatch):

@@ -22,19 +22,24 @@ def main() -> None:
     path = os.path.abspath(args.db)
 
     syncer = Syncer(path, store_from_env(read_only=True))
-    # Only a missing database is fetched before serving: a slow R2 must not hold
-    # up the client's start-up. Otherwise the first tool call checks R2.
-    if not args.no_sync and not os.path.exists(path):
-        syncer.maybe_sync(force=True)
-        print(f"activity-atlas MCP: sync {syncer.last_outcome}", file=sys.stderr)
-    if not os.path.exists(path):
-        print(f"activity-atlas MCP: no database at {path} (and none could be synced: {syncer.last_outcome})",
-              file=sys.stderr)
+    if not os.path.exists(path) and (args.no_sync or syncer.store is None):
+        reason = "--no-sync" if args.no_sync else "no R2 configured"
+        print(f"activity-atlas MCP: no database at {path} ({reason})", file=sys.stderr)
         raise SystemExit(2)
-
-    ctx = ServerContext(db=Database(path), syncer=syncer,
+    # A slow R2 must not hold up the client's start-up, not even without a database:
+    # R2 is checked on a background thread, and until a missing database is in,
+    # every tool says it is downloading and how far it got.
+    db = Database(path) if os.path.exists(path) else None
+    if db is None:
+        print(f"activity-atlas MCP: no database at {path}; downloading it from R2", file=sys.stderr)
+    ctx = ServerContext(db=db, syncer=syncer,
                         places=PlaceFinder(os.path.join(os.path.dirname(path), "mcp", "places.json")))
-    build_server(ctx).run("stdio")
+    if not args.no_sync:
+        syncer.start(force=True)  # in the background: tools answer from the local copy meanwhile
+    try:
+        build_server(ctx).run("stdio")
+    finally:
+        syncer.stop()  # an unfinished download leaves no temporary file behind
 
 
 if __name__ == "__main__":

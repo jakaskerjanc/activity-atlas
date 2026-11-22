@@ -1,5 +1,6 @@
 """MCP tools over the activity database. The work happens in the sibling
 modules; this file only exposes them, keeps the data fresh, and adds ``as_of``."""
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -11,22 +12,27 @@ from mcp.types import ToolAnnotations
 from . import activities, daily, geo, samples
 from .database import Database, QueryError, run_query
 from .filters import ActivityFilter
-from .freshness import Syncer, as_of
+from .freshness import Syncer, as_of, notice
 from .guide import guide_text
 from .places import PlaceFinder, PlaceLookupError
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 OPEN_WORLD = ToolAnnotations(read_only_hint=False, open_world_hint=True)
+SYNC_TOOL_WAIT_S = 15.0
+# How long a call waits for a running R2 check to find out whether the local copy is
+# current (a checksum and one HEAD request); never for the download itself.
+CHECK_WAIT_S = 1.0
 
 
 @dataclass
 class ServerContext:
-    db: Database
+    db: Database | None  # None until the first download arrives (the server started without a database)
     syncer: Syncer
     places: PlaceFinder
     # The SDK runs sync tools in worker threads, so parallel calls would share the
     # SQLite connections; a reopen closing them under a running query crashes the
-    # process. Every tool call (sync, reopen, the work itself) holds this lock.
+    # process. Every tool call holds this lock for the reopen and the work itself;
+    # the R2 check and download run outside it (Syncer.start).
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -41,17 +47,26 @@ def _filter(types, date_from, date_to, name_contains, min_distance_m, max_distan
 def build_server(ctx: ServerContext) -> MCPServer:
     server = MCPServer(name="activity-atlas", instructions=guide_text(ctx.db))
 
-    def run(fn: Callable[[], dict], force_sync: bool = False) -> dict:
+    def run(fn: Callable[[], dict]) -> dict:
+        # The R2 check runs on its own thread and never holds the lock, so a slow
+        # download (or a cancelled call) never makes a tool wait.
+        ctx.syncer.start()
+        ctx.syncer.wait_checked(CHECK_WAIT_S)
         with ctx.lock:
-            # Reopen after our own sync, and also when `npm run sync` or a local
-            # writer replaced the file behind our back.
-            if ctx.syncer.maybe_sync(force=force_sync) or ctx.db.changed_on_disk():
+            if ctx.db is None:
+                if not os.path.exists(ctx.syncer.db_path):
+                    raise ToolError(notice(None, ctx.syncer))
+                ctx.db = Database(ctx.syncer.db_path)
+            elif ctx.db.changed_on_disk():
+                # Our own sync installed a new file, or `npm run sync` or a local
+                # writer replaced it behind our back.
                 ctx.db.reopen()
             try:
                 result = fn()
             except (ValueError, QueryError, PlaceLookupError) as exc:
                 raise ToolError(str(exc)) from exc
-            return {**result, "as_of": as_of(ctx.db, ctx.syncer)}
+            line = notice(ctx.db, ctx.syncer)
+            return {**result, "as_of": as_of(ctx.db, ctx.syncer), **({"notice": line} if line else {})}
 
     @server.tool(annotations=READ_ONLY)
     def guide() -> dict:
@@ -63,8 +78,11 @@ def build_server(ctx: ServerContext) -> MCPServer:
     @server.tool(annotations=OPEN_WORLD)
     def sync() -> dict:
         """Check R2 for a newer database now and download it if there is one (read-only token). This also
-        happens by itself at most once an hour; use it when the owner just finished an activity."""
-        return run(lambda: {"data": {}, "counted": activities.counted([], 0)}, force_sync=True)
+        happens by itself at most once an hour; use it when the owner just finished an activity. Waits up
+        to 15 s; a download still running then carries on, and as_of.sync shows how far it got."""
+        ctx.syncer.start(force=True)
+        ctx.syncer.wait(SYNC_TOOL_WAIT_S)  # without the lock: other calls go on meanwhile
+        return run(lambda: {"data": {}, "counted": activities.counted([], 0)})
 
     @server.tool(annotations=READ_ONLY)
     def list_activities(types: list[str] | None = None, date_from: str | None = None,

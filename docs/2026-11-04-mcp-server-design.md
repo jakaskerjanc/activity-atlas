@@ -115,8 +115,18 @@ The owner wants one local copy, not a second one for the server. So:
   download to a temporary file and rename it over the copy in one step, so no
   reader ever sees a half-written file. After a sync the server reopens its
   connection.
-- **When:** on server start, and before a tool call when the last check is
-  more than an hour old (builder may tune). A `sync` tool forces one.
+- **When:** on server start, and on a tool call when the last check is more
+  than an hour old. The check and download run on a background thread and
+  never hold the tool lock, so tools answer from the local copy straight away
+  (issue #54); the first call after the new file is in place reopens it. The
+  `sync` tool forces a check and waits up to 15 s for it. A call waits up to
+  1 s for a running check (a checksum and one HEAD request, not the
+  download), so its `notice` can say whether the copy is out of date. Without
+  a local database the server still starts at once; until the download is in,
+  every tool returns an error saying it is downloading and how far it got.
+  The R2 client has
+  connect (10 s) and read (30 s) timeouts, so a stalled download fails and
+  the local copy stays.
 - **Cheap check first:** compare the R2 object's etag (from `head`) with the
   local file. The writer uploads with a single `put_object`, so the etag
   should be the MD5 of the content; if that holds, hash the local file and
@@ -131,8 +141,12 @@ The owner wants one local copy, not a second one for the server. So:
 Every tool result has two blocks besides its data:
 
 - **`as_of`**: newest activity start, newest wellness day, when the last sync
-  check ran and its outcome (`up to date`, `downloaded`, `failed: <reason>`,
-  `no R2`).
+  check ran and its outcome (`checking`, `downloading a newer database (27 of
+  46 MB)`, `up to date`, `downloaded`, `failed: <reason>`, `no R2`).
+- **`notice`**, only when the answer may come from an out-of-date copy (a
+  newer one is downloading or arrived during the call, R2 is still being
+  checked, or the check failed): one line the guide tells the model to pass
+  on to the user.
 - **`counted`** (for anything aggregated or filtered): the filters and rules
   applied, the number of activities or days included, and the number left out
   with the reason for each (e.g. "3 runs without moving time", "HR known on 61
@@ -172,7 +186,7 @@ each must do.
 | Tool | Does |
 |---|---|
 | `guide` | Returns the data guide: tables and columns with units and meaning, which values can be missing, the definitions above, coverage dates, and when to prefer which tool. Also sent as the server's `instructions`. |
-| `sync` | Forces a sync check and download now; returns `as_of`. |
+| `sync` | Forces a sync check and download now, waiting up to 15 s; returns `as_of` (with the download's progress if it is still running). |
 | `list_activities` | Filtered list (types, local date range, name contains, distance/duration range, has HR/GPS), sortable, paged, compact rows with id, local date, type, name, distance, moving time, pace or speed, elevation gain, avg HR. |
 | `get_activity` | One activity in full: numbers, HR zones, laps, gear, source links (Strava/Garmin URLs). |
 | `summarize` | Totals and averages per period (week, month, year, or all) and per type, using the definitions above. Metrics include count, distance, moving and elapsed time, pace or speed, elevation gain, avg HR. |

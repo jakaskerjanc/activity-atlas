@@ -23,6 +23,10 @@ def coverage_text(db: Database) -> str:
     return "\n".join(lines) + "\n"
 
 
-def guide_text(db: Database) -> str:
+NO_DATABASE = ("## Coverage\n\nThe local database is still being downloaded from R2; the tools say when it is "
+               "in. Call `guide` then for the coverage.\n")
+
+
+def guide_text(db: Database | None) -> str:
     with open(_GUIDE_MD, encoding="utf-8") as fh:
-        return fh.read().rstrip() + "\n\n" + coverage_text(db)
+        return fh.read().rstrip() + "\n\n" + (coverage_text(db) if db is not None else NO_DATABASE)
