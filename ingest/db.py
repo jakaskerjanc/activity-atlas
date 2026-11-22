@@ -1,4 +1,4 @@
-"""The v5 SQLite schema. Everything is derived from the archive except the
+"""The v6 SQLite schema. Everything is derived from the archive except the
 identity columns of activity_sources (provider, provider_activity_id,
 activity_id, pinned, deleted_at) and activity_overrides, which a rebuild
 carries over.
@@ -7,19 +7,24 @@ Streams and laps are keyed by activity-file hash, so the identical FIT that
 Strava and Garmin both hold is stored once and switching an activity's winner
 needs no archive access.
 
-Places and same-route groups (schema v5): osm_points holds named OSM features
-loaded from the archive's per-country snapshots; places and route_groups hold
-the groups, activity_groups maps each activity to its place and route, and
+Places and same-route groups (schema v5): places and route_groups hold the
+groups, activity_groups maps each activity to its place and route, and
 group_overrides holds the owner's names and merges. Everything but
 group_overrides is derived and recomputed by a refresh; a rebuild carries
 group_overrides over.
+
+Highest point (schema v6): top_lat, top_lon, top_ele and top_climb on activities
+hold geometry.track_top of the stored track, or NULL when it has no top, so a
+refresh need not decode every activity's streams. The named OSM features the
+refresh names places from left the database in v6 for their own file (see
+osm.points_file).
 """
 import os
 import sqlite3
 
 from .codec import CHANNEL_SCALES
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class SchemaMismatch(Exception):
@@ -72,7 +77,11 @@ CREATE TABLE activities (
   meta_provider TEXT,
   streams_sha256 TEXT,
   calculated TEXT NOT NULL DEFAULT '[]',
-  visible INTEGER NOT NULL DEFAULT 1
+  visible INTEGER NOT NULL DEFAULT 1,
+  top_lat REAL,
+  top_lon REAL,
+  top_ele REAL,
+  top_climb REAL
 );
 CREATE INDEX idx_activities_start ON activities(start_time);
 CREATE INDEX idx_activities_end ON activities(end_time);
@@ -200,17 +209,6 @@ CREATE TABLE raw_files (
   size INTEGER,
   fetched_at TEXT
 );
-
-CREATE TABLE osm_points (
-  osm_id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  name TEXT NOT NULL,
-  lat REAL NOT NULL,
-  lon REAL NOT NULL,
-  ele REAL,
-  country TEXT NOT NULL
-);
-CREATE INDEX idx_osm_points_lat ON osm_points(lat);
 
 CREATE TABLE places (
   id TEXT PRIMARY KEY,

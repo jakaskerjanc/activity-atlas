@@ -55,7 +55,7 @@ Done on branch `t3/performance-analysis` (PR #53). The work landed as two combin
 | A (Activities list) | A1 and A2 done: `listWindow.ts`, windowed `ActivitiesView`, `@tanstack/react-virtual` | A2 step 5 (by hand, desktop and 390 px) and A3 (measure against the bar, put the numbers in a PR) |
 | B (replay) | Not started | All of it: B1 baseline, B2 prototype, B3 decide, B4 fallback if needed, B5 production |
 | C (load less) | C1 and C2 done: `useRoutes.ts`, `loadCityRoute`, `city-distances.json` v2, 253 files in `city-routes/` | By-hand checks in C1 step 5 and C2 step 5 |
-| D (database, refresh) | Not started; `SCHEMA_VERSION` is still 5 | D1 to D5, including the rollout in D5 (run `pnpm run rebuild` right after merging; the 04:17 UTC fetch must not be the first writer) |
+| D (database, refresh) | D1 to D4 done (schema v6), D5 docs and demo database done (2026-11-21). On a copy of the real database converted to v6: 45.1 MB (was 83.0), the group tables identical, refresh 3.3 s (was 6.4), `rows_changed` 0. Live R2 copy test passed | D5 steps 4 and 5: merge, then at once `pnpm run rebuild`; check the R2 bucket and the next daily fetch and deploy |
 
 The not-yet-done parts are independent of each other except as noted in "Order". Part D is the biggest saving per write and does not touch the app; do it next. Part B starts with a prototype whose result decides the rest.
 

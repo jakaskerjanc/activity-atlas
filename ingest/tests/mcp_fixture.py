@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import polyline
 
 from ingest import codec, db
+from ingest.geometry import track_top
 
 OFFSET = 3600  # UTC+1
 
@@ -35,6 +36,10 @@ def _insert_activity(conn, id_, type_, start_utc, *, name=None, distance=None, m
             "min_lng": min(p[1] for p in pts), "max_lng": max(p[1] for p in pts),
         })
         channels = {k: codec.encode(k, v) for k, v in track.items()}
+        if "altitude" in track:       # as recompute_activity stores it: from the decoded streams
+            top = track_top(*(codec.decode(k, channels[k]) for k in ("lat", "lon", "altitude")))
+            if top is not None:
+                row.update({"top_lat": top.lat, "top_lon": top.lon, "top_ele": top.ele, "top_climb": top.climb})
         cols = ", ".join(channels)
         conn.execute(
             f"INSERT INTO streams (file_sha256, sample_count, encoding, {cols}) VALUES (?, ?, 1, "

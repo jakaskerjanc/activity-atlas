@@ -1,21 +1,29 @@
-"""Download OSM named points per country from Overpass and load them.
+"""Download OSM named points per country from Overpass, and build the points file the refresh names
+places from.
 
-``places:update SI AT`` fetches every country first; only when all succeed are
-the responses stored in the archive and the ``osm_points`` table replaced.
+``places:update SI AT`` fetches every country first; only when all succeed are the responses stored in
+the archive. The points live in their own SQLite file, not in the database: ``points_file`` builds it
+from the archive's newest snapshot per country and stores it as ``derived/osm-points/<name>``, named by
+those snapshots, so it is built once per set of snapshots and a machine that has it never fetches it
+again. Only writers need it; the deploy and the MCP server never do.
 """
 import argparse
+import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from datetime import date
 
 from . import engine, writer
-from .archive import open_archive
+from .archive import Archive, open_archive
 from .export_reader import now_iso
 from .naming import OsmPoint
 
@@ -89,18 +97,83 @@ def parse_points(data: bytes, country: str) -> list[OsmPoint]:
     return points
 
 
-def apply_osm(conn: sqlite3.Connection, snapshots: dict[str, bytes]) -> int:
-    """Replace each country's rows with its snapshot's points; no commit."""
-    total = 0
-    for country, data in snapshots.items():
-        points = parse_points(data, country)
-        conn.execute("DELETE FROM osm_points WHERE country = ?", (country,))
-        # OR REPLACE: a feature on a border can be returned for two countries
-        conn.executemany(
-            "INSERT OR REPLACE INTO osm_points (osm_id, kind, name, lat, lon, ele, country) VALUES (?,?,?,?,?,?,?)",
-            [(p.osm_id, p.kind, p.name, p.lat, p.lon, p.ele, country) for p in points])
-        total += len(points)
-    return total
+POINTS_FOLDER = "osm-points"
+POINTS_FILE_VERSION = 1
+_POINTS_SCHEMA = """
+CREATE TABLE osm_points (
+  osm_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  lat REAL NOT NULL,
+  lon REAL NOT NULL,
+  ele REAL,
+  country TEXT NOT NULL
+) WITHOUT ROWID;
+"""
+
+
+def points_file_name(keys: Iterable[str]) -> str:
+    """The points file's name for these snapshot keys (one per country), whatever their order."""
+    digest = hashlib.sha256("\n".join(sorted(keys)).encode()).hexdigest()[:16]
+    return f"v{POINTS_FILE_VERSION}-{digest}.sqlite"
+
+
+def build_points_file(snapshots: dict[str, bytes], dest: str) -> dict[str, int]:
+    """Write every snapshot's points to a new SQLite file at ``dest`` (via a temp file renamed into place).
+    Countries go in sorted order with INSERT OR REPLACE, so a feature on a border, which Overpass returns
+    for both countries, is kept once, under the later country. Returns the points per country."""
+    folder = os.path.dirname(os.path.abspath(dest))
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".tmp-", suffix=".sqlite")
+    os.close(fd)
+    counts = {}
+    try:
+        conn = sqlite3.connect(tmp)
+        try:
+            conn.executescript(_POINTS_SCHEMA)
+            conn.execute(f"PRAGMA user_version = {POINTS_FILE_VERSION}")
+            for country in sorted(snapshots):
+                points = parse_points(snapshots[country], country)
+                conn.executemany(
+                    "INSERT OR REPLACE INTO osm_points (osm_id, kind, name, lat, lon, ele, country)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    [(p.osm_id, p.kind, p.name, p.lat, p.lon, p.ele, country) for p in points])
+                counts[country] = len(points)
+            conn.commit()
+        finally:
+            conn.close()
+        os.replace(tmp, dest)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    return counts
+
+
+def points_file(archive: Archive) -> str | None:
+    """The local path of the points file for the archive's newest snapshots: fetched or cached when it is
+    stored, else built from the snapshots and stored. None when the archive has no snapshots. A store
+    error is raised."""
+    keys = archive.newest_osm_keys()
+    if not keys:
+        return None
+    key = f"{POINTS_FOLDER}/{points_file_name(keys.values())}"
+    path = archive.get_derived(key)
+    if path is not None:
+        return path
+    with tempfile.TemporaryDirectory() as tmp:
+        built = os.path.join(tmp, "points.sqlite")
+        build_points_file(archive.list_osm(), built)
+        archive.put_derived(key, built)
+    return archive.get_derived(key)
+
+
+def point_counts(path: str) -> dict[str, int]:
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return dict(conn.execute("SELECT country, COUNT(*) FROM osm_points GROUP BY country ORDER BY country"))
+    finally:
+        conn.close()
 
 
 def _http_post(url: str, body: bytes, headers: dict) -> tuple[int, bytes]:
@@ -150,17 +223,12 @@ def main():
         archive.put_osm(country, data, fetched_at=now_iso())
 
     def work(path):
-        conn = engine.open_for_write(path, archive, now=now_iso())
-        try:
-            snapshots = archive.list_osm()
-            counts = {c: apply_osm(conn, {c: d}) for c, d in snapshots.items()}
-            conn.commit()
-            return counts
-        finally:
-            conn.close()
+        # Only opens the database (rebuilding an older one); the run's refresh then builds the points
+        # file from the new snapshots and renames places from it.
+        engine.open_for_write(path, archive, now=now_iso()).close()
 
-    counts = writer.run(args.db, archive, work, today=date.today().isoformat())
-    for country, n in counts.items():
+    writer.run(args.db, archive, work, today=date.today().isoformat())
+    for country, n in point_counts(points_file(archive)).items():
         print(f"{country}: {n} points")
 
 

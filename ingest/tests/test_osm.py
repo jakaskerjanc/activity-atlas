@@ -6,7 +6,10 @@ import urllib.parse
 
 import pytest
 from ingest import db, osm
-from ingest.osm import OsmError, apply_osm, fetch_country, overpass_query, parse_points
+from ingest.archive import LocalArchive, RemoteArchive
+from ingest.objstore import MemoryStore
+from ingest.osm import (OsmError, build_points_file, fetch_country, overpass_query, parse_points, points_file,
+                        points_file_name)
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -22,13 +25,6 @@ def body(*elements, **extra):
 
 def peak(i, **tags):
     return {"type": "node", "id": i, "lat": 46.0, "lon": 14.0, "tags": {"natural": "peak", "name": f"P{i}", **tags}}
-
-
-@pytest.fixture
-def conn(tmp_path):
-    c = db.open_db(str(tmp_path / "t.sqlite"))
-    yield c
-    c.close()
 
 
 def test_query_names_country():
@@ -86,20 +82,91 @@ def test_parse_rejects_remark():
         parse_points(body(peak(1), remark=remark), "SI")
 
 
-def rows(conn, country):
-    return sorted(r[0] for r in conn.execute("SELECT name FROM osm_points WHERE country = ?", (country,)))
+def file_rows(path):
+    c = sqlite3.connect(str(path))
+    try:
+        return [tuple(r) for r in c.execute("SELECT osm_id, country FROM osm_points ORDER BY osm_id")]
+    finally:
+        c.close()
 
 
-def test_apply_replaces_only_that_country(conn):
-    assert apply_osm(conn, {"SI": body(peak(1), peak(2)), "AT": body(peak(3))}) == 3
-    assert apply_osm(conn, {"SI": body(peak(4))}) == 1
-    assert rows(conn, "SI") == ["P4"]
-    assert rows(conn, "AT") == ["P3"]
+class _SpyStore(MemoryStore):
+    def __init__(self):
+        super().__init__()
+        self.gets = []
+
+    def get(self, key):
+        self.gets.append(key)
+        return super().get(key)
 
 
-def test_apply_survives_a_feature_returned_for_two_countries(conn):
-    apply_osm(conn, {"SI": body(peak(1)), "AT": body(peak(1))})
-    assert conn.execute("SELECT COUNT(*) FROM osm_points").fetchone()[0] == 1
+T0, T1 = "2026-11-09T10:00:00+00:00", "2026-11-10T10:00:00+00:00"
+
+
+def test_points_file_name_follows_the_snapshots():
+    assert points_file_name(["osm/SI/a.json"]) == points_file_name(["osm/SI/a.json"])
+    assert points_file_name(["osm/SI/a.json", "osm/AT/b.json"]) == points_file_name(["osm/AT/b.json", "osm/SI/a.json"])
+    assert points_file_name(["osm/SI/a.json"]) != points_file_name(["osm/SI/b.json"])
+    assert points_file_name(["osm/SI/a.json"]).startswith("v1-") and points_file_name([]).endswith(".sqlite")
+
+
+def test_build_points_file_keeps_a_border_feature_once(tmp_path):
+    counts = build_points_file({"SI": body(peak(1)), "AT": body(peak(1))}, str(tmp_path / "p.sqlite"))
+    assert counts == {"AT": 1, "SI": 1}
+    assert file_rows(tmp_path / "p.sqlite") == [("node/1", "SI")]
+    c = sqlite3.connect(str(tmp_path / "p.sqlite"))
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 1
+    c.close()
+
+
+def test_points_file_is_none_without_snapshots(tmp_path):
+    assert points_file(LocalArchive(str(tmp_path / "a"))) is None
+
+
+def test_points_file_is_downloaded_once_and_never_rebuilt(tmp_path):
+    store = _SpyStore()
+    a = RemoteArchive(store, str(tmp_path / "a"))
+    a.put_osm("SI", body(peak(1), peak(2)), fetched_at=T0)
+    first = points_file(a)                      # built here, stored under derived/osm-points/
+    assert [k for k, _ in store.list("derived/")] == ["derived/osm-points/" + points_file_name(a.newest_osm_keys().values())]
+    b = RemoteArchive(store, str(tmp_path / "b"))   # another machine, empty cache
+    store.gets.clear()
+    assert file_rows(points_file(b)) == file_rows(first)
+    assert [k for k in store.gets if k.startswith("osm/")] == []     # the snapshots were not fetched
+    store.gets.clear()
+    points_file(b)
+    assert store.gets == []                                           # cached
+
+
+def test_a_new_snapshot_replaces_the_stored_points_file(tmp_path):
+    store = MemoryStore()
+    a = RemoteArchive(store, str(tmp_path / "a"))
+    a.put_osm("SI", body(peak(1)), fetched_at=T0)
+    old = points_file(a)
+    a.put_osm("SI", body(peak(1), peak(2)), fetched_at=T1)
+    new = points_file(a)
+    assert file_rows(new) == [("node/1", "SI"), ("node/2", "SI")]
+    assert len(store.list("derived/osm-points/")) == 1
+    assert not os.path.exists(old)
+
+
+def test_local_points_file_is_built_once(tmp_path):
+    a = LocalArchive(str(tmp_path / "a"))
+    a.put_osm("SI", body(peak(1)), fetched_at=T0)
+    p = points_file(a)
+    mtime = os.stat(p).st_mtime_ns
+    assert points_file(a) == p and os.stat(p).st_mtime_ns == mtime
+
+
+def test_points_file_store_error_is_raised(tmp_path):
+    class Broken(MemoryStore):
+        def get(self, key):
+            raise OSError("R2 is down")
+    store = Broken()
+    a = RemoteArchive(store, str(tmp_path / "a"))
+    a.put_osm("SI", body(peak(1)), fetched_at=T0)
+    with pytest.raises(OSError, match="R2 is down"):
+        points_file(a)
 
 
 def test_fetch_sends_query_and_user_agent():
@@ -187,7 +254,7 @@ def test_main_writes_nothing_on_a_network_error(cli, monkeypatch):
     assert not os.path.exists(db_path)
 
 
-def test_main_rebuilds_a_v4_database_and_loads_points(cli, monkeypatch, capsys):
+def test_main_rebuilds_a_v4_database_and_builds_the_points_file(cli, monkeypatch, capsys):
     run, archive_dir, db_path = cli
     c = db.open_db(db_path)
     c.execute("PRAGMA user_version = 4")
@@ -196,7 +263,9 @@ def test_main_rebuilds_a_v4_database_and_loads_points(cli, monkeypatch, capsys):
     monkeypatch.setattr(osm, "_http_post", lambda url, data, headers: (200, body(peak(1), peak(2))))
     run("SI")
     c = sqlite3.connect(db_path)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
-    assert rows(c, "SI") == ["P1", "P2"]
+    assert c.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 6
+    assert c.execute("SELECT 1 FROM sqlite_master WHERE name = 'osm_points'").fetchone() is None
     c.close()
+    p = points_file(LocalArchive(str(archive_dir)))
+    assert file_rows(p) == [("node/1", "SI"), ("node/2", "SI")]
     assert "SI: 2 points" in capsys.readouterr().out

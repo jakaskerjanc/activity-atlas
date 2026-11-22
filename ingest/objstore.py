@@ -31,6 +31,7 @@ class ObjectStore(Protocol):
     def put_file(self, key: str, path: str, *, metadata: dict[str, str] | None = None) -> None: ...
     def list(self, prefix: str) -> list[tuple[str, int]]: ...
     def delete(self, key: str) -> None: ...
+    def copy(self, src: str, dst: str, *, if_match: str | None = None) -> None: ...
 
 
 class MemoryStore:
@@ -72,6 +73,14 @@ class MemoryStore:
 
     def delete(self, key: str) -> None:
         self._objects.pop(key, None)
+
+    def copy(self, src: str, dst: str, *, if_match: str | None = None) -> None:
+        """Copy ``src`` to ``dst`` inside the store, metadata included. KeyError when ``src`` is missing;
+        PreconditionFailed when ``if_match`` is not ``src``'s etag."""
+        data, etag, metadata = self._objects[src]
+        if if_match is not None and etag != if_match:
+            raise PreconditionFailed(f"{src} etag does not match {if_match}")
+        self._objects[dst] = (data, etag, dict(metadata))
 
 
 def _error_code(exc) -> str:
@@ -174,6 +183,22 @@ class S3Store:
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self.bucket, Key=key)
+
+    def copy(self, src: str, dst: str, *, if_match: str | None = None) -> None:
+        """A server-side copy: the bytes never leave R2."""
+        from botocore.exceptions import ClientError
+
+        params: dict = {"Bucket": self.bucket, "Key": dst, "CopySource": {"Bucket": self.bucket, "Key": src}}
+        if if_match is not None:
+            params["CopySourceIfMatch"] = if_match
+        try:
+            self._client.copy_object(**params)
+        except ClientError as exc:
+            if _error_code(exc) in _CONFLICT_CODES or _http_status(exc) in _CONFLICT_STATUSES:
+                raise PreconditionFailed(f"{src}: {_error_code(exc) or _http_status(exc)}") from exc
+            if _error_code(exc) in _MISSING_CODES or _http_status(exc) == 404:
+                raise KeyError(src) from exc
+            raise
 
 
 def store_from_env(*, read_only: bool = False) -> S3Store | None:

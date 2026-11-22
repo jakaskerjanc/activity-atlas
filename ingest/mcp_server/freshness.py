@@ -2,7 +2,7 @@
 
 R2's etag for the database (uploaded with a single put) is the MD5 of the file,
 so comparing it with the local file's MD5 tells whether anything changed
-without downloading 44 MB.
+without downloading the whole file.
 """
 import hashlib
 import os

@@ -1,13 +1,12 @@
 """Group activities into places (where they climbed to) and same routes. Pure apart from reading tracks:
-it imports ``geometry`` and ``codec`` and nothing else from ingest."""
+it imports ``geometry`` and nothing else from ingest."""
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import polyline
 
-from ingest import codec
-from ingest.geometry import Top, frechet_below, haversine_m, project, resample, track_top
+from ingest.geometry import Top, frechet_below, haversine_m, project, resample
 
 PLACE_RADIUS_M = 500
 ROUTE_POINTS = 64
@@ -35,23 +34,15 @@ class Groups:
     place_anchors: frozenset[str]
 
 
-def _top(lat_blob, lon_blob, alt_blob) -> Top | None:
-    if lat_blob is None or lon_blob is None or alt_blob is None:
-        return None
-    return track_top(codec.decode("lat", lat_blob), codec.decode("lon", lon_blob),
-                     codec.decode("altitude", alt_blob))
-
-
 def load_tracks(conn, skipped: list[str] | None = None) -> list[ActivityTrack]:
-    """Visible activities with a polyline of at least two points, by (start_time, id). ``top`` is None
-    without a streams row or without altitude. An activity whose polyline won't decode is left out, and
+    """Visible activities with a polyline of at least two points, by (start_time, id). ``top`` is the
+    stored highest point (activities.top_*), None when the activity has none. An activity whose polyline won't decode is left out, and
     its id appended to ``skipped`` when given, so one bad row never stops the whole refresh."""
     rows = conn.execute(
-        "SELECT a.id, a.type, a.start_time, a.start_local, a.name, a.distance, a.polyline,"
-        " s.lat, s.lon, s.altitude"
-        " FROM activities a LEFT JOIN streams s ON s.file_sha256 = a.streams_sha256"
-        " WHERE a.visible = 1 AND a.polyline != ''"
-        " ORDER BY a.start_time, a.id"
+        "SELECT id, type, start_time, start_local, name, distance, polyline,"
+        " top_lat, top_lon, top_ele, top_climb"
+        " FROM activities WHERE visible = 1 AND polyline != ''"
+        " ORDER BY start_time, id"
     ).fetchall()
     tracks = []
     for r in rows:
@@ -64,7 +55,8 @@ def load_tracks(conn, skipped: list[str] | None = None) -> list[ActivityTrack]:
         if len(line) < 2:
             continue
         tracks.append(ActivityTrack(id=r[0], type=r[1], start_time=r[2], start_local=r[3], name=r[4] or "",
-                                    distance=r[5], line=line, top=_top(r[7], r[8], r[9])))
+                                    distance=r[5], line=line,
+                                    top=Top(r[7], r[8], r[9], r[10]) if r[7] is not None else None))
     return tracks
 
 

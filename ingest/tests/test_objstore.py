@@ -39,6 +39,18 @@ def test_memory_if_match():
     assert store.head("absent") is None
 
 
+def test_copy_duplicates_an_object_and_honours_if_match():
+    s = MemoryStore()
+    etag = s.put("a", b"x", metadata={"m": "n"})
+    s.copy("a", "b", if_match=etag)
+    assert s.get("b")[0] == b"x" and s.head("b")["metadata"] == {"m": "n"}
+    with pytest.raises(PreconditionFailed):
+        s.copy("a", "c", if_match='"other"')
+    assert s.head("c") is None
+    with pytest.raises(KeyError):
+        s.copy("missing", "d")
+
+
 def test_memory_list_and_head(tmp_path):
     store = MemoryStore()
     store.put("raw/b", b"22")
@@ -128,6 +140,21 @@ def test_s3store_list_pages_and_sorts():
             {"Bucket": "b", "Prefix": "p/", "ContinuationToken": "t"},
         )
         assert store.list("p/") == [("p/a", 1), ("p/b", 2)]
+
+
+def test_s3store_copy_sends_the_source_and_its_condition():
+    store, client = _s3()
+    with Stubber(client) as stub:
+        stub.add_response("copy_object", {}, {"Bucket": "b", "Key": "dst", "CopySource": {"Bucket": "b", "Key": "src"},
+                                              "CopySourceIfMatch": '"e1"'})
+        store.copy("src", "dst", if_match='"e1"')
+        stub.add_client_error("copy_object", service_error_code="PreconditionFailed", http_status_code=412)
+        with pytest.raises(PreconditionFailed):
+            store.copy("src", "dst", if_match='"e2"')
+        stub.add_client_error("copy_object", service_error_code="NoSuchKey", http_status_code=404)
+        with pytest.raises(KeyError):
+            store.copy("gone", "dst")
+        stub.assert_no_pending_responses()
 
 
 def test_s3store_delete():

@@ -1,6 +1,8 @@
+import dataclasses
 import json
 
-from ingest import merge
+from ingest import codec, merge
+from ingest.geometry import track_top
 from ingest.parse import ParsedFile
 from ingest.tests.factories import NOW, at, fresh as _fresh, outdoor as _outdoor, src as _src
 
@@ -101,3 +103,34 @@ def test_end_time_local_start_and_gear():
     r = _act(conn)
     assert r["end_time"] == "2026-08-01T06:10:00+00:00" and r["start_local"] == "2026-08-01T08:00:00"
     assert [tuple(g) for g in conn.execute("SELECT provider, gear_name FROM activity_gear WHERE activity_id='a1'")] == [("strava", "Pegasus")]
+
+
+def _with_track(alts):
+    """An activity whose stored track has these altitudes, one sample every 10 s."""
+    n = len(alts)
+    parsed = ParsedFile(start_time=at("06:00"), streams={
+        "time": [float(i * 10) for i in range(n)],
+        "lat": [46.0 + i * 0.0005 for i in range(n)],
+        "lon": [14.5 + i * 0.0005 for i in range(n)],
+        "altitude": list(alts)})
+    conn = _fresh()
+    s = _src("garmin", "9", type="Hike", parsed=parsed, file_sha256="c" * 64)
+    merge.write_file_data(conn, s.file_sha256, s.parsed); merge.write_source(conn, s, "a1", now=NOW)
+    merge.recompute_activity(conn, "a1")
+    return conn
+
+
+def test_recompute_stores_the_top():
+    alts = [300.0 + 10 * min(i, 60 - i) for i in range(60)]          # rises 300 m to the midpoint
+    conn = _with_track(alts)
+    row = conn.execute("SELECT top_lat, top_lon, top_ele, top_climb FROM activities").fetchone()
+    s = conn.execute("SELECT lat, lon, altitude FROM streams").fetchone()
+    expected = track_top(codec.decode("lat", s[0]), codec.decode("lon", s[1]), codec.decode("altitude", s[2]))
+    assert expected is not None
+    assert tuple(row) == dataclasses.astuple(expected)
+
+
+def test_recompute_stores_no_top_for_a_flat_track():
+    conn = _with_track([300.0] * 60)
+    row = conn.execute("SELECT top_lat, top_lon, top_ele, top_climb FROM activities").fetchone()
+    assert tuple(row) == (None, None, None, None)

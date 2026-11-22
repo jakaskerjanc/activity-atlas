@@ -201,12 +201,14 @@ def test_rebuild_reads_an_old_file_without_group_overrides_as_none(tmp_path):
     assert _identity(dbp) == ident
 
 
-def test_rebuild_restores_osm_points_from_archive(tmp_path):
+def test_rebuilt_database_has_no_osm_points(tmp_path):
     dbp, arch = _imported(tmp_path)
     arch.put_osm("SI", body(peak(1), peak(2)), fetched_at=NOW)
-    arch.put_osm("AT", body(peak(3)), fetched_at=NOW)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         rebuild(dbp, arch, now="2026-10-28T10:00:00+00:00")
-    assert [(r[0], r[2], r[6]) for r in _snapshot(dbp, "osm_points", "osm_id")] == [
-        ("node/1", "P1", "SI"), ("node/2", "P2", "SI"), ("node/3", "P3", "AT")]
+    conn = db.connect(dbp)
+    try:
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'osm_points'").fetchone() is None
+    finally:
+        conn.close()

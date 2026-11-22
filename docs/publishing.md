@@ -23,11 +23,13 @@ With the read-write names set, every writer (imports, `fetch:garmin`,
 `rebuild`, `activity`) pulls the database from R2, changes it and uploads it
 back only if it changed. A concurrent writer is never overwritten: the upload
 is conditional on the version that was pulled, and the run retries against the
-newer one. `data/activities.sqlite` is then a synced copy; refresh it with
+newer one. The day's snapshot under `db/snapshots/` is then a copy made inside
+R2, so the database is uploaded only once. `data/activities.sqlite` is then a synced copy; refresh it with
 `pnpm run sync`.
 
 After deleting or recreating anything in the bucket, delete
-`data/cache/<bucket>/` too, or the local cache skips re-uploading those keys.
+`data/cache/<bucket>/` too, or the local cache skips re-uploading those keys
+and keeps using a cached `derived/` file that's gone from the bucket.
 
 ## 2. Add the GitHub secrets
 

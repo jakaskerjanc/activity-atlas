@@ -69,11 +69,25 @@ pnpm run places:update SI AT
 
 For each country (ISO 3166-1 codes) it asks Overpass for the named peaks,
 passes, parks, lakes and other water, and neighbourhoods up to villages,
-stores the raw response in the archive under `osm/<CC>/`, and replaces that
-country's points in the database. All countries are downloaded first: if any fails (an
+stores the raw response in the archive under `osm/<CC>/`, and renames places
+and routes from the new points. All countries are downloaded first: if any fails (an
 HTTP error, a timeout, no network) it stops before writing anything. Without
 OSM points, places are named "Top at … m" and routes by distance and shape
 ("5.2 km loop").
+
+The points are not in the database, so `places:update` does not change its
+size. The refresh reads them from a separate SQLite file built from the newest
+snapshot of each country and stored in the archive as
+`derived/osm-points/v1-<hash>.sqlite`. The hash covers those snapshots' keys,
+so the file is built once, by the first writer after `places:update`, and a
+machine that has it in its cache never downloads it again. Only writers need it:
+the deploy and the MCP server don't fetch it. If it can't be fetched, the run
+saves its work and exits with code 7, as for any refresh failure.
+
+Each activity's highest point (`top_lat`, `top_lon`, `top_ele`, `top_climb`)
+is stored when its row is derived, so the refresh doesn't decode the tracks.
+After changing the constants in `geometry.track_top`, run `pnpm run rebuild`
+for them to take effect.
 
 Big countries take minutes each: Austria about 3, Norway about 6 (a 28 MB
 reply, mostly named lakes). The public Overpass server is often busy: an HTTP
@@ -107,8 +121,8 @@ pnpm run rebuild
 
 Rebuilds the database from the archive. Activities keep their IDs, manual
 pins, deletions and hidden flags, and your place and route names and merges
-(`group_overrides`) carry over; the OSM snapshots in the archive are applied
-again and places and routes refresh as after any write job. Everything else is
+(`group_overrides`) carry over, and places and routes refresh as after any
+write job. Everything else is
 re-derived, so rebuilding twice gives the same rows. If an activity in the database has no record in the
 archive (a wrong `--archive` path, say), it stops without changing anything;
 `--force` rebuilds anyway and those activities lose their data.

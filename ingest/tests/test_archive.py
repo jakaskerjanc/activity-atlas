@@ -326,3 +326,54 @@ def test_remote_list_osm_rejects_unsafe_store_key(tmp_path, bad_key):
         RemoteArchive(store, str(tmp_path / "cache")).list_osm()
     assert store.gets == []
     assert [p for p in tmp_path.rglob("*") if p.is_file()] == []
+
+
+def test_newest_osm_keys_names_one_snapshot_per_country(archive):
+    assert archive.newest_osm_keys() == {}
+    archive.put_osm("SI", b"si-old", fetched_at="2026-11-01T10:00:00+00:00")
+    archive.put_osm("SI", b"si-new", fetched_at="2026-11-09T10:00:00+00:00")
+    archive.put_osm("AT", b"at", fetched_at="2026-11-05T10:00:00+00:00")
+    keys = archive.newest_osm_keys()
+    assert sorted(keys) == ["AT", "SI"]
+    assert keys["SI"].startswith("osm/SI/20261109T100000Z-") and keys["AT"].startswith("osm/AT/20261105")
+
+
+def test_remote_newest_osm_keys_downloads_nothing(tmp_path):
+    store = _RecordingStore()
+    RemoteArchive(store, str(tmp_path / "w")).put_osm("SI", b"si", fetched_at="2026-11-09T10:00:00+00:00")
+    reader = RemoteArchive(store, str(tmp_path / "r"))
+    assert list(reader.newest_osm_keys()) == ["SI"] and store.gets == []
+
+
+def test_derived_files_round_trip_and_replace_their_folder(archive, tmp_path):
+    assert archive.get_derived("osm-points/v1-a.sqlite") is None
+    src = tmp_path / "src"
+    src.write_bytes(b"first")
+    archive.put_derived("osm-points/v1-a.sqlite", str(src))
+    with open(archive.get_derived("osm-points/v1-a.sqlite"), "rb") as fh:
+        assert fh.read() == b"first"
+    src.write_bytes(b"second")
+    archive.put_derived("osm-points/v1-b.sqlite", str(src))
+    assert archive.get_derived("osm-points/v1-a.sqlite") is None
+    with open(archive.get_derived("osm-points/v1-b.sqlite"), "rb") as fh:
+        assert fh.read() == b"second"
+
+
+def test_remote_derived_file_is_shared_and_kept_once(tmp_path):
+    store = MemoryStore()
+    a, b = RemoteArchive(store, str(tmp_path / "a")), RemoteArchive(store, str(tmp_path / "b"))
+    src = tmp_path / "src"
+    src.write_bytes(b"built by a")
+    a.put_derived("osm-points/v1-a.sqlite", str(src))
+    src.write_bytes(b"built by b")
+    b.put_derived("osm-points/v1-a.sqlite", str(src))        # lost the race: the stored file stands
+    assert store.get("derived/osm-points/v1-a.sqlite")[0] == b"built by a"
+    with open(b.get_derived("osm-points/v1-a.sqlite"), "rb") as fh:
+        assert fh.read() == b"built by a"
+    assert [k for k, _ in store.list("derived/")] == ["derived/osm-points/v1-a.sqlite"]
+
+
+@pytest.mark.parametrize("bad", ["../x.sqlite", "osm-points/../../x", "osm-points//x", ""])
+def test_derived_rejects_unsafe_keys(archive, bad, tmp_path):
+    with pytest.raises(ValueError):
+        archive.get_derived(bad)
