@@ -130,7 +130,8 @@ claude mcp add --scope user activity-atlas \
 
 With R2 configured it keeps the local database in sync using the read-only
 token, in the background: tools answer from the local copy while a newer one
-downloads, and say so. Add `--no-sync` to skip the check on start. Only the conversation and any place names
+downloads, and say so. Add `--no-sync` to never contact R2 and answer from
+the local copy as it is. Only the conversation and any place names
 you search for (sent to OpenStreetMap's Nominatim) leave your machine. Its
 tools and definitions are described in `ingest/mcp_server/guide.md`.
 

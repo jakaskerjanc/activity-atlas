@@ -24,6 +24,12 @@ from .database import Database
 
 SYNC_INTERVAL_S = 3600
 STOP_WAIT_S = 2.0
+# The server's own downloads are named <db>.mcp-pull-XXXX. A running one writes at least
+# every read timeout (30 s) or fails, so one untouched for this long was abandoned by a
+# server that was killed.
+DOWNLOAD_TAG = "mcp-pull"
+ABANDONED_AFTER_S = 600
+OFF = "off (--no-sync)"
 
 
 class _Stopped(Exception):
@@ -46,9 +52,10 @@ def _mb(n: int) -> str:
 
 class Syncer:
     def __init__(self, db_path: str, store: ObjectStore | None, interval_s: float = SYNC_INTERVAL_S,
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time, off: bool = False):
         self.db_path = db_path
-        self.store = store
+        self.store = None if off else store
+        self.off = off  # --no-sync: never contact R2
         self.interval_s = interval_s
         self.clock = clock
         self.last_check: float | None = None
@@ -81,6 +88,9 @@ class Syncer:
             if not self._due(force):
                 return False
             self.last_check = self.clock()
+            if self.store is None:  # nothing to check, no thread needed
+                self.last_outcome = OFF if self.off else "no R2"
+                return False
             self.last_outcome = "checking"
             self._checked.clear()
             self._thread = threading.Thread(target=self._sync, name="r2-sync", daemon=True)
@@ -93,6 +103,27 @@ class Syncer:
         if t is not None:
             t.join(timeout)
         return t is None or not t.is_alive()
+
+    def remove_abandoned_downloads(self) -> list[str]:
+        """Delete this server's partial downloads that nobody has written to for
+        ABANDONED_AFTER_S (left by a server that was killed); other processes'
+        working copies are never touched. Returns the paths removed."""
+        directory = os.path.dirname(os.path.abspath(self.db_path))
+        prefix = f"{os.path.basename(self.db_path)}.{DOWNLOAD_TAG}-"
+        removed = []
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            return removed
+        for name in names:
+            path = os.path.join(directory, name)
+            try:
+                if name.startswith(prefix) and self.clock() - os.stat(path).st_mtime > ABANDONED_AFTER_S:
+                    os.remove(path)
+                    removed.append(path)
+            except FileNotFoundError:
+                pass  # removed meanwhile
+        return removed
 
     def wait_checked(self, timeout: float) -> None:
         """Wait up to timeout seconds until a running check knows whether the local copy is
@@ -116,7 +147,7 @@ class Syncer:
         tmp = None
         try:
             if self.store is None:
-                self.last_outcome = "no R2"
+                self.last_outcome = OFF if self.off else "no R2"
                 return False
             head = self.store.head(writer.DB_KEY)
             if head is None:
@@ -125,7 +156,7 @@ class Syncer:
             if head["etag"].strip('"') == _md5(self.db_path):
                 self.last_outcome = "up to date"
                 return False
-            tmp = writer.working_copy(self.db_path)
+            tmp = writer.working_copy(self.db_path, DOWNLOAD_TAG)
             self._progress(0, head.get("size"))
             try:
                 self.store.download(writer.DB_KEY, tmp, progress=self._progress)

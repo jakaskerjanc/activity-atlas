@@ -284,7 +284,34 @@ def test_main_serves_at_once_without_a_database(tmp_path, monkeypatch):  # #54
     monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path])
     main()  # stops the download on the way out
     assert served == ["stdio"]
-    assert not os.path.exists(path) and [f for f in os.listdir(os.path.dirname(path)) if ".pull-" in f] == []
+    assert not os.path.exists(path) and [f for f in os.listdir(os.path.dirname(path)) if "pull-" in f] == []
+
+
+def test_main_no_sync_never_contacts_r2(tmp_path, monkeypatch):
+    path = build_fixture_db(str(tmp_path / "f.sqlite"))
+    asked = []
+    seen = []
+    monkeypatch.setattr("ingest.mcp_server.__main__.store_from_env", lambda read_only: asked.append(1))
+    monkeypatch.setattr("ingest.mcp_server.__main__.build_server",
+                        lambda ctx: type("S", (), {"run": lambda self, t: seen.append(ctx)})())
+    monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path, "--no-sync"])
+    main()
+    assert asked == []
+    r = call(seen[0], "sync", {})
+    assert r["as_of"]["sync"] == "off (--no-sync)" and "notice" not in r
+    seen[0].db.close()
+
+
+def test_main_removes_abandoned_downloads(tmp_path, monkeypatch):
+    path = build_fixture_db(str(tmp_path / "f.sqlite"))
+    leftover = path + ".mcp-pull-abc"
+    open(leftover, "wb").close()
+    os.utime(leftover, (0, 0))
+    monkeypatch.setattr("ingest.mcp_server.__main__.build_server",
+                        lambda ctx: type("S", (), {"run": lambda self, t: None})())
+    monkeypatch.setattr(sys, "argv", ["mcp_server", "--db", path, "--no-sync"])
+    main()
+    assert not os.path.exists(leftover)
 
 
 def test_main_refuses_missing_db_with_no_sync(tmp_path, monkeypatch):

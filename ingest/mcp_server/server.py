@@ -79,7 +79,8 @@ def build_server(ctx: ServerContext) -> MCPServer:
     def sync() -> dict:
         """Check R2 for a newer database now and download it if there is one (read-only token). This also
         happens by itself at most once an hour; use it when the owner just finished an activity. Waits up
-        to 15 s; a download still running then carries on, and as_of.sync shows how far it got."""
+        to 15 s; a download still running then carries on, and as_of.sync shows how far it got. Does
+        nothing when the server runs with --no-sync (as_of.sync says off)."""
         ctx.syncer.start(force=True)
         ctx.syncer.wait(SYNC_TOOL_WAIT_S)  # without the lock: other calls go on meanwhile
         return run(lambda: {"data": {}, "counted": activities.counted([], 0)})

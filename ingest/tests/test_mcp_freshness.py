@@ -6,7 +6,7 @@ import pytest
 
 from ingest import writer
 from ingest.mcp_server.database import Database
-from ingest.mcp_server.freshness import Syncer, as_of, notice
+from ingest.mcp_server.freshness import ABANDONED_AFTER_S, OFF, Syncer, as_of, notice
 from ingest.objstore import MemoryStore
 from ingest.tests.mcp_fixture import build_fixture_db, slow_store, with_extra_activity
 
@@ -142,6 +142,8 @@ def test_start_downloads_in_the_background(tmp_path, path):
     assert time.monotonic() - t0 < 0.5
     assert store.started.wait(5)
     assert s.last_outcome == "downloading a newer database (1 of 3 MB)"
+    assert [f.split("-")[0] for f in os.listdir(os.path.dirname(path)) if "pull-" in f] == [
+        "activities.sqlite.mcp"]  # the server's own name for its downloads
     assert md5(path) == before  # nothing installed until the download is complete
     assert s.start(force=True) is True and s.wait(0.05) is False  # no second download
     store.release.set()
@@ -169,7 +171,7 @@ def test_stop_abandons_the_download_and_its_temp_file(tmp_path, path):
     s.stop()
     assert s.wait(0) and s.last_outcome == "stopped"
     assert md5(path) == before
-    assert [f for f in os.listdir(os.path.dirname(path)) if ".pull-" in f] == []
+    assert [f for f in os.listdir(os.path.dirname(path)) if "pull-" in f] == []
 
 
 def test_notice_says_when_the_answer_is_stale(tmp_path, path):
@@ -227,3 +229,41 @@ def test_wait_checked_without_r2_does_not_wait(path):
     t0 = time.monotonic()
     s.wait_checked(5)
     assert time.monotonic() - t0 < 0.5 and s.last_outcome == "no R2"
+
+
+def test_remove_abandoned_downloads_only_removes_the_servers_own_old_files(path):
+    d = os.path.dirname(path)
+    now = time.time()
+
+    def touch(name, age_s):
+        p = os.path.join(d, name)
+        open(p, "wb").close()
+        os.utime(p, (now - age_s, now - age_s))
+        return p
+
+    old_own = touch("activities.sqlite.mcp-pull-old", ABANDONED_AFTER_S + 60)
+    touch("activities.sqlite.mcp-pull-live", 5)             # another server still downloading
+    touch("activities.sqlite.pull-writer", 86_400)          # `npm run sync` or an import: not ours
+    touch("other.sqlite.mcp-pull-old", ABANDONED_AFTER_S + 60)  # another database's
+    assert Syncer(path, None, clock=lambda: now).remove_abandoned_downloads() == [old_own]
+    assert sorted(f for f in os.listdir(d) if "pull-" in f) == [
+        "activities.sqlite.mcp-pull-live", "activities.sqlite.pull-writer", "other.sqlite.mcp-pull-old"]
+
+
+def test_remove_abandoned_downloads_without_a_directory(tmp_path):
+    assert Syncer(str(tmp_path / "none" / "activities.sqlite"), None).remove_abandoned_downloads() == []
+
+
+def test_off_never_contacts_r2(path):
+    store = SpyStore()
+    s = Syncer(path, store, off=True)
+    assert s.start(force=True) is False and s.maybe_sync(force=True) is False
+    assert store.head_calls == 0 and s.last_outcome == OFF == "off (--no-sync)"
+    db = Database(path)
+    assert notice(db, s) is None and as_of(db, s)["sync"] == OFF
+    db.close()
+
+
+def test_no_r2_needs_no_thread(path):
+    s = Syncer(path, None)
+    assert s.start() is False and s.last_outcome == "no R2" and s.last_check is not None

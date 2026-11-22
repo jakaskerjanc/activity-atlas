@@ -124,6 +124,11 @@ The owner wants one local copy, not a second one for the server. So:
   download), so its `notice` can say whether the copy is out of date. Without
   a local database the server still starts at once; until the download is in,
   every tool returns an error saying it is downloading and how far it got.
+  A download goes to `activities.sqlite.mcp-pull-XXXX` next to the
+  database; at start the server removes its own such files that nobody has
+  written to for 10 minutes (left by a server that was killed), and never
+  touches other processes' `.pull-` working copies. `--no-sync` means the
+  server never contacts R2 (`as_of.sync` is `off (--no-sync)`).
   The R2 client has
   connect (10 s) and read (30 s) timeouts, so a stalled download fails and
   the local copy stays.
