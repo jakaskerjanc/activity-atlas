@@ -1,4 +1,4 @@
-# Design: place lookup, text search, and why not embeddings yet
+# Design: text search, "nearest", and why not a gazetteer or embeddings yet
 
 Date: 2026-11-22
 Status: draft for the owner's review
@@ -9,28 +9,30 @@ Builds on
 [2026-11-08-place-tags-design.md](2026-11-08-place-tags-design.md),
 [2026-11-09-activity-embeddings-research.md](2026-11-09-activity-embeddings-research.md)
 and [2026-11-04-mcp-server-design.md](2026-11-04-mcp-server-design.md).
-Plans: [plan 1, place lookup and "near"](2026-11-22-search-and-gazetteer-plan-1.md),
-[plan 2, text search and the remaining example queries](2026-11-22-search-and-gazetteer-plan-2.md).
+Plan: [2026-11-22-search-and-gazetteer-plan.md](2026-11-22-search-and-gazetteer-plan.md).
 
 ## Intent
 
-The owner asks an LLM about their activities through the MCP server, and two
-kinds of question are still weak:
+The owner asks an LLM about their activities through the MCP server. Most of
+what #35 asks for can already be answered with today's tools, `query`
+included, if the LLM does a little more work. Two things can't, or go wrong:
 
-- **"Hiking near Jesenice".** `find_place` gets candidates from Nominatim,
-  in Nominatim's order. For Jesenice that's the Slovenian municipality and
-  town first, then seven places in Czechia and Croatia. On the owner's data
-  no hike comes within 5 km of the town, so `activities_near` returns a
-  bare zero, and the LLM can't tell "nothing near" from "wrong place".
-- **Words.** `name_contains` ignores accents in neither direction: "smarna"
-  finds 0 activities, "Šmarna" finds 5. It looks only at the name, and 333
-  of 547 names are defaults like "Morning Hike". Place and route names, and
-  the descriptions, can't be searched at all.
+- **Descriptions can't be searched at all.** They exist only in
+  `activity_sources.summary_json`, which `query` blocks and `get_activity`
+  doesn't return. "Cold rainy walks", or "the hike where I wrote about X",
+  is impossible today. Words in names are weak too: `name_contains` ignores
+  accents in neither direction ("smarna" finds 0 activities, "Šmarna"
+  finds 5), and 333 of 547 names are defaults like "Morning Hike".
+- **"Hiking near Jesenice" returns a bare zero.** On the owner's data no
+  hike comes within 5 km of the town, so `activities_near` says "none", and
+  the LLM can't tell "nothing near" from "wrong place" or "radius too
+  small".
 
-Issue #35 also asks for embeddings. The research note recommended them for a
-fuzzy tier of queries. This design checks that recommendation against the
-queries the owner actually asks, now that places, same-route groups and geo
-search exist, and concludes **not yet** (see [Semantic search](#semantic-search-not-yet)).
+Issue #35 also asks for an offline gazetteer and for embeddings. This design
+checks both against the queries the owner actually asks, now that places,
+same-route groups and geo search exist, and concludes **not yet** for both
+(see [Place lookup](#place-lookup-nominatim-as-it-is) and
+[Semantic search](#semantic-search-not-yet)).
 
 ## Owner decisions (2026-11-22)
 
@@ -45,6 +47,14 @@ search exist, and concludes **not yet** (see [Semantic search](#semantic-search-
 
   What was measured for the offline list is kept in the appendix, for
   later.
+- **Build only what's new or prevents a wrong answer.** That is:
+  1. the `text` filter, the only new capability
+  2. `nearest` in `activities_near`
+  3. the example-query tests that "Done when" asks for
+
+  Re-ranking `find_place`'s candidates, a suggested radius and an
+  elevation-gain filter were designed and then cut. The LLM can already do
+  each with today's tools (see [Considered and cut](#considered-and-cut)).
 - **Descriptions are matched, never shown.** Text search matches the words
   in Strava descriptions, but no tool returns description text, and the
   `query` tool keeps blocking `summary_json`.
@@ -63,23 +73,23 @@ the README says so."
 
 ## Goals
 
-- **`find_place` puts the candidates near the owner's own activities
-  first,** and gives each a suggested radius for `activities_near`. When
-  several fit, the LLM still confirms with the user, as the guide says.
-- **`activities_near` says how close the nearest activity came** when none
-  is inside the radius.
 - **One `text` filter,** shared by `list_activities` and `summarize`,
   matches words from the start, with case and accents ignored. It looks in
   the name, type, place name, route name and descriptions.
+- **`name_contains` ignores accents.**
+- **`activities_near` says how close the nearest activity came** when none
+  is inside the radius.
 - **Example queries pass as tests on a fixture:** the existing Slavnik one,
-  and "hiking near Jesenice" plus seven more. Nominatim is mocked with the
-  shapes it really returned on 2026-11-22.
+  "hiking near Jesenice", and six more. Nominatim is mocked with the shapes
+  it really returned on 2026-11-22.
 - **Sizes are measured and written down.** The database doesn't grow.
 
 ## Non-goals
 
 - **An offline gazetteer** (owner, for now). The appendix says what it
   would take.
+- **Changes to `find_place`.** It stays as it is: Nominatim, 5 candidates in
+  Nominatim's order.
 - **Embeddings, vectors and `sqlite-vec`.** See below for why, and for what
   would change that.
 - **"Similar activities"** (numeric features + Fréchet, from the research
@@ -171,11 +181,11 @@ visible), 454 with GPS. By `dbstat`:
 | Slavnik | 4: the SI peak first (importance 0.186), then a Serbian district and village (0.40), then a Czech peak |
 
 So Nominatim handles alternative names ("Lake Bled") and accents itself, and
-its first hit was the right one for four of the five. For Slavnik, that was
-luck in the order: the right hit had the lower importance score. "Vršič" can't
-be answered by Nominatim at all. The owner's own Places list has "Prelaz
-Vršič" (one ride), so that query goes through the `text` filter (plan 2) or
-`places`, not `find_place`.
+its first hit was the right one for four of the five. With today's limit of
+5, the two Slovenian Jesenice candidates are the first two returned. "Vršič"
+can't be answered by Nominatim at all. The owner's own Places list has
+"Prelaz Vršič" (one ride), so that query goes through `places` or the `text`
+filter, not `find_place`.
 
 ### The target queries on real data, with today's tools
 
@@ -191,77 +201,15 @@ Vršič" (one ride), so that query goes through the `text` filter (plan 2) or
 - **"Runs from Ljubljana"**: 121 runs start within 3 km of the centre, 131
   within 8 km.
 
-## Place lookup: Nominatim, ranked by the owner's activities
+## Place lookup: Nominatim as it is
 
 ### Approaches considered
 
 | | How | Verdict |
 |---|---|---|
 | A | An offline gazetteer from the archived OSM snapshots (appendix) | Not now (owner): 7 tasks and a 28 MB file, to do what Nominatim already does |
-| **B** | Keep Nominatim, ask for 10 candidates, and re-rank them by the owner's activities nearby | **Chosen.** Small, and it fixes the ambiguity that actually bites |
-| C | Keep `find_place` as it is | The LLM has to pick among 9 Jesenices with nothing to go on |
-
-### What changes in `find_place`
-
-1. **The request asks for `limit=10`** (was 5). Nominatim allows up to 40.
-   10 covers Jesenice's 9 and keeps the response small.
-2. **The cache stores all 10, as Nominatim gave them.** It also keeps
-   `addresstype`, `boundingbox` and Nominatim's position for each. The
-   ranking runs at call time, since activities change and the cache
-   shouldn't.
-   - The cache file becomes `data/mcp/places-v2.json`. Old entries hold 5
-     candidates without those fields.
-   - The server deletes `data/mcp/places.json` on start. It holds only past
-     search texts (my call).
-3. **`activities_nearby`** per candidate: the number of visible activities
-   whose bounding box (`min_lat`…`max_lng`), widened by **2 km**, holds the
-   candidate's point.
-   - It's one SQL read of the boxes and a loop in Python.
-   - It's a ranking signal only. `activities_near` gives the exact answer.
-4. **Rank** by:
-   1. any activity nearby (yes first)
-   2. `activities_nearby` (more first)
-   3. Nominatim's own order
-
-   **Return the top 5,** with `total_candidates`.
-
-   For Jesenice, the two Slovenian candidates come first and the Czech ones
-   drop back. For Slavnik, the Slovenian peak is first because of the
-   owner's 30 hikes, not by luck of the order. When nothing has activities
-   nearby, Nominatim's order stands.
-5. **`suggested_radius_m`** per candidate, for `activities_near`. The kind
-   is the candidate's `addresstype`, else its `type`.
-
-   | Kind | Radius |
-   |---|---|
-   | city | 5,000 |
-   | town | 3,000 |
-   | village, suburb | 1,500 |
-   | quarter, hamlet | 1,000 |
-   | neighbourhood | 800 |
-   | lake, water, reservoir | 500 |
-   | park | 300 |
-   | peak, saddle, mountain_pass | 200 |
-   | alpine_hut, wilderness_hut | 150 |
-
-   - **Any other kind** (a municipality, a county, a road): half the
-     diagonal of Nominatim's `boundingbox`, rounded to 100 m, kept between
-     200 m and 50 km.
-   - These are my call. The peak radius is the MCP design's default 200 m.
-     A walk around Lake Bled stays about 500 m from its centre.
-   - The LLM sees the radius and may pick another, and the radius used
-     shows in `activities_near`'s rules.
-6. **The result:**
-   - each candidate keeps its current fields (`name`, `kind`, `lat`, `lon`,
-     `elevation_m`, `country`) and gains `activities_nearby` and
-     `suggested_radius_m`
-   - `data` gains `total_candidates`
-   - `counted.rules` gains: "ranked: candidates near your activities first,
-     then Nominatim's order"
-   - `counted.excluded` gains: "more candidates not shown"
-7. **Unchanged:** the one-request-a-second wait, the User-Agent, the error
-   on failure (the LLM is told to ask the user or use coordinates it's sure
-   of), and the `open_world` annotation.
+| B | Keep Nominatim, ask for 10 candidates, re-rank them by the owner's activities nearby, and suggest a radius for each | Cut (owner): the LLM can call `activities_near` on each candidate and pick a radius itself. See [Considered and cut](#considered-and-cut) |
+| **C** | Keep `find_place` as it is. `activities_near` says how close the nearest activity came when nothing is inside | **Chosen.** One small change, and it stops the one answer that misleads |
 
 ### `activities_near` when nothing is inside
 
@@ -276,13 +224,10 @@ wider box, and only when the first finds nothing.
 ### What changes for the owner
 
 - **README:** unchanged. It already says place names go to Nominatim.
-- **`guide.md`, "Which tool":** the `find_place` line says:
-  - candidates near the owner's activities come first, with
-    `activities_nearby`
-  - start from `suggested_radius_m`
-  - for a summit or pass the owner reached, `places` and the place filter
-    come first. Nominatim may not even list it: "Vršič" returns ten peaks
-    and not the pass.
+- **`guide.md`, "Which tool":** the `find_place` line adds that for a summit
+  or pass the owner reached, `places` and the place filter come first, and
+  `text` finds a place by part of its name. Nominatim may not even list it:
+  "Vršič" returns ten peaks and not the pass.
 
   Definitions gains `nearest`.
 
@@ -335,24 +280,15 @@ activities, or owner-written notes that run to paragraphs.
   exact-name matching. The guide points the LLM to `text` when a place
   name doesn't resolve.
 
-### One more filter: climbing
-
-`min_gain_m` and `max_gain_m` in `ActivityFilter`. The research note's main
-finding was that numbers in a query must become filters, because
-embeddings can't compare them. Distance and moving time already have
-filters; elevation gain is the one missing that hiking questions ask for
-("hikes over 1,000 m"). Same rules as `min_distance_m`: an unknown gain
-fails the filter, and the rule appears in `counted`.
-
 ### Search tool: no new tool
 
-`list_activities` and `summarize` take `text` and `min_gain_m`/`max_gain_m`.
-`activities_near` doesn't take them; if it needs to, that's a parameter
-later. A separate `search_activities` tool would repeat every filter and
-make the LLM choose between two tools that do the same thing. The guide
-gets one line: "Words → `list_activities(text=…)`: whole words, case and
-accents ignored, in name, type, place, route and description." The
-`counted`/`as_of` conventions are unchanged.
+`list_activities` and `summarize` take `text`. `activities_near` doesn't;
+if it needs to, that's a parameter later. A separate `search_activities`
+tool would repeat every filter and make the LLM choose between two tools
+that do the same thing. The guide gets one line: "Words →
+`list_activities(text=…)`: whole words, case and accents ignored, in name,
+type, place, route and description." The `counted`/`as_of` conventions are
+unchanged.
 
 ## Semantic search: not yet
 
@@ -360,12 +296,11 @@ The research note recommended a text-card embedding (EmbeddingGemma-300m)
 for a "fuzzy tier" of queries, after filters. Checked against what's now
 built:
 
-- **The client is an LLM.** It already turns "big mountain day" into
-  `types=[Hike], min_gain_m=1000`, "easy jog" into a short run with low
-  HR, and "autumn evenings" into dates and a `query` on `start_local`. A
-  card embedding would encode those same columns as words, and the
-  research note shows that's where embeddings are weakest (numbers at
-  chance level).
+- **The client is an LLM.** It already turns "big mountain day" into hikes
+  sorted by elevation gain, "easy jog" into a short run with low HR, and
+  "autumn evenings" into dates and a `query` on `start_local`. A card
+  embedding would encode those same columns as words, and the research
+  note shows that's where embeddings are weakest (numbers at chance level).
 - **Where words live, word matching is enough.**
   - Places and routes have names, and the `place` filter and `text` cover
     them.
@@ -397,34 +332,33 @@ float32 is 1.68 MB), not `sqlite-vec`.
 They run on the MCP fixture (`ingest/tests/mcp_fixture.py`, extended with a
 few synthetic activities around real place coordinates). Nominatim is
 mocked with responses shaped like the 2026-11-22 ones above: the same
-categories, types, addresstypes and order. Each test calls the tools
-through the server the way an LLM would, and checks the activity ids. One
-file, `ingest/tests/test_mcp_queries.py`, with the query as each test's
-docstring.
+categories, types, addresstypes and order, cut to today's 5. Each test calls
+the tools through the server the way an LLM would, and checks the activity
+ids. One file, `ingest/tests/test_mcp_queries.py`, with the query as each
+test's docstring. Where a query needs a radius, the test picks it as an LLM
+would; no tool suggests one.
 
-| # | Query | Tool calls | Expected | Plan |
-|---|---|---|---|---|
-| 1 | All hikes to Slavnik | `list_activities(types=[Hike], place="slavnik")` | the two Slavnik hikes (exists today; moves into the file) | 2 |
-| 2 | Hiking near Jesenice | `find_place("Jesenice")` → the Slovenian candidates first (the Czech ones have no activities nearby), the town with `suggested_radius_m` 3000 → `activities_near(…, 3000, types=[Hike])` | the hike up from Jesenice; not the walk in town; not the Slavnik hikes | 1 |
-| 3 | Hiking near Jesenice, none close | the same on a fixture with no hike inside 3 km | `total` 0, `nearest` is the hike 12 km away | 1 |
-| 4 | Slavnik, when the mock puts the Serbian village first | `find_place("Slavnik")` | the SI peak first, because of the hikes nearby | 1 |
-| 5 | Walks around Lake Bled | `find_place("Lake Bled")` → Blejsko jezero, `suggested_radius_m` 500 → `activities_near(…, 500, types=[Walk])` | the lake walk | 1 |
-| 6 | Runs from Ljubljana | `find_place("Ljubljana")` → the city → `activities_near(…, 5000, mode="start", types=[Run])` | the two runs that start there | 1 |
-| 7 | Rides over Vršič | `list_activities(types=[Ride], text="vršič")` | the Vršič ride, through its place name "Prelaz Vršič" | 2 |
-| 8 | Šmarna gora, typed without accents | `list_activities(text="smarna gora")`, and `name_contains="smarna"` | the activity at Šmarna gora | 2 |
-| 9 | Cold rainy walks | `list_activities(types=[Walk], text="cold rain")` | the walk whose description says "Rain, Cold". Not a WeightTraining. The row has no description | 2 |
-| 10 | Hikes over 1,000 m of climbing in a given year | `list_activities(types=[Hike], min_gain_m=1000, date_from=…, date_to=…)` | the one big hike; a hike with unknown gain doesn't pass | 2 |
+| # | Query | Tool calls | Expected |
+|---|---|---|---|
+| 1 | All hikes to Slavnik | `list_activities(types=[Hike], place="slavnik")` | the two Slavnik hikes (exists today; moves into the file) |
+| 2 | Hiking near Jesenice | `find_place("Jesenice")` → the Slovenian town (second, after the municipality) → `activities_near(…, 3000, types=[Hike])` | the hike up from Jesenice; not the walk in town; not the Slavnik hikes |
+| 3 | Hiking near Jesenice, none close | the same, with a date range that leaves out that hike | `total` 0, `nearest` is the hike 12 km away |
+| 4 | Walks around Lake Bled | `find_place("Lake Bled")` → Blejsko jezero → `activities_near(…, 700, types=[Walk])` | the lake walk |
+| 5 | Runs from Ljubljana | `find_place("Ljubljana")` → the city → `activities_near(…, 5000, mode="start", types=[Run])` | the two runs that start there |
+| 6 | Rides over Vršič | `list_activities(types=[Ride], text="vršič")` | the Vršič ride, through its place name "Prelaz Vršič" |
+| 7 | Šmarna gora, typed without accents | `list_activities(text="smarna gora")`, and `name_contains="smarna"` | the activity at Šmarna gora |
+| 8 | Cold rainy walks | `list_activities(types=[Walk], text="cold rain")` | the walk whose description says "Rain, Cold". Not a WeightTraining. The row has no description |
 
 ## Sizes and budget
 
 - **The database: no change** (45.6 MB today). The text table is TEMP, on
   the server's connection, and never written to the file.
-- **The place cache** (`data/mcp/places-v2.json`): a few KB per hundred
-  names. It's local only and never uploaded.
+- **The place cache** (`data/mcp/places.json`): unchanged, local only and
+  never uploaded.
 - **Gazetteer and vectors:** none.
 
-Plan 2 ends with the text-search numbers measured again on the owner's data
-and written into this section.
+The plan ends with the text-search numbers measured again on the owner's
+data and written into this section.
 
 ## Left to the builder
 
@@ -434,14 +368,10 @@ and written into this section.
 
 ## Calls I made (check these)
 
-- `limit=10`, and re-ranking by activities nearby within 2 km of their
-  bounding boxes.
-- The suggested radii above, and the bounding-box rule for other kinds.
-- `activities_near` returns `nearest` when nothing is inside the radius.
-- A new cache file, with the old one deleted on start.
+- `activities_near` returns `nearest` when nothing is inside the radius,
+  searched out to 50 km, with the same filter and mode.
 - Text matches from the start of a word, not anywhere in it. This differs
   from the site's search, which matches anywhere (see the open questions).
-- `min_gain_m`/`max_gain_m` added.
 - No new search tool.
 
 ## Open questions for the owner
@@ -453,10 +383,44 @@ and written into this section.
 - **A geo filter in `summarize`:** "how many km did I hike near Jesenice
   this year" needs `activities_near`'s answer as a filter. A `near` part
   in `ActivityFilter` (lat, lon, radius, mode) would give every tool geo.
-  It isn't in these plans; it costs decoding tracks inside the filter.
+  It isn't in the plan; it costs decoding tracks inside the filter.
 - **Weather as columns:** the 248 weather lines could be parsed into
   temperature and conditions, for "walks below 0 °C". Word matching
-  covers "cold" and "rain" but not numbers. Not in these plans.
+  covers "cold" and "rain" but not numbers. Not in the plan.
+
+## Considered and cut
+
+Designed, then cut by the owner (2026-11-22), because the LLM can do each
+with today's tools. Kept here in case real use shows otherwise.
+
+- **Re-ranking `find_place`.** Ask Nominatim for `limit=10`, cache the raw
+  candidates, and put first those whose point lies inside some visible
+  activity's bounding box widened by 2 km (more such activities first, then
+  Nominatim's order). It would fix Slavnik, where the Serbian district
+  scores higher than the Slovenian peak (0.40 against 0.186) but comes
+  second only by luck of the order. Today the LLM can call `activities_near`
+  on each candidate instead. Revisit if it picks the wrong candidate in
+  practice.
+- **A suggested radius per candidate,** by kind:
+
+  | Kind | m |
+  |---|---|
+  | city | 5,000 |
+  | town | 3,000 |
+  | village, suburb | 1,500 |
+  | quarter, hamlet | 1,000 |
+  | neighbourhood | 800 |
+  | lake, water, reservoir | 500 |
+  | park | 300 |
+  | peak, saddle, mountain_pass | 200 |
+  | alpine_hut, wilderness_hut | 150 |
+
+  Any other kind: half the bounding-box diagonal, rounded to 100 m, kept
+  between 200 m and 50 km. Today the LLM picks the radius, and it shows in
+  `activities_near`'s rules; with `nearest`, a radius that's too small no
+  longer reads as "none".
+- **`min_gain_m` / `max_gain_m`.** "Hikes over 1,000 m of climbing" works
+  today with `query` (`elevation_gain >= 1000`) or by sorting on gain.
 
 ## Appendix: an offline gazetteer, measured but not built
 
