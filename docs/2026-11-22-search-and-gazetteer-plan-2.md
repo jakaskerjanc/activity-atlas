@@ -6,9 +6,9 @@
 
 **Architecture:** When `Database` opens or reopens the file, it builds a TEMP table `activity_text(id, folded)` on its own connection (`conn`) and registers two deterministic SQL functions there: `fold` and `words_match`. `where_sql` stays pure: for `text`, it emits `a.id IN (SELECT id FROM temp.activity_text WHERE words_match(folded, ?))`. The raw `query` tool uses the other connection (`query_conn`), which has neither the table nor the functions, so descriptions stay unreadable there.
 
-**Tech Stack:** Python 3.12 standard library (`sqlite3`, `json`, `re`), the existing `ingest.mcp_server` modules, `ingest.textfold` (from plan 1), pytest.
+**Tech Stack:** Python 3.12 standard library (`sqlite3`, `json`, `re`), the existing `ingest.mcp_server` modules (`filters.fold_name`), pytest.
 
-**Spec:** `docs/2026-11-22-search-and-gazetteer-design.md`. Depends on plan 1's Task 1 (`ingest/textfold.py`) only. The example-query file from plan 1's Task 7 gains the queries here.
+**Spec:** `docs/2026-11-22-search-and-gazetteer-design.md`. Independent of plan 1. Whichever plan runs second adds to `ingest/tests/test_mcp_queries.py` and `ingest/tests/place_fixture.py`; if this one runs first, it creates both, with only what its queries need (the `qctx` fixture and `vrsic_ride` with its place `vrsic1` "Prelaz Vršič", as plan 1's Task 1 describes them).
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
   - place name and route name, when `activity_groups` exists
   - every non-empty `json_extract(summary_json, '$."Activity Description"')` of its `activity_sources` rows with `provider = 'strava' AND deleted_at IS NULL`, in `provider_activity_id` order
 
-  The parts are joined with `"\n"` and folded with `textfold.fold_name`.
+  The parts are joined with `"\n"` and folded with `filters.fold_name`.
 - **Matching:** the query is folded with `fold_name` and split on whitespace into words. An activity matches when every word occurs in its search text at a word start: position 0, or after a character that is neither a letter nor a digit (`not ch.isalnum()`). A query with no words is the same as no `text` filter.
 - **`counted.rules` text,** copied verbatim: `text: "{query}" (whole words, case and accents ignored; name, type, place, route or description)`.
 - **`name_contains`** becomes `instr(fold(a.name), ?) > 0`, with the parameter `fold_name(value)`. Its rule text stays `name contains {value!r}`.
@@ -69,7 +69,7 @@ docs/2026-11-22-search-and-gazetteer-design.md   # sizes measured
     - `wt1`, a WeightTraining
 
 **Interfaces:**
-- Consumes: `textfold.fold_name`, `filters.has_group_tables`.
+- Consumes: `filters.fold_name`, `filters.has_group_tables`.
 - Produces:
   - `textsearch.split_type(t: str) -> str`: `"WeightTraining"` → `"Weight Training"`.
   - `textsearch.search_texts(conn) -> dict[str, str]`: id → folded search text for every activity, hidden ones included.
@@ -168,16 +168,17 @@ def test_list_activities_takes_text_and_gain(ctx): ...
 ### Task 3: The remaining example queries, and the sizes written down
 
 **Files:**
-- Modify: `ingest/tests/test_mcp_queries.py` (from plan 1, Task 7), `ingest/tests/test_mcp_activities.py` (the Slavnik query moves out), `docs/2026-11-22-search-and-gazetteer-design.md`
+- Modify: `ingest/tests/test_mcp_queries.py` and `ingest/tests/place_fixture.py` (from plan 1's Task 3, or created here), `ingest/tests/test_mcp_activities.py` (the Slavnik query moves out), `docs/2026-11-22-search-and-gazetteer-design.md`
 
 **Interfaces:**
 - Consumes: the tools through `call(ctx, …)`.
 
 - [ ] **Step 1: Write the tests,** one per query, with the query as the docstring:
   - 1: "All hikes to Slavnik": `list_activities(types=["Hike"], place="slavnik")` → `["slavnik2", "slavnik1"]`. This moves `test_place_filter_by_id_and_name`'s name case here; the id case stays.
-  - 7: "Šmarna gora, typed without accents": `text="smarna gora"` → `["smarna1"]`, and `name_contains="smarna"` → `["smarna1"]`.
-  - 8: "Cold rainy walks": `types=["Walk"], text="cold rain"` → `["walk1"]`. The row has no description.
-  - 9: "Hikes over 1,000 m of climbing in 2024": `types=["Hike"], min_gain_m=1000, date_from="2024-01-01", date_to="2024-12-31"` → `["hike1"]`.
+  - 7: "Rides over Vršič": `types=["Ride"], text="vršič"` → `["vrsic_ride"]`, found through its place name "Prelaz Vršič" (the place filter wants the whole name, and Nominatim doesn't list the pass).
+  - 8: "Šmarna gora, typed without accents": `text="smarna gora"` → `["smarna1"]`, and `name_contains="smarna"` → `["smarna1"]`.
+  - 9: "Cold rainy walks": `types=["Walk"], text="cold rain"` → `["walk1"]`. The row has no description.
+  - 10: "Hikes over 1,000 m of climbing in 2024": `types=["Hike"], min_gain_m=1000, date_from="2024-01-01", date_to="2024-12-31"` → `["hike1"]`.
 - [ ] **Step 2: Run** `$PY -m pytest ingest/tests/test_mcp_queries.py -q`. Expected: PASS.
 - [ ] **Step 3: Measure on the owner's data,** read-only, after syncing a fresh copy:
   - the database's size, which must be unchanged by this plan
@@ -185,6 +186,6 @@ def test_list_activities_takes_text_and_gain(ctx): ...
   - the time for a two-word `list_activities(text=…)` call
   - the hits for "rain" (expect 20) and "cold" (54) as words
 
-  Write them into "Sizes and budget" in the design doc, next to plan 1's gazetteer numbers. In "Done when" on issue #35, the line "The tag, gazetteer and vector tables fit in the database budget" can then be ticked by the owner with these figures.
+  Write them into "Sizes and budget" in the design doc, next to the database size. In "Done when" on issue #35, the line "The tag, gazetteer and vector tables fit in the database budget" can then be ticked by the owner with these figures: no gazetteer and no vectors, and nothing added to the database.
 - [ ] **Step 4: Run** `$PY -m pytest ingest -q && pnpm run test:all`. Expected: PASS.
 - [ ] **Step 5: Commit** `test: example queries for text search; docs: search sizes measured`

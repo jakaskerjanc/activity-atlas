@@ -1,27 +1,27 @@
-# Design: offline gazetteer, text search, and why not embeddings yet
+# Design: place lookup, text search, and why not embeddings yet
 
 Date: 2026-11-22
 Status: draft for the owner's review
 Scope: what is left on issue #35 after PR #45 (places and same-route groups):
-§2 (offline gazetteer) and §3 (text and semantic search), plus the example
-queries and sizes from "Done when". Builds on
+§2 (place lookup, which the issue calls the offline gazetteer) and §3 (text
+and semantic search), plus the example queries and sizes from "Done when".
+Builds on
 [2026-11-08-place-tags-design.md](2026-11-08-place-tags-design.md),
 [2026-11-09-activity-embeddings-research.md](2026-11-09-activity-embeddings-research.md)
 and [2026-11-04-mcp-server-design.md](2026-11-04-mcp-server-design.md).
-Plans: [plan 1, the gazetteer](2026-11-22-search-and-gazetteer-plan-1.md),
-[plan 2, text search and the example queries](2026-11-22-search-and-gazetteer-plan-2.md).
+Plans: [plan 1, place lookup and "near"](2026-11-22-search-and-gazetteer-plan-1.md),
+[plan 2, text search and the remaining example queries](2026-11-22-search-and-gazetteer-plan-2.md).
 
 ## Intent
 
 The owner asks an LLM about their activities through the MCP server, and two
 kinds of question are still weak:
 
-- **"Hiking near Jesenice".** `find_place` turns a name into coordinates,
-  but it does that by sending the name to OpenStreetMap's Nominatim. That
-  breaks the v2 rule that the MCP server makes no network calls except to
-  its own R2 bucket. The OSM points the refresh already uses can't replace
-  it as they are: they have no towns, cities or huts, so Jesenice, Bled and
-  Koper aren't in them.
+- **"Hiking near Jesenice".** `find_place` gets candidates from Nominatim,
+  in Nominatim's order. For Jesenice that's the Slovenian municipality and
+  town first, then seven places in Czechia and Croatia. On the owner's data
+  no hike comes within 5 km of the town, so `activities_near` returns a
+  bare zero, and the LLM can't tell "nothing near" from "wrong place".
 - **Words.** `name_contains` ignores accents in neither direction: "smarna"
   finds 0 activities, "Šmarna" finds 5. It looks only at the name, and 333
   of 547 names are defaults like "Morning Hike". Place and route names, and
@@ -34,8 +34,17 @@ search exist, and concludes **not yet** (see [Semantic search](#semantic-search-
 
 ## Owner decisions (2026-11-22)
 
-- **Nominatim is dropped,** with no opt-in flag. `find_place` is offline
-  only.
+- **Nominatim stays, for now.** No offline gazetteer is built. The owner
+  first chose to drop Nominatim, then reversed that once the cost was clear:
+  - an offline list would only matter without a network, and the MCP
+    client (Claude) doesn't work without one anyway
+  - only the place name leaves the machine, it's cached, and the same name
+    is already in the conversation
+  - Nominatim covers every country, every language and streets, which a
+    list built from our snapshots wouldn't
+
+  What was measured for the offline list is kept in the appendix, for
+  later.
 - **Descriptions are matched, never shown.** Text search matches the words
   in Strava descriptions, but no tool returns description text, and the
   `query` tool keeps blocking `summary_json`.
@@ -43,36 +52,41 @@ search exist, and concludes **not yet** (see [Semantic search](#semantic-search-
   (`app/src/activitySearch.ts`).
 
 Earlier decisions this design keeps: no network in the daily CI job; OSM
-points live in their own file, not in the database (2026-11-21, "roughly
-halves each transfer"); huts, lakes, protected areas, settlements, elevation
-band and season are not tags (place-tags design).
+points live in their own file, not in the database (2026-11-21); huts,
+lakes, protected areas, settlements, elevation band and season are not tags
+(place-tags design).
+
+The issue's "`find_place` works offline. Any network fallback is opt-in and
+documented" no longer holds as written. When the owner updates #35, it
+becomes: "`find_place` sends only the place name to Nominatim, caches it, and
+the README says so."
 
 ## Goals
 
-- `find_place` answers from a local file built from the OSM snapshots the
-  archive already keeps. Names match with case and accents ignored, and
-  alternative names count too ("Lake Bled" finds Blejsko jezero).
-- When a name fits many points, the ones near the owner's own activities
-  come first. "Vršič" means the pass the owner rode over, not one of the 34
-  Slovenian peaks with that name.
-- One `text` filter, shared by `list_activities` and `summarize`, matches
-  words from the start, with case and accents ignored. It looks in the
-  name, type, place name, route name and descriptions.
-- `activities_near` says how close the nearest activity came when none is
-  inside the radius.
-- Example queries pass as tests on a fixture: the existing Slavnik one, and
-  "hiking near Jesenice" plus eight more.
-- Sizes are measured and written down. The database doesn't grow.
+- **`find_place` puts the candidates near the owner's own activities
+  first,** and gives each a suggested radius for `activities_near`. When
+  several fit, the LLM still confirms with the user, as the guide says.
+- **`activities_near` says how close the nearest activity came** when none
+  is inside the radius.
+- **One `text` filter,** shared by `list_activities` and `summarize`,
+  matches words from the start, with case and accents ignored. It looks in
+  the name, type, place name, route name and descriptions.
+- **Example queries pass as tests on a fixture:** the existing Slavnik one,
+  and "hiking near Jesenice" plus seven more. Nominatim is mocked with the
+  shapes it really returned on 2026-11-22.
+- **Sizes are measured and written down.** The database doesn't grow.
 
 ## Non-goals
 
+- **An offline gazetteer** (owner, for now). The appendix says what it
+  would take.
 - **Embeddings, vectors and `sqlite-vec`.** See below for why, and for what
   would change that.
 - **"Similar activities"** (numeric features + Fréchet, from the research
   note). It's a separate feature, not search, and needs its own design.
-- **Areas:** "hikes in Austria" or "in Triglav National Park" would need
-  boundary polygons. Points can't answer "in".
-- **Streets, shops and addresses.** Nominatim had them, the gazetteer won't.
+- **Areas:** "hikes in Austria" or "in Triglav National Park". Nominatim
+  returns a bounding box, not a polygon, and `activities_near` works on a
+  point and radius.
 - **Tags per activity.** No nearest town at the start, no huts passed.
   "Near X" is answered at query time by geo, as #35 asks.
 - **Site changes** (owner).
@@ -81,19 +95,22 @@ band and season are not tags (place-tags design).
 
 ## Anti-goals
 
-- **A search text leaving the machine.** This now covers place names too.
+- **More than the place name leaving the machine.** No coordinates, no
+  activity data, no owner identity in the request. The User-Agent names
+  the app, not the owner, as today.
 - **A database that grows for search.** Every writer, the deploy and the MCP
-  server pull the database. The gazetteer goes in its own file, which only
-  the MCP server downloads, once per OSM update.
+  server pull the database.
 - **Description text in tool output.** A match may say that an activity's
   description has the words, but never what it says.
-- **Search that disagrees with itself.** The place filter, the `text` filter
-  and `find_place` all fold names with the same function (`fold_name`).
+- **Search that disagrees with itself.** The place filter and the `text`
+  filter fold names with the same function (`fold_name`), as the site's
+  `normalizeName` does.
 
 ## Measured on the owner's data (2026-11-22)
 
-Read-only, on `data/activities.sqlite` synced from R2 and on the archive's
-OSM snapshots, with scratch scripts that aren't committed.
+Read-only, on `data/activities.sqlite` synced from R2, with scratch scripts
+that aren't committed. The Nominatim results come from five requests with
+the server's User-Agent, sending only the place names.
 
 ### The database
 
@@ -130,60 +147,6 @@ visible), 454 with GPS. By `dbstat`:
   it hits 20, all of them weather lines. "cold" (54) and "clear" (87) come
   out the same either way.
 
-### The OSM data
-
-- **Snapshots** in the archive (newest per country, raw Overpass JSON): AT
-  10.0 MB, IS 0.9 MB, IT 29.8 MB, NO 28.2 MB, SI 3.9 MB.
-- **The refresh's points file** (`derived/osm-points/v1-…sqlite`):
-  24,043,520 bytes, 11.3 MB gzipped, 328,165 points.
-  - Kinds: peak, pass, park, water, village, hamlet, suburb, quarter and
-    neighbourhood.
-  - Only `name` is kept. No towns, cities or huts: "Jesenice", "Bled",
-    "Koper" and "Bohinj" find nothing. "Ljubljana" finds only a peak.
-- **Alternative names are already in the snapshots.** The query keeps every
-  tag. In SI, 4,122 of 19,144 points have `name:*`, `alt_name` or
-  `official_name`. Blejsko jezero has `name:en` "Lake Bled", Triglav has
-  `name:it` "Tricorno", and Slavnik has `alt_name` "Primorski Triglav".
-- **What adding kinds would bring,** counted with Overpass `out count`
-  (SI / AT):
-
-  | Kind | SI | AT |
-  |---|---|---|
-  | `place=town\|city` (nodes) | 72 | 229 |
-  | `tourism=alpine_hut\|wilderness_hut` | 233 | 1,531 |
-  | `place=isolated_dwelling` | 1,424 | 5,335 |
-  | `place=locality` | 2,006 | 20,317 |
-  | `amenity=shelter` | 151 | 2,546 |
-  | `natural=valley\|ridge\|glacier\|cave_entrance` | 1,202 | 7,243 |
-  | `waterway=waterfall` | 175 | 337 |
-  | `boundary=national_park\|protected_area` | 207 | 1,499 |
-
-- **Coverage of the activities:** of 454 GPS activities, 423 start within
-  15 km of a point in a loaded country (SI 384, IS 12, IT 11, AT 8, NO 8).
-  31 start in six countries that haven't been downloaded, 25 of them in
-  Denmark.
-- **"Vršič":** 34 SI peaks are named exactly that (36 points in all). The pass is "Prelaz
-  Vršič", which only a whole-word match finds.
-
-### Gazetteer prototype
-
-Built in 14 s from the five snapshots. It holds the existing kinds, every
-`name`, `name:sl|en|de|it`, `alt_name` and `official_name` (split on `;`),
-and a folded copy of each.
-
-| Layout | Bytes | gzip |
-|---|---|---|
-| points + folded name + `alt_names` (37,973 rows), no index | 28,082,176 | 13.6 MB |
-| the same + B-tree indexes on the folded names | 39,796,736 | 18.5 MB |
-| one `names` table (366,132 rows) + FTS5 trigram index | 51,482,624 | 22.3 MB |
-
-Lookup times on the unindexed file, with `mode=ro`:
-- a whole-word or word-start scan of all names in SQL: 50–80 ms
-- a typo fallback ("slavnk" → slavnik, savnik): `difflib` over the 5,977
-  names of similar length and the same first letter, 90 ms
-
-Loading every name into Python instead takes 2.7 s and 67 MB, so that's out.
-
 ### Text search options
 
 - **FTS5 in the database:** at most 74 KB for all 547 rows, descriptions
@@ -197,243 +160,131 @@ Loading every name into Python instead takes 2.7 s and 67 MB, so that's out.
   "lodz", "ovre" and "strasse" find nothing). `fold_name` folds all four,
   as the site's `normalizeName` does.
 
+### What Nominatim returns (limit 10, 2026-11-22)
+
+| Query | What comes back, in Nominatim's order |
+|---|---|
+| Jesenice | 9: the SI municipality (`boundary/administrative`, addresstype municipality), the SI town (`place/town`), 4 in Czechia, 2 in Croatia, 1 more in Czechia |
+| Vršič | 10 peaks named Vršič, all in Slovenia, **none of them the pass** (OSM names it "Prelaz Vršič"). More exist past 10 |
+| Lake Bled | 1: Blejsko jezero (`water/lake`) |
+| Ljubljana | 2: the city (`place/city`), the municipality |
+| Slavnik | 4: the SI peak first (importance 0.186), then a Serbian district and village (0.40), then a Czech peak |
+
+So Nominatim handles alternative names ("Lake Bled") and accents itself, and
+its first hit was the right one for four of the five. For Slavnik, that was
+luck in the order: the right hit had the lower importance score. "Vršič" can't
+be answered by Nominatim at all. The owner's own Places list has "Prelaz
+Vršič" (one ride), so that query goes through the `text` filter (plan 2) or
+`places`, not `find_place`.
+
 ### The target queries on real data, with today's tools
 
 - **"All hikes to Slavnik"**: `list_activities(types=[Hike], place=Slavnik)`
   gives 30.
-- **"Hiking near Jesenice"**: once Jesenice has coordinates,
-  `activities_near` finds no hike within 1, 3 or 5 km. One ride passes
-  473 m from the town, and the nearest hikes come 12.3 km away. An empty
-  answer with nothing else in it would leave the LLM guessing. That's why
-  `activities_near` gains `nearest`.
+- **"Hiking near Jesenice"**: `activities_near` finds no hike within 1, 3 or
+  5 km of the town. One ride passes 473 m from it, and the nearest hikes
+  come 12.3 km away. An empty answer with nothing else in it would leave
+  the LLM guessing. That's why `activities_near` gains `nearest`.
 - **"Rides over Vršič"**: the place exists (Prelaz Vršič, 1 activity), and
-  `activities_near` at 200 m finds the same ride.
+  `activities_near` at 200 m finds the same ride. But `place="Vršič"` fails
+  today, because the place filter wants the whole name.
 - **"Runs from Ljubljana"**: 121 runs start within 3 km of the centre, 131
   within 8 km.
 
-## The offline gazetteer
+## Place lookup: Nominatim, ranked by the owner's activities
 
 ### Approaches considered
 
-| | Where the gazetteer lives | Cost | Verdict |
-|---|---|---|---|
-| **A** | Its own derived file, `derived/gazetteer/v1-<hash>.sqlite`, built from the same snapshots as the points file | About 28 MB, downloaded once per OSM update, by the MCP server only. CI never needs it | **Chosen** |
-| B | The points file grows to hold it (v2) | One file, but CI downloads every new points file (the perf plan: "22 MB once per machine, which CI pays daily"), and it would grow from 24 to 28–40 MB | No |
-| C | A table in the database | Reverses the 2026-11-21 move. Every pull grows by about 28 MB | No |
-| D | Geofabrik `.osm.pbf` extracts | Complete and no load on Overpass, but hundreds of MB per country and a new native dependency (osmium). The archive already keeps Overpass snapshots, and a rebuild already works offline | No |
+| | How | Verdict |
+|---|---|---|
+| A | An offline gazetteer from the archived OSM snapshots (appendix) | Not now (owner): 7 tasks and a 28 MB file, to do what Nominatim already does |
+| **B** | Keep Nominatim, ask for 10 candidates, and re-rank them by the owner's activities nearby | **Chosen.** Small, and it fixes the ambiguity that actually bites |
+| C | Keep `find_place` as it is | The LLM has to pick among 9 Jesenices with nothing to go on |
 
-### What goes in
+### What changes in `find_place`
 
-- **Kinds:**
-  - everything the points file has: peak, pass, park, water and the five
-    place kinds
-  - **town and city**: `place=town|city` nodes, kind `town` or `city`
-  - **huts**: `tourism=alpine_hut|wilderness_hut`, kind `hut`
-
-  Without towns, the main target query fails. Huts are what hikers name
-  ("Dom na Komni", "Koča na Golici") and cost little (233 in SI). Huts
-  stay out of tags and the Places list. They are only something to look
-  up.
-- **Left out:**
-  - localities and isolated dwellings: 3,430 in SI, 25,652 in AT, mostly
-    names nobody searches for
-  - shelters, valleys, ridges, waterfalls and protected areas
-  - Protected areas would need polygons to answer "in", which is a
-    non-goal.
-
-  Adding any of these later is one line in the Overpass query and a new
-  `places:update`.
-- **Names:**
-  - `name`, plus `name:sl`, `name:en`, `name:de`, `name:it`, `alt_name`
-    and `official_name`
-  - values split on `;`
-  - a variant whose folded form equals the main name's isn't stored
-
-  The languages are Slovenian, English and the neighbours' (my call).
-  Other scripts (Cyrillic, Korean) add rows nobody types.
-- **Countries:** the ones `places:update` has fetched: SI, AT, IT, NO and
-  IS today. Adding DK and the other five countries would cover the
-  remaining 31 activities. That's the owner's call when running
-  `places:update` (see the open questions).
-
-### The Overpass query
-
-`overpass_query` gains two statements:
-
-```
-  node["place"~"^(town|city)$"]["name"](area.a);
-  nwr["tourism"~"^(alpine_hut|wilderness_hut)$"]["name"](area.a);
-```
-
-`parse_points` for the refresh's points file keeps mapping only the kinds it
-maps today. `_kind` returns None for a town or a hut, so those are dropped.
-The places and route names the refresh computes don't depend on the new
-kinds, and only new OSM data can change them, as with any `places:update`.
-
-### The file
-
-```sql
-CREATE TABLE points (
-  osm_id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, folded TEXT NOT NULL,
-  lat REAL NOT NULL, lon REAL NOT NULL, ele REAL, country TEXT NOT NULL
-) WITHOUT ROWID;
-CREATE TABLE alt_names (osm_id TEXT NOT NULL, name TEXT NOT NULL, folded TEXT NOT NULL);
-CREATE TABLE snapshots (country TEXT PRIMARY KEY, key TEXT NOT NULL);  -- what it was built from
-PRAGMA user_version = 1;
-```
-
-- **`folded`** is `fold_name` (the one in `mcp_server/filters.py`, moved to
-  a leaf module so `ingest` can use it), plus punctuation turned into
-  spaces and runs of spaces collapsed. So "Kranjska-Gora" and "Kranjska
-  Gora" match.
-- **No indexes.** Every lookup is one scan, 50–80 ms. Indexes would add
-  12 MB for under 1 ms saved.
-- **Border features** that two countries return are kept once, under the
-  later country in sorted order, as the points file does.
-- **Deterministic:** the same snapshots give the same bytes (countries in
-  sorted order, rows in sorted order, `VACUUM` at the end). A test checks
-  this.
-- **Named** `v1-<hash>.sqlite`, with the same hash as the points file
-  (`osm.points_file_name` over the newest snapshot keys), under
-  `derived/gazetteer/`. `put_derived` already deletes the folder's other
-  keys, so R2 holds one file.
-
-### Who builds it
-
-- **`places:update`** builds and stores it right after it stores the new
-  snapshots, next to the points file. Writers in CI never do. If the file
-  is missing, the MCP server says so and names the command.
-- **`pnpm run places:update -- --files-only`** builds both files from the
-  stored snapshots without fetching. It's for a machine whose snapshots
-  are already current. (The flag is my call; without it, the first
-  rollout would need a refetch anyway, for the new kinds.)
-
-### How the MCP server gets it
-
-- **With R2:**
-  - The server lists `osm/` with the read-only token (checked: `R2_RO_*`
-    can list `osm/` and `derived/`). It works out the file name the way
-    writers do, and downloads `derived/gazetteer/<name>` into
-    `<db folder>/cache/<bucket>/derived/gazetteer/`.
-  - This runs on the sync thread, after the database check and on the same
-    hourly schedule, so no tool waits for it. A `RemoteArchive` with the
-    read-only store and that cache root does the work: `get_derived` never
-    writes to the store.
-  - The database download stays first, so the larger file never holds it
-    up.
-- **Without R2,** in a fork that uses the local archive: the server reads
-  `<db folder>/archive/derived/gazetteer/`. `--gazetteer PATH` overrides
-  either, and is used in tests.
-- **`--no-sync`:** the cached file as it is. No listing, no download.
-- **Until a file is in,** `find_place` returns a tool error in the
-  `notice` style:
-  - "The offline place list is downloading from R2 (12 of 28 MB); try
-    again in a minute"
-  - "There's no offline place list in R2 yet: run `pnpm run places:update
-    SI AT …` on a machine with R2 write access"
-
-  Every other tool works as before.
-- **Old files:** a newer gazetteer replaces the cached one, and the server
-  deletes the older files in its own cache folder only.
-- **`as_of`** gains `gazetteer`: the countries and the newest snapshot date,
-  e.g. `{"countries": ["AT","IS","IT","NO","SI"], "snapshots_through": "2026-11-13"}`,
-  or the download status.
-
-### Matching and ranking
-
-`find_place(query)`:
-
-1. **Fold the query** with the same function.
-2. **Match** in one SQL scan over `points.folded` and `alt_names.folded`.
-   The match classes, best first:
-   - **exact**: the folded name equals the query
-   - **alternative**: an alternative name equals it
-   - **words**: the query is a run of whole words in a name. "vrsic"
-     finds "Prelaz Vršič".
-   - **starts**: a word in a name starts with the query. "smarna" finds
-     "Šmarna gora".
-3. **Typo fallback,** only when step 2 finds nothing: `difflib` ratio
-   ≥ 0.8, over names within 2 characters of the query's length that start
-   with the same letter. Its class is **similar**.
+1. **The request asks for `limit=10`** (was 5). Nominatim allows up to 40.
+   10 covers Jesenice's 9 and keeps the response small.
+2. **The cache stores all 10, as Nominatim gave them.** It also keeps
+   `addresstype`, `boundingbox` and Nominatim's position for each. The
+   ranking runs at call time, since activities change and the cache
+   shouldn't.
+   - The cache file becomes `data/mcp/places-v2.json`. Old entries hold 5
+     candidates without those fields.
+   - The server deletes `data/mcp/places.json` on start. It holds only past
+     search texts (my call).
+3. **`activities_nearby`** per candidate: the number of visible activities
+   whose bounding box (`min_lat`…`max_lng`), widened by **2 km**, holds the
+   candidate's point.
+   - It's one SQL read of the boxes and a loop in Python.
+   - It's a ranking signal only. `activities_near` gives the exact answer.
 4. **Rank** by:
-   - whether any visible activity's bounding box, widened by 2 km, holds
-     the point (yes first)
-   - the match class
-   - the number of such activities (more first)
-   - kind: city, town, village, suburb, peak, pass, hut, water, quarter,
-     hamlet, neighbourhood, park
-   - `osm_id`
+   1. any activity nearby (yes first)
+   2. `activities_nearby` (more first)
+   3. Nominatim's own order
 
-   Activity proximity comes first because the point of `find_place` is
-   to find the owner's activities next. The bounding-box count is cheap
-   (SQL over `min_lat`…`max_lng`) and is only a ranking signal.
-   `activities_near` gives the exact answer.
-5. **Return** the top 5, and `total_matches`.
+   **Return the top 5,** with `total_candidates`.
 
-Each candidate has:
-- `name`, `matched_name` (when an alternative or similar name matched),
-  `match`, `kind`
-- `lat`, `lon`, `elevation_m`, `country`, `osm_id`
-- `activities_nearby` (the bounding-box count)
-- `suggested_radius_m` for `activities_near`
+   For Jesenice, the two Slovenian candidates come first and the Czech ones
+   drop back. For Slavnik, the Slovenian peak is first because of the
+   owner's 30 hikes, not by luck of the order. When nothing has activities
+   nearby, Nominatim's order stands.
+5. **`suggested_radius_m`** per candidate, for `activities_near`. The kind
+   is the candidate's `addresstype`, else its `type`.
 
-`counted` gets these rules:
-- "offline OpenStreetMap place list: AT IS IT NO SI, snapshots through
-  2026-11-13"
-- "names compared with case and accents ignored"
-- "ranked: near your activities first, then match"
+   | Kind | Radius |
+   |---|---|
+   | city | 5,000 |
+   | town | 3,000 |
+   | village, suburb | 1,500 |
+   | quarter, hamlet | 1,000 |
+   | neighbourhood | 800 |
+   | lake, water, reservoir | 500 |
+   | park | 300 |
+   | peak, saddle, mountain_pass | 200 |
+   | alpine_hut, wilderness_hut | 150 |
 
-`included` is the number of candidates returned, and `excluded` has "more
-matches not shown".
-
-**No match:** an empty list. The rules name the loaded countries, so the
-LLM can say "Odense isn't in the offline place list (loaded: AT IS IT NO
-SI)". It can then use coordinates it's sure of, or suggest `places:update
-DK`.
-
-**Suggested radius** per kind (my call; the LLM sees it and may pick
-another, and the radius used shows in `activities_near`'s rules):
-
-| Kind | Suggested radius |
-|---|---|
-| city | 5 km |
-| town | 3 km |
-| village, suburb | 1.5 km |
-| quarter, hamlet | 1 km |
-| neighbourhood | 800 m |
-| water (its centre) | 500 m |
-| park | 300 m |
-| peak, pass | 200 m |
-| hut | 150 m |
-
-The peak radius is the default 200 m from the MCP design. For a lake, a
-walk around Lake Bled stays about 500 m from its centre.
+   - **Any other kind** (a municipality, a county, a road): half the
+     diagonal of Nominatim's `boundingbox`, rounded to 100 m, kept between
+     200 m and 50 km.
+   - These are my call. The peak radius is the MCP design's default 200 m.
+     A walk around Lake Bled stays about 500 m from its centre.
+   - The LLM sees the radius and may pick another, and the radius used
+     shows in `activities_near`'s rules.
+6. **The result:**
+   - each candidate keeps its current fields (`name`, `kind`, `lat`, `lon`,
+     `elevation_m`, `country`) and gains `activities_nearby` and
+     `suggested_radius_m`
+   - `data` gains `total_candidates`
+   - `counted.rules` gains: "ranked: candidates near your activities first,
+     then Nominatim's order"
+   - `counted.excluded` gains: "more candidates not shown"
+7. **Unchanged:** the one-request-a-second wait, the User-Agent, the error
+   on failure (the LLM is told to ask the user or use coordinates it's sure
+   of), and the `open_world` annotation.
 
 ### `activities_near` when nothing is inside
 
 When `total` is 0, the result gains `nearest`: the activity of the same
-filter whose route came closest, searched out to `MAX_RADIUS_M` (50 km),
-as `{id, date_local, type, name, closest_m}`, or null. The counted rule
-says "nearest outside the radius: 12.3 km". On real data this turns
+filter and mode whose route came closest, searched out to `MAX_RADIUS_M`
+(50 km), as `{id, date_local, type, name, closest_m}`, or null. The counted
+rule says "nearest outside the radius: 12.3 km". On real data this turns
 "hiking near Jesenice" into "no hikes within 3 km; the closest came
-12.3 km away" instead of a bare zero. It costs a second candidate pass
-with a wider box, and only when the first finds nothing.
+12.3 km away" instead of a bare zero. It costs a second candidate pass with a
+wider box, and only when the first finds nothing.
 
 ### What changes for the owner
 
-- `find_place` loses its `open_world` annotation, its User-Agent and its
-  1-per-second wait. The `data/mcp/places.json` cache is no longer read.
-  The server deletes it on start (my call: it holds only past search
-  texts).
-- **README:** "Only the conversation and any place names you search for
-  (sent to OpenStreetMap's Nominatim) leave your machine" becomes "Only
-  the conversation leaves your machine. Place names are looked up in an
-  offline list built from OpenStreetMap by `places:update`."
-- **`guide.md`, "Which tool":** the `find_place` line says it's offline,
-  that it covers peaks, passes, huts, lakes, parks and settlements from
-  village to city in the loaded countries, that it ranks places near the
-  owner's activities first, and that `suggested_radius_m` is the radius
-  to start from. Streets and shops aren't in it.
+- **README:** unchanged. It already says place names go to Nominatim.
+- **`guide.md`, "Which tool":** the `find_place` line says:
+  - candidates near the owner's activities come first, with
+    `activities_nearby`
+  - start from `suggested_radius_m`
+  - for a summit or pass the owner reached, `places` and the place filter
+    come first. Nominatim may not even list it: "Vršič" returns ten peaks
+    and not the pass.
+
+  Definitions gains `nearest`.
 
 ## Text search
 
@@ -479,6 +330,10 @@ activities, or owner-written notes that run to paragraphs.
   (`instr(fold(a.name), fold(?))`). "smarna" finds the 5 it misses today.
 - **Hidden activities:** the table has every activity, and
   `include_hidden` works as for any filter.
+- **Places found by part of their name:** `text="vršič"` finds the ride to
+  "Prelaz Vršič", which `place="Vršič"` doesn't. The place filter keeps
+  exact-name matching. The guide points the LLM to `text` when a place
+  name doesn't resolve.
 
 ### One more filter: climbing
 
@@ -518,7 +373,7 @@ built:
     Cold, clear"), which word matching handles ("cold rain").
   - The 19 owner-written lines are too few for a vector to beat reading
     them.
-- **Location is geo, not vectors** (#35). The gazetteer and
+- **Location is geo, not vectors** (#35). `find_place` and
   `activities_near` cover it.
 - **Cost:**
   - a model download of 0.3–1.2 GB and a PyTorch or ONNX runtime, against
@@ -539,76 +394,58 @@ float32 is 1.68 MB), not `sqlite-vec`.
 
 ## Example queries
 
-They run on the MCP fixture (`ingest/tests/mcp_fixture.py`, extended)
-with a fixture gazetteer built from a hand-written Overpass response. Each
-test calls the tool functions the way an LLM would, and checks the
-activity ids. One test file, `ingest/tests/test_mcp_queries.py`, with the
-query as each test's docstring.
+They run on the MCP fixture (`ingest/tests/mcp_fixture.py`, extended with a
+few synthetic activities around real place coordinates). Nominatim is
+mocked with responses shaped like the 2026-11-22 ones above: the same
+categories, types, addresstypes and order. Each test calls the tools
+through the server the way an LLM would, and checks the activity ids. One
+file, `ingest/tests/test_mcp_queries.py`, with the query as each test's
+docstring.
 
-| # | Query | Tool calls | Expected |
-|---|---|---|---|
-| 1 | All hikes to Slavnik | `list_activities(types=[Hike], place="slavnik")` | the two Slavnik hikes (exists today; moves into the file) |
-| 2 | Hiking near Jesenice | `find_place("Jesenice")` → the town first, `suggested_radius_m` 3000 → `activities_near(…, 3000, types=[Hike])` | the hike up from Jesenice; not the walk in town; not the Slavnik hikes |
-| 3 | Hiking near Jesenice, none close | the same on a fixture with no hike inside 3 km | `total` 0, `nearest` is the hike 12 km away |
-| 4 | Rides over Vršič | `find_place("Vršič")` → "Prelaz Vršič" first (a fixture ride passes it), ahead of an exact-name peak "Vršič" with no activity nearby → `activities_near(…, 200, types=[Ride])` | the Vršič ride |
-| 5 | Walks around Lake Bled | `find_place("lake bled")` → Blejsko jezero, `match` "alternative", `matched_name` "Lake Bled" → `activities_near(…, 500, types=[Walk])` | the lake walk |
-| 6 | Runs from Ljubljana | `find_place("ljubljana")` → the city, not the peak of the same name → `activities_near(…, 5000, mode="start", types=[Run])` | the two runs that start there |
-| 7 | Šmarna gora, typed without accents | `list_activities(text="smarna gora")`, and `name_contains="smarna"` | the activities named or placed at Šmarna gora |
-| 8 | Cold rainy walks | `list_activities(types=[Walk], text="cold rain")` | the walk whose description says "Rain, Cold". Not a WeightTraining. The row has no description |
-| 9 | Hikes over 1,000 m of climbing in a given year | `list_activities(types=[Hike], min_gain_m=1000, date_from=…, date_to=…)` | the one big hike; a hike with unknown gain doesn't pass |
-| 10 | A place in a country not loaded | `find_place("Odense")` | no candidates; the rules name the loaded countries |
-| 11 | A typo | `find_place("slavnk")` | Slavnik, `match` "similar" |
+| # | Query | Tool calls | Expected | Plan |
+|---|---|---|---|---|
+| 1 | All hikes to Slavnik | `list_activities(types=[Hike], place="slavnik")` | the two Slavnik hikes (exists today; moves into the file) | 2 |
+| 2 | Hiking near Jesenice | `find_place("Jesenice")` → the Slovenian candidates first (the Czech ones have no activities nearby), the town with `suggested_radius_m` 3000 → `activities_near(…, 3000, types=[Hike])` | the hike up from Jesenice; not the walk in town; not the Slavnik hikes | 1 |
+| 3 | Hiking near Jesenice, none close | the same on a fixture with no hike inside 3 km | `total` 0, `nearest` is the hike 12 km away | 1 |
+| 4 | Slavnik, when the mock puts the Serbian village first | `find_place("Slavnik")` | the SI peak first, because of the hikes nearby | 1 |
+| 5 | Walks around Lake Bled | `find_place("Lake Bled")` → Blejsko jezero, `suggested_radius_m` 500 → `activities_near(…, 500, types=[Walk])` | the lake walk | 1 |
+| 6 | Runs from Ljubljana | `find_place("Ljubljana")` → the city → `activities_near(…, 5000, mode="start", types=[Run])` | the two runs that start there | 1 |
+| 7 | Rides over Vršič | `list_activities(types=[Ride], text="vršič")` | the Vršič ride, through its place name "Prelaz Vršič" | 2 |
+| 8 | Šmarna gora, typed without accents | `list_activities(text="smarna gora")`, and `name_contains="smarna"` | the activity at Šmarna gora | 2 |
+| 9 | Cold rainy walks | `list_activities(types=[Walk], text="cold rain")` | the walk whose description says "Rain, Cold". Not a WeightTraining. The row has no description | 2 |
+| 10 | Hikes over 1,000 m of climbing in a given year | `list_activities(types=[Hike], min_gain_m=1000, date_from=…, date_to=…)` | the one big hike; a hike with unknown gain doesn't pass | 2 |
 
 ## Sizes and budget
 
 - **The database: no change** (45.6 MB today). The text table is TEMP, on
   the server's connection, and never written to the file.
-- **The gazetteer file:** about 28 MB (13.6 MB gzipped) from today's
-  snapshots plus the new kinds. That's a few thousand towns and huts on
-  top of 328k points, well under 1 MB, to be measured after the refetch.
-  The MCP server downloads it once per `places:update`. CI, the deploy
-  and the site never do.
-- **The refresh's points file:** unchanged in shape, about 24 MB. It gets
-  a new name once, because the refetch makes new snapshots.
-- **Snapshots in the archive:** slightly larger, from the two new
-  statements.
-- **Vectors:** none.
+- **The place cache** (`data/mcp/places-v2.json`): a few KB per hundred
+  names. It's local only and never uploaded.
+- **Gazetteer and vectors:** none.
 
-Plan 2 ends with these measured again on the owner's data and written into
-this section, as the place-tags design did.
+Plan 2 ends with the text-search numbers measured again on the owner's data
+and written into this section.
 
 ## Left to the builder
 
-- Function and module names.
-- Where `fold_name` moves (a leaf module that `ingest.gazetteer` and
-  `mcp_server.filters` both import).
-- Whether the gazetteer download reports progress the way the database
-  download does. It should, if `get_derived` can stream.
-- The exact `difflib` cutoff, if 0.8 lets in noise on the fixture.
+- Function names.
+- The exact Nominatim mock bodies, kept to the fields the code reads and
+  shaped like the 2026-11-22 responses.
 
 ## Calls I made (check these)
 
-- Towns, cities and huts go into the gazetteer. Localities, isolated
-  dwellings, shelters, valleys, waterfalls and protected areas don't.
-- Alternative names in Slovenian, English, German and Italian, plus
-  `alt_name` and `official_name`.
-- The gazetteer is its own derived file, not part of the points file or
-  the database.
-- Ranking puts places near the owner's activities first.
-- The suggested radii above.
+- `limit=10`, and re-ranking by activities nearby within 2 km of their
+  bounding boxes.
+- The suggested radii above, and the bounding-box rule for other kinds.
 - `activities_near` returns `nearest` when nothing is inside the radius.
+- A new cache file, with the old one deleted on start.
 - Text matches from the start of a word, not anywhere in it. This differs
   from the site's search, which matches anywhere (see the open questions).
 - `min_gain_m`/`max_gain_m` added.
 - No new search tool.
-- `data/mcp/places.json` is deleted on start.
-- `places:update --files-only`.
 
 ## Open questions for the owner
 
-- **More countries:** run `places:update` with DK (25 activities) and the
-  five countries with one or two activities each? Each is one more
-  Overpass request and a few MB of snapshot.
 - **The site's search matches anywhere in a word** ("rain" finds
   WeightTraining). Should it match from word starts like the MCP server?
   It's a one-line change in `activityMatcher`, but it changes how the page
@@ -620,3 +457,46 @@ this section, as the place-tags design did.
 - **Weather as columns:** the 248 weather lines could be parsed into
   temperature and conditions, for "walks below 0 °C". Word matching
   covers "cold" and "rain" but not numbers. Not in these plans.
+
+## Appendix: an offline gazetteer, measured but not built
+
+For whenever the no-network rule comes back. Measured 2026-11-22 on the
+archive's snapshots (AT 10.0 MB, IS 0.9 MB, IT 29.8 MB, NO 28.2 MB, SI
+3.9 MB).
+
+- **The refresh's points file can't serve as is.**
+  - It's 24,043,520 bytes (11.3 MB gzipped), 328,165 points, `name` only.
+  - It has no towns, cities or huts, so "Jesenice", "Bled", "Koper" and
+    "Bohinj" find nothing, and "Ljubljana" finds only a peak.
+- **Alternative names are already in the snapshots.** In SI, 4,122 of
+  19,144 points have `name:*`, `alt_name` or `official_name`.
+- **What would need adding,** counted with Overpass (SI / AT):
+
+  | Kind | SI | AT |
+  |---|---|---|
+  | `place=town\|city` (nodes) | 72 | 229 |
+  | `tourism=alpine_hut\|wilderness_hut` | 233 | 1,531 |
+  | `place=locality` | 2,006 | 20,317 |
+  | `place=isolated_dwelling` | 1,424 | 5,335 |
+  | `boundary=national_park\|protected_area` | 207 | 1,499 |
+- **Prototype layouts:**
+
+  | Layout | Bytes | gzip |
+  |---|---|---|
+  | points + folded names + `alt_names`, no index | 28,082,176 | 13.6 MB |
+  | the same + B-tree indexes | 39,796,736 | 18.5 MB |
+  | FTS5 trigram index | 51,482,624 | 22.3 MB |
+
+  A word-start scan of all names takes 50–80 ms in SQL. A typo fallback
+  takes 90 ms.
+- **Coverage:** 423 of 454 GPS activities start within 15 km of a loaded
+  country. 31 are in six countries not downloaded, 25 of them in Denmark.
+- **The way to build it:**
+  - a separate derived file, `derived/gazetteer/v1-<hash>.sqlite`, built by
+    `places:update` only
+  - fetched by the MCP server with the read-only token, which can list
+    `osm/` and `derived/` (checked)
+  - never in the database, and never pulled by CI
+
+  About 7 tasks. The first version of this design, in this branch's
+  history, has the details.
