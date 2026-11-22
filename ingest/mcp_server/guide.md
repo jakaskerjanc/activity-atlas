@@ -69,6 +69,9 @@ is downloading, or R2 could not be checked), tell the user in one line first.
 - `text` matches every word at the start of a word, ignoring case and
   accents, in the name, type, place name, route name and Strava description.
   Descriptions are searched but never returned.
+- When nothing is inside the radius, `activities_near` gives `nearest`: the
+  closest activity of the same filter within 50 km. Say how far it was rather
+  than just 'none'.
 
 ## Units
 

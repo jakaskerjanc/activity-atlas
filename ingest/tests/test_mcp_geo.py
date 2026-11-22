@@ -1,4 +1,5 @@
 import math
+import sqlite3
 
 import pytest
 
@@ -6,11 +7,25 @@ from ingest.mcp_server.database import Database
 from ingest.mcp_server.filters import ActivityFilter
 from ingest.mcp_server.geo import activities_near, closest_approach, haversine_m
 from ingest.tests.mcp_fixture import build_fixture_db
+from ingest.tests.place_fixture import add_place_activities
 
 
 @pytest.fixture
 def db(tmp_path):
     d = Database(build_fixture_db(str(tmp_path / "f.sqlite")))
+    yield d
+    d.close()
+
+
+@pytest.fixture
+def pdb(tmp_path):
+    """The MCP fixture plus the place activities, written before Database builds its text table."""
+    path = build_fixture_db(str(tmp_path / "f.sqlite"))
+    conn = sqlite3.connect(path)
+    add_place_activities(conn)
+    conn.commit()
+    conn.close()
+    d = Database(path)
     yield d
     d.close()
 
@@ -61,7 +76,6 @@ def test_filters_apply(db):
 
 def test_polyline_fallback(db):
     db.conn.close()
-    import sqlite3
     w = sqlite3.connect(db.path)
     w.execute("DELETE FROM streams WHERE file_sha256 = 'sha-hike1'")
     w.commit()
@@ -84,3 +98,37 @@ def test_radius_cap(db):
 def test_bad_mode(db):
     with pytest.raises(ValueError):
         activities_near(db, 46.0, 14.0, mode="middle")
+
+
+HIKES = ActivityFilter(types=["Hike"])
+
+
+def test_nothing_inside_reports_nearest(pdb):
+    r = activities_near(pdb, 46.432, 14.062, 3000, "route", ActivityFilter(types=["Hike"], date_to="2025-05-31"))
+    assert r["data"]["total"] == 0 and r["data"]["nearest"]["id"] == "far_hike"
+    assert 11500 < r["data"]["nearest"]["closest_m"] < 12500
+    assert any(x.startswith("nearest outside the radius: 1") for x in r["counted"]["rules"])
+    assert set(r["data"]["nearest"]) == {"id", "date_local", "type", "name", "closest_m"}
+
+
+def test_nearest_is_none_when_something_is_inside(pdb):
+    r = activities_near(pdb, 46.432, 14.062, 3000, "route", HIKES)
+    assert ids_of(r) == ["jes_hike"] and r["data"]["nearest"] is None
+    assert not any(x.startswith("nearest") for x in r["counted"]["rules"])
+
+
+def test_nearest_none_beyond_50_km(pdb):  # the Adriatic off Pula, over 50 km from every track
+    r = activities_near(pdb, 44.8, 13.5, 3000)
+    assert r["data"]["total"] == 0 and r["data"]["nearest"] is None
+    assert not any(x.startswith("nearest") for x in r["counted"]["rules"])
+
+
+def test_nearest_uses_the_mode(pdb):
+    """At jes_hike's top its route is inside 200 m; by start point it is about 2.3 km away, and at its
+    start, by end point, the same."""
+    top = (46.4392 + 2300 / 111195, 14.062)
+    assert ids_of(activities_near(pdb, *top, 200, "route", HIKES)) == ["jes_hike"]
+    for mode, point in (("start", top), ("end", (46.4392, 14.062))):
+        r = activities_near(pdb, *point, 200, mode, HIKES)
+        assert r["data"]["total"] == 0 and r["data"]["nearest"]["id"] == "jes_hike", mode
+        assert 2200 < r["data"]["nearest"]["closest_m"] < 2400, mode
