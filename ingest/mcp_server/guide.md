@@ -13,7 +13,7 @@ is downloading, or R2 could not be checked), tell the user in one line first.
 
 - Totals, averages and trends by week/month/year and type → `summarize`.
 - Finding activities → `list_activities` (filters: types, local date range,
-  name, distance, moving time, has HR/GPS, place).
+  name, text, distance, moving time, has HR/GPS, place).
 - One activity in full (laps, HR zones, gear, Strava/Garmin links) →
   `get_activity`; its samples along the route → `activity_samples`.
 - Summits and passes the owner has reached ("how often have I been up
@@ -23,7 +23,10 @@ is downloading, or R2 could not be checked), tell the user in one line first.
 - Anywhere else (a town, a lake, a point the owner may only have passed): first
   `find_place` to turn a name into coordinates (confirm with the user when
   several candidates fit), then `activities_near`. Use coordinates you already
-  know only when you are sure of them.
+  know only when you are sure of them. For a summit or pass the owner reached,
+  use `places` and the place filter first, or `text` to find a place by part
+  of its name; Nominatim may not list it ("Vršič" returns ten peaks and not
+  the pass).
 - Daily wellness (resting HR, HRV, sleep, steps, stress, body battery,
   respiration, weight) → `wellness`; one day's all-day series → `wellness_series`.
 - Anything else → `query` (read-only SQL). Prefer the tools above when they
@@ -63,6 +66,9 @@ is downloading, or R2 could not be checked), tell the user in one line first.
   has reached, prefer it over `find_place` + `activities_near`.
 - Same-route groups hold visible activities of one type with a similar
   distance that follow the same line. Their names are automatic too.
+- `text` matches every word at the start of a word, ignoring case and
+  accents, in the name, type, place name, route name and Strava description.
+  Descriptions are searched but never returned.
 
 ## Units
 

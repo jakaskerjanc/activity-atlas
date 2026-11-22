@@ -34,7 +34,8 @@ def test_query_params(db):
 
 def test_blocked_columns_read_as_null(db):
     assert run_query(db, "select raw from daily_stats where raw is not null")["data"]["rows"] == []
-    assert run_query(db, "select summary_json, reported from activity_sources")["data"]["rows"] == [[None, None]]
+    rows = run_query(db, "select summary_json, reported from activity_sources")["data"]["rows"]
+    assert rows == [[None, None]] * 4
 
 
 @pytest.mark.parametrize("sql", [
@@ -47,7 +48,7 @@ def test_blocked_columns_read_as_null(db):
 def test_query_refuses_writes(db, sql):
     with pytest.raises(QueryError):
         run_query(db, sql)
-    assert run_query(db, "select count(*) from activities")["data"]["rows"][0][0] == 12
+    assert run_query(db, "select count(*) from activities")["data"]["rows"][0][0] == 13
 
 
 @pytest.mark.parametrize("sql", ["select * from dbstat", "select * from sqlite_dbpage"])
@@ -79,4 +80,4 @@ def test_internal_conn_is_read_only(db):
 
 def test_reopen_keeps_working(db):
     db.reopen()
-    assert run_query(db, "select count(*) from activities")["data"]["rows"][0][0] == 12
+    assert run_query(db, "select count(*) from activities")["data"]["rows"][0][0] == 13

@@ -81,8 +81,8 @@ def test_v4_database_group_tools_are_tool_errors(ctx):  # review focus 5
                        ("list_activities", {"place": "Slavnik"}), ("summarize", {"place": "Slavnik"})]:
         with pytest.raises(ToolError, match="no places yet"):
             asyncio.run(server.call_tool(name, args))
-    assert call(ctx, "list_activities", {})["data"]["total"] == 11
-    assert call(ctx, "summarize", {"period": "all", "by_type": False})["data"]["rows"][0]["count"] == 11
+    assert call(ctx, "list_activities", {})["data"]["total"] == 12
+    assert call(ctx, "summarize", {"period": "all", "by_type": False})["data"]["rows"][0]["count"] == 12
 
 
 def test_every_result_has_as_of_and_counted(ctx):
@@ -96,6 +96,14 @@ def test_flat_filter_params(ctx):
     assert [row["id"] for row in r["data"]["rows"]] == ["run3"]
 
 
+def test_list_activities_takes_text(ctx):
+    r = call(ctx, "list_activities", {"text": "cold rain"})
+    assert [row["id"] for row in r["data"]["rows"]] == ["walk1"] and "Rain" not in json.dumps(r)
+    assert 'text: "cold rain" (whole words, case and accents ignored; name, type, place, route or description)' \
+        in r["counted"]["rules"]
+    assert call(ctx, "summarize", {"text": "slavnik", "period": "all"})["data"]["rows"][0]["count"] == 2
+
+
 def test_near_with_place(ctx):
     place = call(ctx, "find_place", {"query": "Triglav"})["data"]["candidates"][0]
     r = call(ctx, "activities_near", {"lat": place["lat"], "lon": place["lon"]})
@@ -103,7 +111,7 @@ def test_near_with_place(ctx):
 
 
 def test_query_tool(ctx):
-    assert call(ctx, "query", {"sql": "select count(*) from activities"})["data"]["rows"] == [[12]]
+    assert call(ctx, "query", {"sql": "select count(*) from activities"})["data"]["rows"] == [[13]]
 
 
 def test_expected_errors_reach_the_model(ctx):
