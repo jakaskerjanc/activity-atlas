@@ -122,7 +122,7 @@ def activities_near(db: Database, lat: float, lon: float, radius_m: float = DEFA
     hits = _hits(db, lat, lon, radius_m, mode, where, params)
     rules.append(f"within {radius_m:g} m of {lat:g}, {lon:g} ({MODES[mode]})")
     nearest = None
-    if not hits:
+    if not hits and radius_m < MAX_RADIUS_M:  # at the maximum, a second pass would repeat the first
         wider = _hits(db, lat, lon, MAX_RADIUS_M, mode, where, params)
         if wider:
             nearest = {k: wider[0][k] for k in ("id", "date_local", "type", "name", "closest_m")}

@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:**
-- `list_activities` and `summarize` take a `text` filter. It matches whole words in the name, type, place, route and Strava descriptions, with case and accents ignored.
+- `list_activities` and `summarize` take a `text` filter. It matches each word from the start of a word in the name, type, place, route and Strava descriptions, with case and accents ignored.
 - `name_contains` ignores accents.
 - `activities_near` says how close the nearest activity came when none is inside the radius.
 - "All hikes to Slavnik", "hiking near Jesenice" and six more example queries pass as tests.
@@ -30,7 +30,7 @@
 
   The parts are joined with `"\n"` and folded with `filters.fold_name`.
 - **Matching:** the query is folded with `fold_name` and split on whitespace into words. An activity matches when every word occurs in its search text at a word start: position 0, or after a character that is neither a letter nor a digit (`not ch.isalnum()`). A query with no words is the same as no `text` filter.
-- **`counted.rules` text for `text`,** copied verbatim: `text: "{query}" (whole words, case and accents ignored; name, type, place, route or description)`.
+- **`counted.rules` text for `text`,** copied verbatim: `text: "{query}" (each word from the start of a word, case and accents ignored; name, type, place, route or description)`.
 - **`name_contains`** becomes `instr(fold(a.name), ?) > 0`, with the parameter `fold_name(value)`. Its rule text stays `name contains {value!r}`.
 - **Descriptions:** never in a tool result, not in any row, and not in `get_activity`. `query` still returns `summary_json` as NULL, and can't read `temp.activity_text`: a query that names it fails.
 - **`nearest` in `activities_near`:** every result has `data["nearest"]`.
@@ -96,7 +96,7 @@ docs/2026-11-22-search-and-gazetteer-design.md   # sizes measured
 
     A reopen rebuilds it.
   - `ActivityFilter.text: str | None = None`. In `where_sql`, it adds `a.id IN (SELECT id FROM temp.activity_text WHERE words_match(folded, ?))`, with the parameter `json.dumps(fold_name(text).split())`, and the rule from the Global Constraints.
-  - The server's `list_activities` and `summarize` take `text`, documented as "words to find (whole words, case and accents ignored) in the name, type, place, route or description".
+  - The server's `list_activities` and `summarize` take `text`, documented as "words to find, each from the start of a word (case and accents ignored), in the name, type, place, route or description".
   - `guide.md`:
     - the "Finding activities" line lists `text`
     - "Definitions" gets: "`text` matches every word at the start of a word, ignoring case and accents, in the name, type, place name, route name and Strava description. Descriptions are searched but never returned."
@@ -126,11 +126,11 @@ def test_query_tool_cannot_read_the_text_table(db):
     with pytest.raises(QueryError): run_query(db, "SELECT words_match('a', '[]')")
 
 # test_mcp_activities.py
-def test_text_filter_whole_words(db):
+def test_text_filter_from_word_starts(db):
     assert ids_of(list_activities(db, ActivityFilter(text="cold rain"))) == ["walk1"]   # not wt1
     r = list_activities(db, ActivityFilter(text="SMARNA"))
     assert ids_of(r) == ["smarna1"]
-    assert 'text: "SMARNA" (whole words, case and accents ignored; name, type, place, route or description)' \
+    assert 'text: "SMARNA" (each word from the start of a word, case and accents ignored; name, type, place, route or description)' \
         in r["counted"]["rules"]
 
 def test_description_never_in_rows(db):

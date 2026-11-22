@@ -6,12 +6,16 @@ search tests. Tracks are synthetic straight lines (all visible, gain NULL).
 - far_hike (2025-05-01): its closest point is 12 km south of the town, nearer than hike1 (about 18 km).
 - bled_walk: along the shore 500 m south of Blejsko jezero's centre (46.364, 14.094).
 - lj_run1, lj_run2: runs that start 500 m and 1.5 km from Ljubljana (46.050, 14.507).
-- vrsic_ride: Kranjska Gora over Prelaz Vršič (46.435, 13.744) to Trenta, about 24 km from Jesenice;
-  its name says nothing of Vršič, which only its place `vrsic1` names.
+- vrsic_ride: Kranjska Gora over Prelaz Vršič (46.435, 13.744) to Trenta, about 22 km from
+  Jesenice at its closest point; its name says nothing of Vršič, which only its place `vrsic1` names.
 """
-from ingest.tests.mcp_fixture import _insert_activity
+import sqlite3
+
+from ingest.tests.mcp_fixture import _insert_activity, build_fixture_db
 
 M_PER_DEG_LAT = 111_195  # haversine's metres per degree of latitude
+JES_HIKE_START = (46.4392, 14.062)
+JES_HIKE_LENGTH_M = 2300  # due north
 
 
 def _line(*points: tuple[float, float], n: int = 10) -> dict:
@@ -28,9 +32,9 @@ def _line(*points: tuple[float, float], n: int = 10) -> dict:
 
 def add_place_activities(conn) -> None:
     """Insert the activities above into an open fixture database; the caller commits."""
-    jes_start = (46.4392, 14.062)
+    jes_top = (JES_HIKE_START[0] + JES_HIKE_LENGTH_M / M_PER_DEG_LAT, JES_HIKE_START[1])
     _insert_activity(conn, "jes_hike", "Hike", "2025-06-01T07:00:00+00:00", name="Above Jesenice",
-                     track=_line(jes_start, (jes_start[0] + 2300 / M_PER_DEG_LAT, 14.062)))
+                     track=_line(JES_HIKE_START, jes_top))
     _insert_activity(conn, "jes_walk", "Walk", "2025-06-02T16:00:00+00:00", name="Evening in town",
                      track=_line((46.431, 14.058), (46.433, 14.066)))
     far = 46.432 - 12_000 / M_PER_DEG_LAT
@@ -50,6 +54,16 @@ def add_place_activities(conn) -> None:
     conn.execute("INSERT INTO activity_groups (activity_id, place_id, route_id) VALUES ('vrsic_ride', 'vrsic1', NULL)")
 
 
+def build_place_db(path: str) -> str:
+    """The MCP fixture plus the activities above, written before Database builds its text table."""
+    build_fixture_db(path)
+    conn = sqlite3.connect(path)
+    add_place_activities(conn)
+    conn.commit()
+    conn.close()
+    return path
+
+
 def _nominatim(name: str, display_name: str, category: str, type_: str, addresstype: str, lat: float, lon: float,
                half_deg: float, extratags: dict) -> dict:
     """One /search?format=jsonv2&extratags=1 result, with numbers as strings the way Nominatim sends them."""
@@ -60,7 +74,8 @@ def _nominatim(name: str, display_name: str, category: str, type_: str, addresst
 
 
 # Shaped like what Nominatim returned on 2026-11-22 for these names, cut to find_place's limit of 5:
-# the same fields, kinds and order (for Jesenice the SI municipality, the SI town, then Czech places).
+# the same fields, kinds and order (for Jesenice the SI municipality, the SI town, then Czech places; for
+# Vršič peaks of that name, none of them the pass).
 # Coordinates, boxes and extratags are close, not copied; the places the tests use match the activities
 # above.
 NOMINATIM: dict[str, list[dict]] = {
@@ -85,6 +100,18 @@ NOMINATIM: dict[str, list[dict]] = {
                    46.050, 14.507, 0.08, {"capital": "yes", "wikipedia": "sl:Ljubljana"}),
         _nominatim("Ljubljana", "Ljubljana, Upravna enota Ljubljana, Slovenija", "boundary", "administrative",
                    "municipality", 46.060, 14.520, 0.12, {"wikipedia": "sl:Mestna občina Ljubljana"}),
+    ],
+    "vršič": [
+        _nominatim("Vršič", "Vršič, Občina Bovec, Slovenija", "natural", "peak", "peak",
+                   46.376, 13.634, 0.001, {"ele": "1897"}),
+        _nominatim("Vršič", "Vršič, Občina Kobarid, Slovenija", "natural", "peak", "peak",
+                   46.230, 13.640, 0.001, {"ele": "1323"}),
+        _nominatim("Vršič", "Vršič, Občina Tolmin, Slovenija", "natural", "peak", "peak",
+                   46.196, 13.812, 0.001, {"ele": "1194"}),
+        _nominatim("Vršič", "Vršič, Občina Cerkno, Slovenija", "natural", "peak", "peak",
+                   46.141, 13.957, 0.001, {"ele": "1034"}),
+        _nominatim("Vršič", "Vršič, Občina Idrija, Slovenija", "natural", "peak", "peak",
+                   45.995, 14.041, 0.001, {"ele": "892"}),
     ],
 }
 

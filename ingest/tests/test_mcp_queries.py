@@ -4,7 +4,6 @@ Nominatim is mocked (place_fixture.NOMINATIM). Where a query needs a radius, the
 """
 import asyncio
 import json
-import sqlite3
 
 import pytest
 
@@ -13,17 +12,12 @@ from ingest.mcp_server.freshness import Syncer
 from ingest.mcp_server.places import PlaceFinder
 from ingest.mcp_server.server import ServerContext, build_server
 from ingest.tests import place_fixture
-from ingest.tests.mcp_fixture import build_fixture_db
 
 
 @pytest.fixture
 def qctx(tmp_path):
     """The MCP fixture plus the place activities, written before Database builds its text table."""
-    path = build_fixture_db(str(tmp_path / "f.sqlite"))
-    conn = sqlite3.connect(path)
-    place_fixture.add_place_activities(conn)
-    conn.commit()
-    conn.close()
+    path = place_fixture.build_place_db(str(tmp_path / "f.sqlite"))
     place_fixture.calls.clear()
     c = ServerContext(db=Database(path), syncer=Syncer(path, None),
                       places=PlaceFinder(str(tmp_path / "places.json"), fetch=place_fixture.fetch))
@@ -96,7 +90,9 @@ def test_rides_over_vrsic(qctx):
     """Rides over Vršič"""
     r = call(qctx, "list_activities", {"types": ["Ride"], "text": "vršič"})
     assert ids_of(r) == ["vrsic_ride"]  # its name doesn't say Vršič; its place "Prelaz Vršič" does
-    assert candidates(qctx, "Vršič") == []  # not in the mock, as Nominatim doesn't list the pass
+    found = candidates(qctx, "Vršič")  # Nominatim lists peaks named Vršič, not the pass
+    assert len(found) == 5 and all(c["country"] == "Slovenija" for c in found)
+    assert not any(c["kind"].endswith(("mountain_pass", "saddle")) for c in found)
 
 
 def test_smarna_gora_without_accents(qctx):

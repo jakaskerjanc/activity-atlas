@@ -3,11 +3,12 @@ import sqlite3
 
 import pytest
 
+from ingest.mcp_server import geo
 from ingest.mcp_server.database import Database
 from ingest.mcp_server.filters import ActivityFilter
-from ingest.mcp_server.geo import activities_near, closest_approach, haversine_m
+from ingest.mcp_server.geo import MAX_RADIUS_M, activities_near, closest_approach, haversine_m
 from ingest.tests.mcp_fixture import build_fixture_db
-from ingest.tests.place_fixture import add_place_activities
+from ingest.tests.place_fixture import JES_HIKE_LENGTH_M, JES_HIKE_START, M_PER_DEG_LAT, build_place_db
 
 
 @pytest.fixture
@@ -20,12 +21,7 @@ def db(tmp_path):
 @pytest.fixture
 def pdb(tmp_path):
     """The MCP fixture plus the place activities, written before Database builds its text table."""
-    path = build_fixture_db(str(tmp_path / "f.sqlite"))
-    conn = sqlite3.connect(path)
-    add_place_activities(conn)
-    conn.commit()
-    conn.close()
-    d = Database(path)
+    d = Database(build_place_db(str(tmp_path / "f.sqlite")))
     yield d
     d.close()
 
@@ -123,12 +119,23 @@ def test_nearest_none_beyond_50_km(pdb):  # the Adriatic off Pula, over 50 km fr
     assert not any(x.startswith("nearest") for x in r["counted"]["rules"])
 
 
+def test_no_second_pass_at_the_maximum_radius(pdb, monkeypatch):
+    """At MAX_RADIUS_M a nearest pass would repeat the first exactly, so it doesn't run."""
+    passes = []
+    hits = geo._hits
+    monkeypatch.setattr(geo, "_hits", lambda *a: passes.append(a[3]) or hits(*a))
+    r = activities_near(pdb, 44.8, 13.5, MAX_RADIUS_M)
+    assert r["data"]["total"] == 0 and r["data"]["nearest"] is None and passes == [MAX_RADIUS_M]
+    activities_near(pdb, 44.8, 13.5, 3000)
+    assert passes == [MAX_RADIUS_M, 3000, MAX_RADIUS_M]
+
+
 def test_nearest_uses_the_mode(pdb):
     """At jes_hike's top its route is inside 200 m; by start point it is about 2.3 km away, and at its
     start, by end point, the same."""
-    top = (46.4392 + 2300 / 111195, 14.062)
+    top = (JES_HIKE_START[0] + JES_HIKE_LENGTH_M / M_PER_DEG_LAT, JES_HIKE_START[1])
     assert ids_of(activities_near(pdb, *top, 200, "route", HIKES)) == ["jes_hike"]
-    for mode, point in (("start", top), ("end", (46.4392, 14.062))):
+    for mode, point in (("start", top), ("end", JES_HIKE_START)):
         r = activities_near(pdb, *point, 200, mode, HIKES)
         assert r["data"]["total"] == 0 and r["data"]["nearest"]["id"] == "jes_hike", mode
         assert 2200 < r["data"]["nearest"]["closest_m"] < 2400, mode

@@ -164,8 +164,8 @@ visible), 454 with GPS. By `dbstat`:
 - **The same index built in memory by the MCP server:** 4.8 ms.
 - **An id → folded-text table in TEMP on the server's connection:** 21.6 ms
   to build, including parsing the 393 descriptions out of `summary_json`.
-  A two-word query takes 0.5 ms. Scanning 10,940 rows (20× today) in
-  Python takes 6 ms.
+  The bare match for a two-word query takes 0.5 ms. Scanning 10,940 rows
+  (20× today) in Python takes 6 ms.
 - **FTS5's `unicode61` doesn't fold đ, ł, ø or ß** (tested: "durdevac",
   "lodz", "ovre" and "strasse" find nothing). `fold_name` folds all four,
   as the site's `normalizeName` does.
@@ -193,7 +193,7 @@ filter, not `find_place`.
   gives 30.
 - **"Hiking near Jesenice"**: `activities_near` finds no hike within 1, 3 or
   5 km of the town. One ride passes 473 m from it, and the nearest hikes
-  come 12.3 km away. An empty answer with nothing else in it would leave
+  come 11.8 km away. An empty answer with nothing else in it would leave
   the LLM guessing. That's why `activities_near` gains `nearest`.
 - **"Rides over Vršič"**: the place exists (Prelaz Vršič, 1 activity), and
   `activities_near` at 200 m finds the same ride. But `place="Vršič"` fails
@@ -216,9 +216,9 @@ filter, not `find_place`.
 When `total` is 0, the result gains `nearest`: the activity of the same
 filter and mode whose route came closest, searched out to `MAX_RADIUS_M`
 (50 km), as `{id, date_local, type, name, closest_m}`, or null. The counted
-rule says "nearest outside the radius: 12.3 km". On real data this turns
+rule says "nearest outside the radius: 11.8 km". On real data this turns
 "hiking near Jesenice" into "no hikes within 3 km; the closest came
-12.3 km away" instead of a bare zero. It costs a second candidate pass with a
+11.8 km away" instead of a bare zero. It costs a second candidate pass with a
 wider box, and only when the first finds nothing.
 
 ### What changes for the owner
@@ -268,8 +268,8 @@ activities, or owner-written notes that run to paragraphs.
   `words_match` is a deterministic Python function registered on `conn`.
   It's one function, not one `instr` per word, because "from the start of
   a word" doesn't fit `instr`.
-- **The counted rule:** `text: "cold rain" (whole words, case and accents
-  ignored; name, type, place, route or description)`. Rows never carry the
+- **The counted rule:** `text: "cold rain" (each word from the start of a
+  word, case and accents ignored; name, type, place, route or description)`. Rows never carry the
   description.
 - **`name_contains`** stays, for compatibility, but folds accents now
   (`instr(fold(a.name), fold(?))`). "smarna" finds the 5 it misses today.
@@ -286,8 +286,8 @@ activities, or owner-written notes that run to paragraphs.
 if it needs to, that's a parameter later. A separate `search_activities`
 tool would repeat every filter and make the LLM choose between two tools
 that do the same thing. The guide gets one line: "Words →
-`list_activities(text=…)`: whole words, case and accents ignored, in name,
-type, place, route and description." The `counted`/`as_of` conventions are
+`list_activities(text=…)`: each word from the start of a word, case and
+accents ignored, in name, type, place, route and description." The `counted`/`as_of` conventions are
 unchanged.
 
 ## Semantic search: not yet
@@ -365,9 +365,10 @@ Measured again after the build, read-only on the same synced copy
 - **Building `activity_text`:** 18 ms (median of 10; 17 to 25 ms), one row
   for each of the 547 activities.
 - **A two-word `list_activities(text=…)` call:** about 4 ms, the whole call
-  with its rows ("cold rain" 3.8 ms, "smarna gora" 3.6 ms).
-- **Hits as words:** "rain" 20 and "cold" 54, as measured before the
-  build. "cold rain" together: 1.
+  with its rows ("cold rain" 3.8 ms, "smarna gora" 3.6 ms). The bare match
+  inside it is the 0.5 ms measured before the build.
+- **Hits as words:** "rain" 20 and "cold" 54, the same as measured
+  before the build. "cold rain" together: 1.
 - **`nearest`, when nothing is inside the radius:** it searches again out
   to 50 km, so it costs what a 50 km search costs.
   - Hikes near Jesenice, 3,000 m: 525 ms, nearest 11.8 km away.

@@ -95,7 +95,7 @@ def where_sql(f: ActivityFilter) -> tuple[str, list, list[str]]:
     if words:
         conds.append("a.id IN (SELECT id FROM temp.activity_text WHERE words_match(folded, ?))")
         params.append(json.dumps(words))
-        rules.append(f'text: "{f.text}" (whole words, case and accents ignored; '
+        rules.append(f'text: "{f.text}" (each word from the start of a word, case and accents ignored; '
                      'name, type, place, route or description)')
     if f.min_distance_m is not None:
         conds.append("a.distance >= ?")

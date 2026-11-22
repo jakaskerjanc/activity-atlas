@@ -62,10 +62,11 @@ def test_name_contains_ignores_accents(db):
     assert ids_of(r) == ["smarna1"] and "name contains 'ŠMARNA'" in r["counted"]["rules"]
 
 
-TEXT_RULE = '(whole words, case and accents ignored; name, type, place, route or description)'
+TEXT_RULE = ('(each word from the start of a word, case and accents ignored; '
+             'name, type, place, route or description)')
 
 
-def test_text_filter_whole_words(db):
+def test_text_filter_from_word_starts(db):
     assert ids_of(list_activities(db, ActivityFilter(text="cold rain"))) == ["walk1"]   # not wt1
     r = list_activities(db, ActivityFilter(text="SMARNA"))
     assert ids_of(r) == ["smarna1"]
@@ -86,7 +87,9 @@ def test_description_never_in_rows(db):
     assert "Rain" not in json.dumps(get_activity(db, "walk1"))
 
 
-@pytest.mark.parametrize("q", ["o'clock", "100%", "a_b", "'; DROP TABLE activities; --"])
+# "r_in", "ra%" and "rai." would find walk1's "Rain" as a LIKE pattern or a regex; as words they don't.
+@pytest.mark.parametrize("q", ["o'clock", "100%", "a_b", "'; DROP TABLE activities; --",
+                               "r_in", "ra%", "rai."])
 def test_text_is_never_a_pattern(db, q):
     assert list_activities(db, ActivityFilter(text=q))["data"]["total"] == 0
 

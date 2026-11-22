@@ -99,8 +99,8 @@ def test_flat_filter_params(ctx):
 def test_list_activities_takes_text(ctx):
     r = call(ctx, "list_activities", {"text": "cold rain"})
     assert [row["id"] for row in r["data"]["rows"]] == ["walk1"] and "Rain" not in json.dumps(r)
-    assert 'text: "cold rain" (whole words, case and accents ignored; name, type, place, route or description)' \
-        in r["counted"]["rules"]
+    assert ('text: "cold rain" (each word from the start of a word, case and accents ignored; '
+            'name, type, place, route or description)') in r["counted"]["rules"]
     assert call(ctx, "summarize", {"text": "slavnik", "period": "all"})["data"]["rows"][0]["count"] == 2
 
 

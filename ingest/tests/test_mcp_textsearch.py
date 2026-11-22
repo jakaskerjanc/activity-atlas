@@ -112,3 +112,11 @@ def test_query_tool_cannot_read_the_text_table(db):
         run_query(db, "SELECT words_match('a', '[]')")
     with pytest.raises(QueryError):
         run_query(db, "SELECT fold(name) FROM activities")
+    with pytest.raises(QueryError):  # the temp schema is not one of the tables the query tool may read
+        run_query(db, "SELECT * FROM sqlite_temp_master")
+    with pytest.raises(QueryError):
+        run_query(db, "SELECT * FROM temp.sqlite_master")
+
+
+def test_text_table_is_kept_in_memory(db):
+    assert db.conn.execute("PRAGMA temp_store").fetchone()[0] == 2  # MEMORY

@@ -69,7 +69,9 @@ def _fold(s: str | None) -> str | None:
 
 def _add_text_search(conn: sqlite3.Connection) -> None:
     """The functions and TEMP table the text and name filters use. A TEMP table is the
-    connection's own, so it can be written on a read-only one and ``query_conn`` cannot see it."""
+    connection's own, so it can be written on a read-only one and ``query_conn`` cannot see it. It is
+    kept in memory, so opening never needs a writable temp directory."""
+    conn.execute("PRAGMA temp_store = MEMORY")
     conn.create_function("fold", 1, _fold, deterministic=True)
     conn.create_function("words_match", 2, words_match, deterministic=True)
     conn.execute("CREATE TEMP TABLE activity_text (id TEXT PRIMARY KEY, folded TEXT NOT NULL) WITHOUT ROWID")
