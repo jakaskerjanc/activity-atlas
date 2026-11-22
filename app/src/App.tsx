@@ -193,13 +193,6 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The same-route group whose table is open (see selectedRoute below).
   const [openRoute, setOpenRoute] = useState<string | null>(null);
-  // The link's camera, for the map to open on. A selection made before the map is first
-  // shown (an activity opened from the Activities page) drops it, so the map flies to
-  // that activity rather than holding the link's view.
-  const linkCameraRef = useRef(link.camera ?? null);
-  const releaseLinkCamera = () => {
-    linkCameraRef.current = null;
-  };
   // The hovered route, and the shared chart/map cursor (an index into the selected
   // activity's detail samples). Both change with every pointer move, so they are live
   // values rather than state: a move re-renders the map and the charts that read them
@@ -337,7 +330,6 @@ export default function App() {
     setView("map");
   };
   const selectActivity = (id: string) => {
-    releaseLinkCamera();
     setSelectedId(id);
     setCityProfile(null);
     // On desktop show the activity's stats; the phone's sheet stays at its peek, so the
@@ -847,7 +839,7 @@ export default function App() {
                   cityRoute={cityRoute}
                   cityRouteEpoch={cityEpoch}
                   onRoutesShown={() => setMapDrawn(true)}
-                  initialCamera={linkCameraRef.current}
+                  initialCamera={link.camera ?? null}
                   onCameraChange={setUrlCamera}
                 />
               </Suspense>

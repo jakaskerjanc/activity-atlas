@@ -171,8 +171,7 @@ export interface MapViewProps {
   onRoutesShown?: () => void;
   /**
    * A camera to open on instead of the home frame (a deep link's), read once when the map
-   * is made. It also holds off the fly-to on the selection the map opens with, so the
-   * link's own view wins; picking another activity flies as usual.
+   * is made. A selected activity still flies to its route, as it always does.
    */
   initialCamera?: Camera | null;
   /** The camera after each move, or null while it is on the opening home frame. */
@@ -245,10 +244,8 @@ function MapViewInner(props: MapViewProps) {
   const tipIdRef = useRef<string | null>(null);
   // The opening view has been framed on the activities (once per data load).
   const framedRef = useRef(false);
-  // The camera the map was opened on, when it was given one (initialCamera): no home
-  // frame then. `held` holds off fitSelected while the selection is still `selectedId`,
-  // the one the map opened with.
-  const linkedRef = useRef<{ selectedId: string | null; held: boolean } | null>(null);
+  // The map was opened on a given camera (initialCamera): no home frame then.
+  const linkedRef = useRef(false);
   // The home frame frameHome jumped to, so a move that ends there (a resize) reports no
   // camera; and true while it jumps, so that jump reports nothing itself.
   const homeRef = useRef<Camera | null>(null);
@@ -556,11 +553,6 @@ function MapViewInner(props: MapViewProps) {
     const map = mapRef.current;
     const p = propsRef.current;
     if (!map || !loadedRef.current || p.selectedId == null || !p.data) return;
-    const linked = linkedRef.current;
-    if (linked?.held) {
-      if (p.selectedId === linked.selectedId) return;
-      linked.held = false;
-    }
     const feature = p.data.features.find((f) => f.properties.id === p.selectedId);
     if (!feature) return;
     const bounds = new mapboxgl.LngLatBounds();
@@ -850,7 +842,7 @@ function MapViewInner(props: MapViewProps) {
       ? homeCamera(p.visible.length ? p.visible : p.data.features, el.clientWidth, el.clientHeight, p.insets)
       : null;
     const start = p.initialCamera ?? home;
-    if (p.initialCamera) linkedRef.current = { selectedId: p.selectedId, held: true };
+    linkedRef.current = p.initialCamera != null;
     const map = new mapboxgl.Map({
       container: el,
       style: STYLE_URL[p.theme],

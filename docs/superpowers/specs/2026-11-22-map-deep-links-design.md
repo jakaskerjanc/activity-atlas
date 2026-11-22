@@ -16,7 +16,7 @@ page. The site is a static SPA, so all of it lives in the URL.
 - Non-goals: replay state, theme (a local preference), the Activities page's search and
   sort, a shown city route, panel collapse, the month-isolation memory. Bearing and pitch
   are not encoded: rotation and pitch are disabled on the map.
-- Anti-goals: extra route redraws or replays, the flicker fixed in #13 / #43, a camera
+- Anti-goals: extra route redraws or replays, the flicker fixed in #13 / #43, a home-fit
   jump on load when the URL names a camera, a busy URL on the default map, a crash on a
   stale or hand-edited link.
 
@@ -71,9 +71,11 @@ page. The site is a static SPA, so all of it lives in the URL.
   the same update that creates it today, together with the selection and group, so the
   first render with data is already the linked state: no second filter pass.
 - The map mounts when the routes are in (as today). A URL camera becomes the map's
-  starting camera: it skips the home fit and the fly-to on the linked selection, and the
-  hold ends when the selection changes. Without a URL camera, a linked selection flies to
-  its route as an activity opened from the Activities page does.
+  starting camera in place of the home fit. A linked selection still flies to its route,
+  as an activity opened from the Activities page does: holding the link's camera over the
+  selection kept the map from ever framing that activity again (re-opening it, or
+  deselecting and picking it again, did nothing), and a camera written mid-flight opened
+  the link away from its activity.
 - The camera reaches the URL from the map's `moveend`, as a ref, never as React state,
   so a pan re-renders nothing. A camera equal (at URL precision) to the opening frame
   is not written, so a resize doesn't dirty a clean URL.
