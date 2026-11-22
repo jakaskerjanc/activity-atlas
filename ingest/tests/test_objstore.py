@@ -110,6 +110,39 @@ def test_s3store_get_missing_is_keyerror_and_returns_etag():
         assert store.get("k") == (b"hello", '"e"')
 
 
+def test_s3store_download_streams_with_progress(tmp_path, monkeypatch):
+    monkeypatch.setattr(objstore, "DOWNLOAD_CHUNK", 4)
+    store, client = _s3()
+    seen = []
+    dest = str(tmp_path / "out")
+    with Stubber(client) as stub:
+        stub.add_client_error("get_object", service_error_code="NoSuchKey", http_status_code=404)
+        with pytest.raises(KeyError):
+            store.download("missing", dest)
+        stub.add_response("get_object", {"Body": _body(b"hello world"), "ETag": '"e"', "ContentLength": 11},
+                          {"Bucket": "b", "Key": "k"})
+        assert store.download("k", dest, progress=lambda done, total: seen.append((done, total))) == '"e"'
+    with open(dest, "rb") as fh:
+        assert fh.read() == b"hello world"
+    assert seen == [(4, 11), (8, 11), (11, 11)]
+
+
+def test_s3store_client_has_timeouts():
+    store = S3Store("b", account_id="acct", access_key_id="k", secret_access_key="s")
+    cfg = store._client.meta.config
+    assert cfg.connect_timeout == objstore.CONNECT_TIMEOUT_S and cfg.read_timeout == objstore.READ_TIMEOUT_S
+
+
+def test_memory_download(tmp_path):
+    store = MemoryStore()
+    etag = store.put("a", b"xyz")
+    seen = []
+    assert store.download("a", str(tmp_path / "a"), progress=lambda d, t: seen.append((d, t))) == etag
+    assert seen == [(3, 3)]
+    with pytest.raises(KeyError):
+        store.download("missing", str(tmp_path / "m"))
+
+
 def _body(data):
     from botocore.response import StreamingBody
     return StreamingBody(io.BytesIO(data), len(data))

@@ -9,7 +9,16 @@ boto3 is imported lazily, when an S3Store builds its own client, so this
 module (and MemoryStore) works without it installed.
 """
 import hashlib
+from collections.abc import Callable
 from typing import Protocol
+
+# A stalled connection fails instead of hanging: connect within 10 s, and each read of a
+# response (a chunk of a download, not the whole body) within 30 s.
+CONNECT_TIMEOUT_S = 10
+READ_TIMEOUT_S = 30
+DOWNLOAD_CHUNK = 1 << 20
+
+Progress = Callable[[int, int | None], None]
 
 _CONFLICT_CODES = {"PreconditionFailed", "ConditionalRequestConflict"}
 _CONFLICT_STATUSES = {409, 412}
@@ -22,6 +31,7 @@ class PreconditionFailed(Exception):
 
 class ObjectStore(Protocol):
     def get(self, key: str) -> tuple[bytes, str]: ...
+    def download(self, key: str, path: str, *, progress: Progress | None = None) -> str: ...
     def head(self, key: str) -> dict | None: ...
     def put(
         self, key: str, data: bytes, *,
@@ -43,6 +53,15 @@ class MemoryStore:
     def get(self, key: str) -> tuple[bytes, str]:
         data, etag, _ = self._objects[key]
         return data, etag
+
+    def download(self, key: str, path: str, *, progress: Progress | None = None) -> str:
+        """Write ``key`` to ``path`` and return its etag; KeyError when missing."""
+        data, etag = self.get(key)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        if progress:
+            progress(len(data), len(data))
+        return etag
 
     def head(self, key: str) -> dict | None:
         if key not in self._objects:
@@ -113,6 +132,8 @@ class S3Store:
                     request_checksum_calculation="when_required",
                     response_checksum_validation="when_required",
                     retries={"max_attempts": 5, "mode": "standard"},
+                    connect_timeout=CONNECT_TIMEOUT_S,
+                    read_timeout=READ_TIMEOUT_S,
                 ),
             )
         self._client = client
@@ -127,6 +148,30 @@ class S3Store:
                 raise KeyError(key) from exc
             raise
         return response["Body"].read(), response["ETag"]
+
+    def download(self, key: str, path: str, *, progress: Progress | None = None) -> str:
+        """Stream ``key`` into ``path`` with one GET (one consistent version of the object) and
+        return its etag; KeyError when missing. ``progress(done, total)`` runs after each chunk
+        and may raise to abandon the download."""
+        from botocore.exceptions import ClientError
+
+        try:
+            response = self._client.get_object(Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            if _error_code(exc) in _MISSING_CODES or _http_status(exc) == 404:
+                raise KeyError(key) from exc
+            raise
+        body, total, done = response["Body"], response.get("ContentLength"), 0
+        try:
+            with open(path, "wb") as fh:
+                for chunk in body.iter_chunks(DOWNLOAD_CHUNK):
+                    fh.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, total)
+        finally:
+            body.close()
+        return response["ETag"]
 
     def head(self, key: str) -> dict | None:
         from botocore.exceptions import ClientError
