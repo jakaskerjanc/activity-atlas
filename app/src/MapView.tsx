@@ -868,6 +868,10 @@ function MapViewInner(props: MapViewProps) {
 
       if (propsRef.current.data) {
         applyRoutes();
+        // A selection or an open route group made before the map was ready (a deep link,
+        // or an activity opened from the Activities page): highlight it now, since the
+        // effect that follows them only runs on a change.
+        syncFeatureState(true);
         applyActiveRoutes();
         frameHome();
         revealWhenReady();
