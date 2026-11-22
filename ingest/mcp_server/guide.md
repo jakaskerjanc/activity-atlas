@@ -6,6 +6,8 @@ definitions in this guide. Every result carries `counted` (rules applied, how
 many items were included, how many were left out and why) and `as_of` (how
 current the data is). **When you answer, say what was counted** (e.g. "69 runs,
 moving time, local calendar years") and mention `as_of` when recency matters.
+**When a result has a `notice`** (the local copy is out of date and a newer one
+is downloading, or R2 could not be checked), tell the user in one line first.
 
 ## Which tool
 
@@ -27,7 +29,9 @@ moving time, local calendar years") and mention `as_of` when recency matters.
 - Anything else → `query` (read-only SQL). Prefer the tools above when they
   cover the question, and say so when you fall back to `query`.
 - `sync` checks R2 for a newer database right now (it also happens by itself
-  at most once an hour).
+  at most once an hour, in the background). Tools never wait for a download:
+  while one runs, the `notice` says so and that the answer came from the older
+  local copy.
 
 ## Definitions the tools apply
 

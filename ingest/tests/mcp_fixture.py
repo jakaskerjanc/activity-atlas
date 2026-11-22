@@ -1,11 +1,14 @@
 """A small database for the MCP server tests (see the plan's Task 1 for its contents)."""
 import json
+import sqlite3
+import threading
 from datetime import datetime, timedelta
 
 import polyline
 
-from ingest import codec, db
+from ingest import codec, db, writer
 from ingest.geometry import track_top
+from ingest.objstore import MemoryStore
 
 OFFSET = 3600  # UTC+1
 
@@ -129,3 +132,46 @@ def build_fixture_db(path: str) -> str:
     conn.close()
     return path
 
+
+
+def with_extra_activity(tmp_path, path) -> bytes:
+    """The database at path plus one newer visible run ('extra', 2026-11-04T08:00:00 local)."""
+    other = str(tmp_path / "other.sqlite")
+    with open(path, "rb") as src, open(other, "wb") as dst:
+        dst.write(src.read())
+    c = sqlite3.connect(other)
+    c.execute("INSERT INTO activities (id, type, start_time, start_local, visible) "
+              "VALUES ('extra', 'Run', '2026-11-04T07:00:00+00:00', '2026-11-04T08:00:00', 1)")
+    c.commit()
+    c.close()
+    with open(other, "rb") as fh:
+        return fh.read()
+
+
+class SlowStore(MemoryStore):
+    """Downloads 1 MB of a "3 MB" database, then stalls until ``release`` is set."""
+
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def download(self, key, path, *, progress=None):
+        data, etag = self.get(key)
+        with open(path, "wb") as fh:
+            fh.write(data[:1_000_000])
+            if progress:
+                progress(1_000_000, 3_000_000)
+            self.started.set()
+            while not self.release.wait(0.01):
+                if progress:
+                    progress(1_000_000, 3_000_000)  # as each received chunk would
+            fh.write(data[1_000_000:])
+        return etag
+
+
+def slow_store(tmp_path, path) -> SlowStore:
+    """A SlowStore whose database is newer than the one at path."""
+    store = SlowStore()
+    store.put(writer.DB_KEY, with_extra_activity(tmp_path, path))
+    return store

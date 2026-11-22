@@ -81,15 +81,16 @@ def _remove(path: str) -> None:
             pass
 
 
-def working_copy(db_path: str) -> str:
+def working_copy(db_path: str, tag: str = "pull") -> str:
     """A fresh, unique path next to db_path for one pull; the file does not exist yet.
 
     Unique per call so two processes sharing a db_path (a backfill and a sync, say)
-    never delete or truncate each other's working copy.
+    never delete or truncate each other's working copy. ``tag`` names who owns it
+    (``<db>.<tag>-XXXX``), so one kind of process can clean up after itself only.
     """
     directory = os.path.dirname(os.path.abspath(db_path))
     os.makedirs(directory, exist_ok=True)
-    fd, path = tempfile.mkstemp(dir=directory, prefix=os.path.basename(db_path) + ".pull-")
+    fd, path = tempfile.mkstemp(dir=directory, prefix=f"{os.path.basename(db_path)}.{tag}-")
     os.close(fd)
     os.remove(path)
     return path
