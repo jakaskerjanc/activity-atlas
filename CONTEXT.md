@@ -78,6 +78,10 @@ How the map colors routes: Plain (the accent), Type (type color), Recency, Grade
 Every route drawn thin and see-through in the accent, so roads you've been along many times glow brighter where the lines overlap (rare … frequent).
 _Avoid_: heatmap (that suggests blurred density blobs)
 
+**Deep link**:
+A URL that reproduces what is on screen: the activity filter, the selected activity and its open same-route group, the color mode and the map camera in the query string (only values that differ from the defaults), the page in the hash. Changing page adds a browser history entry; every other change rewrites the current one.
+_Avoid_: permalink, share link
+
 ### Pages
 
 **Map** / **Analytics** / **Activities**:

@@ -41,14 +41,18 @@ export interface ActivityFilter {
 export const DEFAULT_TYPES: readonly string[] = ["Run", "Hike", "Walk", "Ride"];
 
 /**
- * A filter over `activities` with the full date range and the default types on: those
- * of DEFAULT_TYPES the data has, or every type when it has none of them.
+ * The types a new filter switches on, from the data's types: those of DEFAULT_TYPES the
+ * data has, or every type when it has none of them. The default types always have their
+ * own rows (rowOfTypes), so switching them on never leaves a row half on.
  */
+export function defaultTypes(availableTypes: readonly string[]): string[] {
+  const defaults = availableTypes.filter((t) => DEFAULT_TYPES.includes(t));
+  return defaults.length ? defaults : [...availableTypes];
+}
+
+/** A filter over `activities` with the full date range and the default types on (defaultTypes). */
 export function createActivityFilter(activities: readonly ActivityRecord[]): ActivityFilter {
   const availableTypes = [...new Set(activities.map((a) => a.type))].sort();
-  // The default types always have their own rows (rowOfTypes), so switching them on
-  // never leaves a row half on.
-  const defaults = availableTypes.filter((t) => DEFAULT_TYPES.includes(t));
   const months = activities.map((a) => monthIndex(a.ts));
   // No activities: any finite month will do, since nothing can be shown anyway.
   const minMonth = months.length ? Math.min(...months) : 0;
@@ -57,7 +61,7 @@ export function createActivityFilter(activities: readonly ActivityRecord[]): Act
     activities,
     availableTypes,
     rowOf: rowOfTypes(activities),
-    types: new Set(defaults.length ? defaults : availableTypes),
+    types: new Set(defaultTypes(availableTypes)),
     minMonth,
     maxMonth,
     fromMonth: minMonth,

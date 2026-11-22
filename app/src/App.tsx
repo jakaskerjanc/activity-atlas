@@ -60,6 +60,8 @@ import { cityCards, cityRouteSubtitle, routeTitle } from "./cityView";
 import { checkPlacesFile, emptyNotice as emptyNoticeFor, PLACES_URL, placeTitle } from "./places";
 import { liveValue, useLiveValue, type LiveValue } from "./ui/liveValue";
 import { RouteLoader } from "./ui/RouteLoader";
+import { filterFromUrl, parseUrlState, selectionFromUrl } from "./urlState";
+import { useUrlSync } from "./ui/useUrlSync";
 
 // The map is almost all of the bundle (mapbox-gl), so it is its own chunk, fetched only
 // once the map is wanted: a visit that opens on Analytics never pays for it until the
@@ -109,6 +111,10 @@ export default function App() {
   // routes.json, fetched alongside but not waited for: only the map needs it.
   const routes = useRoutes();
   const [mapFailed, setMapFailed] = useState(false);
+
+  // The deep link this visit opened on (urlState.ts), read once. Its filter and selection
+  // are applied as the data arrives, its color mode at once, its camera by the map.
+  const [link] = useState(() => parseUrlState(window.location.search));
 
   const [theme, setTheme] = useState<Theme>(initialTheme);
   useEffect(() => {
@@ -182,9 +188,11 @@ export default function App() {
     setIsolation(memory);
   };
 
-  const [colorMode, setColorMode] = useState<ColorMode>("uniform");
+  const [colorMode, setColorMode] = useState<ColorMode>(link.color ?? "uniform");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The same-route group whose table is open (see selectedRoute below).
+  const [openRoute, setOpenRoute] = useState<string | null>(null);
   // The hovered route, and the shared chart/map cursor (an index into the selected
   // activity's detail samples). Both change with every pointer move, so they are live
   // values rather than state: a move re-renders the map and the charts that read them
@@ -210,8 +218,14 @@ export default function App() {
         setPlacesFile(places);
         setZoneLimits(activities.hr_zone_limits);
         // Over every record, routed or not: the analytics page reads them all, and the
-        // map draws the ones with a route (visibleFeatures).
-        setFilter(createActivityFilter(activities.activities));
+        // map draws the ones with a route (visibleFeatures). Made with the link's values
+        // in this one update, so the first render with data already shows the link.
+        const placeIds = new Set(places.places.map((p) => p.id));
+        const linked = filterFromUrl(createActivityFilter(activities.activities), link, placeIds);
+        const selection = selectionFromUrl(link, linked);
+        setFilter(linked);
+        setSelectedId(selection.selectedId);
+        setOpenRoute(selection.groupRoute);
       })
       .catch((e) => setError(String(e)));
   }, []);
@@ -475,6 +489,10 @@ export default function App() {
         : (data.features.find((f) => f.properties.id === selectedId) ?? null),
     [data, selectedId],
   );
+  // A selection needs a route to show. A link can name an activity without one (a gym
+  // session), which would grey out every route and show nothing in its place: once the
+  // routes are in, drop it (during render, so the map never draws that state).
+  if (data && selectedId != null && !selectedFeature) setSelectedId(null);
 
   // The selected activity's samples, for the charts and the cursor on the route.
   const detailState = useActivityDetail(selectedId, selectedFeature?.properties.detail === true);
@@ -490,8 +508,13 @@ export default function App() {
   // the selection stays on the route it was opened on, so stepping through its rows
   // keeps it open and a new route never shows it open, not even for a frame. Leaving the
   // route forgets it (set during render, not in an effect), so coming back finds it shut.
-  const [openRoute, setOpenRoute] = useState<string | null>(null);
-  const selectedRoute = selectedFeature?.properties.route ?? null;
+  // The selected route is read off the activity record rather than its map feature, so
+  // a group opened by a link stays open while the routes are still loading.
+  const selectedRecord = useMemo(
+    () => (selectedId == null || !filter ? null : (filter.activities.find((a) => a.id === selectedId) ?? null)),
+    [filter?.activities, selectedId],
+  );
+  const selectedRoute = selectedRecord?.route ?? null;
   if (openRoute !== null && openRoute !== selectedRoute) setOpenRoute(null);
   const routeOpen = openRoute !== null && openRoute === selectedRoute;
   const selectedPlaceLine = useMemo(
@@ -578,6 +601,13 @@ export default function App() {
       links: [],
     };
   }, [selectedFeature, shownCity, cities, visible, filter, placeMap]);
+
+  // The state the URL reproduces (urlState.ts), written once the data is in. The camera
+  // goes straight from the map to the writer, never through state.
+  const setUrlCamera = useUrlSync(
+    filter ? { filter, selectedId, groupOpen: routeOpen, colorMode } : null,
+    link.camera ?? null,
+  );
 
   // Nothing passes the filter: say so, and offer the way back.
   const resetFilter = () => {
@@ -813,6 +843,8 @@ export default function App() {
                   cityRoute={cityRoute}
                   cityRouteEpoch={cityEpoch}
                   onRoutesShown={() => setMapDrawn(true)}
+                  initialCamera={link.camera ?? null}
+                  onCameraChange={setUrlCamera}
                 />
               </Suspense>
             </MapErrorBoundary>
