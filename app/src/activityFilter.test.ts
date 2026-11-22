@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { featureFilter } from "mapbox-gl/dist/style-spec/index.es.js";
 import {
   createActivityFilter,
+  defaultTypes,
   filterExpression,
   CATCH_ALL_TYPE,
   isRowOn,
@@ -57,6 +58,11 @@ describe("a new activity filter", () => {
     const gym = record({ id: "g:1", type: "WeightTraining" });
     const swim = record({ id: "g:2", type: "Swim" });
     expect([...createActivityFilter([gym, swim]).types].sort()).toEqual(["Swim", "WeightTraining"]);
+  });
+
+  test("defaultTypes gives the types a new filter switches on", () => {
+    expect(defaultTypes(["Hike", "Run", "Swim"])).toEqual(["Hike", "Run"]);
+    expect(defaultTypes(["Swim", "WeightTraining"])).toEqual(["Swim", "WeightTraining"]);
   });
 });
 

@@ -19,7 +19,8 @@ import {
 import { lineGradient, type GradeRoutes } from "./grade";
 import type { ReplayFrame, ReplayStep } from "./replay";
 import { densestClusterBounds, densestClusterRouteBounds, type Bounds } from "./cluster";
-import { homeCamera, HOME_MAX_ZOOM } from "./homeCamera";
+import { homeCamera, HOME_MAX_ZOOM, type Camera } from "./homeCamera";
+import { sameCamera } from "./urlState";
 import { fitOffset, fitPadding, insetsKey, type Insets } from "./ui/layout";
 import { nearestSample } from "./routeCursor";
 import { activeTrackIds } from "./activeTracks";
@@ -168,6 +169,14 @@ export interface MapViewProps {
   cityRouteEpoch: number;
   /** Called as the routes start to fade in (basemap drawn), so the loading spinner can go. */
   onRoutesShown?: () => void;
+  /**
+   * A camera to open on instead of the home frame (a deep link's), read once when the map
+   * is made. It also holds off the fly-to on the selection the map opens with, so the
+   * link's own view wins; picking another activity flies as usual.
+   */
+  initialCamera?: Camera | null;
+  /** The camera after each move, or null while it is on the opening home frame. */
+  onCameraChange?: (camera: Camera | null) => void;
 }
 
 /** A comparison city's route, as the map draws it. */
@@ -188,6 +197,12 @@ const SLOVENIA_ZOOM = 7.6;
 function routesFor(p: MapViewProps): GeoJSON.FeatureCollection | null {
   if (p.colorMode === "grade" && p.grade) return p.grade.collection;
   return p.data;
+}
+
+/** The map's camera as center + zoom (rotation and pitch are off). */
+function cameraOf(map: mapboxgl.Map): Camera {
+  const c = map.getCenter().wrap();
+  return { center: [c.lng, c.lat], zoom: map.getZoom() };
 }
 
 const prefersReducedMotion = () =>
@@ -230,6 +245,14 @@ function MapViewInner(props: MapViewProps) {
   const tipIdRef = useRef<string | null>(null);
   // The opening view has been framed on the activities (once per data load).
   const framedRef = useRef(false);
+  // The camera the map was opened on, when it was given one (initialCamera): no home
+  // frame then. `held` holds off fitSelected while the selection is still `selectedId`,
+  // the one the map opened with.
+  const linkedRef = useRef<{ selectedId: string | null; held: boolean } | null>(null);
+  // The home frame frameHome jumped to, so a move that ends there (a resize) reports no
+  // camera; and true while it jumps, so that jump reports nothing itself.
+  const homeRef = useRef<Camera | null>(null);
+  const framingRef = useRef(false);
   // Whether the base layers currently wear the muted selection color.
   const mutedRef = useRef<boolean | null>(null);
   // The replay state applyReplay last wrote to the map, so each frame writes only what
@@ -278,12 +301,18 @@ function MapViewInner(props: MapViewProps) {
     const p = propsRef.current;
     if (!map || !loadedRef.current || framedRef.current || !p.data) return;
     framedRef.current = true;
+    if (linkedRef.current) return;
     const box: Bounds | null = densestClusterRouteBounds(
       p.visible.length ? p.visible : p.data.features,
     );
     if (!box) return;
     const camera = cameraFor(new mapboxgl.LngLatBounds([box[0], box[1]], [box[2], box[3]]), HOME_MAX_ZOOM);
-    if (camera) map.jumpTo(camera);
+    if (!camera) return;
+    framingRef.current = true;
+    map.jumpTo(camera);
+    framingRef.current = false;
+    homeRef.current = cameraOf(map);
+    p.onCameraChange?.(null);
   }
 
   /** Repaint the base layers for the current active presence + fade factor. The
@@ -527,6 +556,11 @@ function MapViewInner(props: MapViewProps) {
     const map = mapRef.current;
     const p = propsRef.current;
     if (!map || !loadedRef.current || p.selectedId == null || !p.data) return;
+    const linked = linkedRef.current;
+    if (linked?.held) {
+      if (p.selectedId === linked.selectedId) return;
+      linked.held = false;
+    }
     const feature = p.data.features.find((f) => f.properties.id === p.selectedId);
     if (!feature) return;
     const bounds = new mapboxgl.LngLatBounds();
@@ -815,11 +849,13 @@ function MapViewInner(props: MapViewProps) {
     const home = p.data
       ? homeCamera(p.visible.length ? p.visible : p.data.features, el.clientWidth, el.clientHeight, p.insets)
       : null;
+    const start = p.initialCamera ?? home;
+    if (p.initialCamera) linkedRef.current = { selectedId: p.selectedId, held: true };
     const map = new mapboxgl.Map({
       container: el,
       style: STYLE_URL[p.theme],
-      center: home?.center ?? SLOVENIA_CENTER,
-      zoom: home?.zoom ?? SLOVENIA_ZOOM,
+      center: start?.center ?? SLOVENIA_CENTER,
+      zoom: start?.zoom ?? SLOVENIA_ZOOM,
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
@@ -882,6 +918,15 @@ function MapViewInner(props: MapViewProps) {
     });
     // A drag or zoom moves the map under a still pointer; don't leave a stale label.
     map.on("movestart", hideTip);
+
+    // Report where each move ends (the URL keeps it). A move back onto the home frame,
+    // as a resize leaves it, is no camera.
+    map.on("moveend", () => {
+      if (framingRef.current) return;
+      const camera = cameraOf(map);
+      const home = homeRef.current;
+      propsRef.current.onCameraChange?.(home && sameCamera(camera, home) ? null : camera);
+    });
 
     // Click a track selects it; click on empty map deselects. Inert during replay.
     map.on("click", (e) => {
