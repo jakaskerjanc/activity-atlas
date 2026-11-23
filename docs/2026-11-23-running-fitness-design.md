@@ -165,3 +165,34 @@ time bins 0.20 to 0.00). The line runs ~6:00 /km in mid-2024, is best at
 **~5:16–5:19 in Feb–Apr 2026**, and reads **5:37 /km** at the newest run
 (25 Oct 2026), against 6:04 a year before; slower stretches in late summer and
 autumn of 2025 and summer 2026.
+
+## Revised presentation (2026-11-23, "option A")
+
+The owner picked a headline-first card over the dots-and-band chart. The number,
+the climb correction and the 91-day line are unchanged; only the presentation is:
+
+- **Headline**: the line's latest value, large ("5:37 /km"), with the change
+  against the line a year earlier beside it ("▲ 27 s/km faster than a year ago"
+  in a success green; "▼ … slower" muted, never an alarm red; "About the same"
+  within 2 s/km; left out when there is no line a year earlier, the same rule
+  the sentence used). "as of Oct 25" when the latest value is over a week old.
+- **Best**: a muted line under it, the fastest line value ("Best: 5:16 /km in
+  Mar 2026").
+- **Chart: the line only.** No per-run dots and no ±1 SE band. Two direct
+  labels: "Now 5:37" right of the line's end and "Best 5:16" above its fastest
+  point (just the values on a phone); the best one is left out when it reads the
+  same as the latest or would run into it.
+- **Breaks** are bridged by a faint dotted connector (same hue, thinner, lower
+  opacity) from the last value before to the first after; none before the
+  first value or after the last. `lineGaps` gives them; the gap rules are
+  untouched. Hovering inside one names why (`noLineReason`): "No runs Oct 20,
+  2024 – Dec 26, 2024", or too few runs for a 3-month average.
+- **Hover** snaps a crosshair to the nearest weekly date (`lineDates`): the
+  date, the value and how many runs the 3-month window averages.
+- **Footer**: "Flat-ground pace at 150 bpm, corrected for climbing · 3-month
+  average · an estimate from pace, heart rate and climbing, not VO2max.", then
+  the fitted correction in a second muted sentence. The card has no subtitle.
+
+On the real data (23 Nov 2026): **5:37 /km as of Oct 25**, **▲ 27 s/km faster**
+than a year ago (6:04 in Oct 2025), **best 5:16 in Mar 2026**; two breaks,
+Nov–Dec 2024 and Feb–Mar 2025.
