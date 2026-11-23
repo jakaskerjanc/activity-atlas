@@ -101,3 +101,24 @@ Sketch agreed with the owner:
 Window sizes, thresholds and the rolling method above; chart details and
 styling within the existing Analytics card conventions; where in the card
 order it sits (suggest near Heart-rate zones).
+
+## As built (2026-11-23, checked on the real runs)
+
+- Kept from above: Minetti's curve, grade over 50 m clamped to ±0.30, 10-minute
+  warm-up, under 10 minutes kept → no value, 150 bpm, pauses = sample gaps over
+  60 s (zones.ts's limit). A 100 m window and a gentler descent clamp moved the
+  hilly-run bias by only 2–5 s/km, not enough to depart from the curve.
+- Changed: the 1.5 m/s "stopped or walking" cut is on **grade-adjusted** speed, so
+  a steep climb taken at a walk still counts (hilly runs read 17 s/km slower than
+  flat runs of the same weeks, against 20 s/km with the raw-speed cut).
+- Added: heart rate is interpolated in time between its own samples; 27 of 159
+  runs (Jul 2024 – Apr 2025) write it on separate rows every few seconds and had
+  no value otherwise. A run without altitude counts as flat only when it reports
+  no climb; an inclined treadmill run (500 m reported, no altitude) has no value.
+- Line: median of the trailing 42 days once 3 runs are in it, broken across
+  longer gaps. "About the same" within 2 s/km.
+- Result: 150 of 159 runs have a value. Monthly medians run ~6:10 /km (mid-2024)
+  → ~5:00–5:30 (winter 2025/26) → ~5:40 (autumn 2026), slower in both summers.
+- Known limits: hilly runs still read ~15–20 s/km slower than flat ones; easy
+  runs at low heart rate read slower than hard ones (heart rate isn't
+  proportional to speed). The rolling median keeps both from steering the line.
