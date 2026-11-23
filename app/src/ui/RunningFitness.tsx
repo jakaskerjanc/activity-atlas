@@ -111,7 +111,8 @@ function Headline({
   const secs = diff == null ? 0 : Math.round(Math.abs(diff));
   return (
     <p style={lead}>
-      <strong style={leadValue}>{km(latest.pace)}</strong>
+      <strong style={leadValue}>{formatPace(latest.pace)}</strong>
+      {"\u00a0/km"}
       {stale ? ` as of ${shortDate(latest.ts, now)}` : " now"}
       {diff != null && (
         <>
