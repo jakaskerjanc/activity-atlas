@@ -98,3 +98,33 @@ Chart: SVG, x = time over the points' span, y = pace with faster up (smaller s/k
 - [ ] `pnpm run test:all`, `pnpm run typecheck`, `pnpm run build` pass.
 - [ ] Screenshots of the card in the dev server with real data: light, dark, phone width (390 px). Saved outside the repo.
 - [ ] Push, open PR.
+
+---
+
+### Task 6 (revision): climb correction and a 3-month line
+
+Spec: the design doc's "Revised" section.
+
+**Files:** `app/src/fitness.ts`, `app/src/fitness.test.ts`, `app/src/ui/RunningFitness.tsx`,
+`app/src/ui/RunningFitness.test.ts`, `app/src/ui/AnalyticsView.tsx` (+ test), `CONTEXT.md`.
+
+**Interfaces:**
+- `ROLLING_DAYS = 91`, `ROLLING_MIN_RUNS = 5`, `LINE_GAP_DAYS = 28`, `LINE_STEP_DAYS = 7`,
+  `MIN_FIT_RUNS = 20`, `FIT_BIN_MONTHS = 2`.
+- `climbSlope(runs: FitRun[]): number` — OLS slope of pace on climb per km within
+  two-month bins; 0 below MIN_FIT_RUNS runs in shared bins or without spread; ≥ 0.
+- `climbCorrection(activities): number` — climbSlope over every Run with a value, a
+  distance and an elevation gain.
+- `fitnessPoints(activities, slope)` → `{ id, name, ts, pace, rawPace, climb }`, pace
+  corrected.
+- `rollingLine(points): LinePoint[][]` — unbroken segments of `{ ts, pace, se, runs }`.
+- `fitnessComparison(line: LinePoint[][])`.
+- `RunningFitness({ activities, all, compact })` — `all` is the filter's activities.
+
+- [x] Tests: slope by hand (1.0); known slope 0.9 recovered over six bins with a
+  fitness trend; a trend that would give a pooled slope > 1 gives 0 with bins; the
+  20-run guard counts only shared-bin runs; flat climbs and negative slopes → 0;
+  line mean/SE, window edge, 28-day break, comparison across breaks; card note and
+  correction fitted over all runs whatever the filter shows.
+- [x] Checked on real data (numbers in the design doc); screenshots desktop/phone,
+  light/dark.

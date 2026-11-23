@@ -122,3 +122,46 @@ order it sits (suggest near Heart-rate zones).
 - Known limits: hilly runs still read ~15–20 s/km slower than flat ones; easy
   runs at low heart rate read slower than hard ones (heart rate isn't
   proportional to speed). The rolling median keeps both from steering the line.
+
+## Revised (2026-11-23, after the owner saw the card)
+
+The owner found the chart looked very bad. A spike on the 151 runs with a value
+showed why, and the owner agreed these changes:
+
+- **The window was the ugly part.** The 42-day median wobbled 8.7 s/km from week
+  to week; a 91-day trailing mean of the same per-run values wobbles ~3.5 s/km
+  (2.7 s/km as built, after the climb correction). The line is now the **mean of
+  the trailing 91 days**, evaluated **weekly** back from the newest run, needing
+  **5 runs** in the window, and **broken** (not interpolated) when the newest run
+  in the window is over **28 days** old. A faint **±1 standard-error** band
+  (sample s.d. / √n) shows how sure each point is; it reads well, so it stays.
+- **Climbing still biased the value.** Even after Minetti, hillier runs read
+  slower. The card now shows **corrected pace = pace at 150 bpm − g × climb per
+  km** (the run's elevation gain ÷ its distance in km). `g` is **fitted from the
+  data on every load** in `app/src/fitness.ts` (`climbSlope`): ordinary least
+  squares of pace on climb per km with a fixed effect per **two-month time bin**
+  (both demeaned within bins, then the slope), so fitness changing over time
+  isn't mistaken for an effect of hills. It is fitted over **all** runs with a
+  value and a climb, not the filtered ones, so the activity filter never moves
+  it. Guards: **g = 0** when fewer than **20** runs share a bin with another run,
+  or the climbs don't vary; g is **clamped ≥ 0**. A run without a distance or
+  elevation gain is left out (it can't be corrected); the treadmill exclusion
+  stays at build time.
+- **Why in the app, not the build:** the inputs (efficiency, distance, elevation
+  gain) are already on `ActivityRecord`, so no wire-format change, and the fit
+  is a pure function tested on its own.
+- **Heart-rate term dropped.** The spike's regression also had an average-HR
+  term; it barely changed anything, so the owner chose to leave it out.
+- **Per-run scatter stays** (~28 s/km s.d.): the dots show it honestly.
+- **Labels:** subtitle "Flat-ground pace at 150 bpm, corrected for climbing ·
+  estimate"; a note under the chart says it is an estimate from pace, heart rate
+  and climbing, not a VO2max, and states the fitted correction. Hover shows the
+  corrected value, the climb per km and the value before the correction.
+
+On the real data (147 runs with a value and a climb): **g ≈ 0.84 s/km per
+(m climbed per km)** (spike: ≈ 0.9 with a slightly different model). The
+correlation of the value with climb per km drops from **0.18 to 0.01** (within
+time bins 0.20 to 0.00). The line runs ~6:00 /km in mid-2024, is best at
+**~5:16–5:19 in Feb–Apr 2026**, and reads **5:37 /km** at the newest run
+(25 Oct 2026), against 6:04 a year before; slower stretches in late summer and
+autumn of 2025 and summer 2026.
