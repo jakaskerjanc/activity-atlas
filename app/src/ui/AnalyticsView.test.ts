@@ -206,9 +206,7 @@ describe("AnalyticsView", () => {
 
   test("shows running fitness after the heart-rate zones, for the visible runs", () => {
     const runs = createActivityFilter([
-      record({ id: "a", ts: Date.UTC(2024, 7, 1) / 1000, efficiency: 1.2 }),
-      record({ id: "b", ts: Date.UTC(2024, 7, 5) / 1000, efficiency: 1.2 }),
-      record({ id: "c", ts: Date.UTC(2024, 7, 9) / 1000, efficiency: 1.2 }),
+      ...[1, 5, 9, 13, 17].map((day) => record({ id: `r${day}`, ts: Date.UTC(2024, 7, day) / 1000, efficiency: 1.2 })),
     ]);
     const html = render({ filter: runs, visible: visibleActivities(runs) });
     expect(html).toContain('id="fitness"');

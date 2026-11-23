@@ -1,20 +1,22 @@
-// Running fitness: each visible run's flat-ground pace at 150 bpm (fitness.ts) as a dot
-// against time, faster up, with the rolling median as the accent line through them. A
-// sentence under the chart reads the line now against the line a year before. Hovering
-// or tapping names the nearest run.
+// Running fitness: each visible run's flat-ground pace at 150 bpm corrected for climbing
+// (fitness.ts) as a dot against time, faster up, with the rolling 3-month mean as the
+// accent line through them over a faint ±1 standard-error band. A sentence under the
+// chart reads the line now against the line a year before; a note says what the number
+// is. Hovering or tapping names the nearest run, with its value before the correction.
 
 import { useMemo, useState, type CSSProperties, type PointerEvent } from "react";
 import { FS, MONO } from "./theme";
 import { useElementWidth } from "./useElementWidth";
 import { formatDate, formatMonthShort, formatPace, monthIndex } from "../format";
 import {
+  climbCorrection,
   fitnessComparison,
   fitnessPoints,
   paceTicks,
   REFERENCE_HR,
-  ROLLING_DAYS,
   rollingLine,
   timeTicks,
+  type FitnessPoint,
   type LinePoint,
 } from "../fitness";
 import type { ActivityRecord } from "../types";
@@ -35,13 +37,17 @@ const km = (pace: number) => `${formatPace(pace)}\u00a0/km`;
 
 export function RunningFitness({
   activities,
+  all,
   compact = false,
 }: {
   /** The visible activities. */
   activities: readonly ActivityRecord[];
+  /** Every activity, visible or not: the climb correction is fitted over all the runs, so the filter doesn't move it. */
+  all: readonly ActivityRecord[];
   compact?: boolean;
 }) {
-  const points = useMemo(() => fitnessPoints(activities), [activities]);
+  const slope = useMemo(() => climbCorrection(all), [all]);
+  const points = useMemo(() => fitnessPoints(activities, slope), [activities, slope]);
   const line = useMemo(() => rollingLine(points), [points]);
   if (points.length === 0) {
     return (
@@ -63,6 +69,12 @@ export function RunningFitness({
           {formatMonthShort(monthIndex(comparison.then.ts))}
         </p>
       )}
+      <p style={note}>
+        An estimate from pace, heart rate and climbing, not a VO2max.{" "}
+        {slope > 0
+          ? `Hillier runs still read slower after the grade adjustment, so each run is credited ${slope.toFixed(1)}\u00a0s/km per metre climbed per km, fitted from your runs.`
+          : "Too few runs yet to fit a climb correction, so the values aren't corrected for climbing."}
+      </p>
     </>
   );
 }
@@ -78,8 +90,8 @@ function Chart({
   line,
   compact,
 }: {
-  points: ReturnType<typeof fitnessPoints>;
-  line: LinePoint[];
+  points: FitnessPoint[];
+  line: LinePoint[][];
   compact: boolean;
 }) {
   const [boxRef, width] = useElementWidth<HTMLDivElement>(720);
@@ -103,13 +115,22 @@ function Chart({
   const yOf = (pace: number) => TOP + ((pace - fast) / (slow - fast)) * plotH;
   const months = timeTicks(from, to, Math.max(2, Math.floor(plotW / 56)));
 
-  // The line, broken where it has no point for longer than its window (a gap in running).
-  const path = line
-    .map((p, i) => {
-      const jump = i === 0 || p.ts - line[i - 1].ts > ROLLING_DAYS * DAY_S;
-      return `${jump ? "M" : "L"}${xOf(p.ts).toFixed(1)},${yOf(p.pace).toFixed(1)}`;
-    })
+  // The line, one piece per unbroken run of points (rollingLine leaves gaps unbridged),
+  // and its ±1 standard-error band; a lone point is drawn as a dot of the line's colour.
+  const xy = (ts: number, pace: number) => `${xOf(ts).toFixed(1)},${yOf(pace).toFixed(1)}`;
+  const path = line.map((seg) => seg.map((p, i) => `${i === 0 ? "M" : "L"}${xy(p.ts, p.pace)}`).join("")).join("");
+  const band = line
+    .filter((seg) => seg.length > 1)
+    .map(
+      (seg) =>
+        "M" +
+        seg.map((p) => xy(p.ts, p.pace - p.se)).join("L") +
+        "L" +
+        [...seg].reverse().map((p) => xy(p.ts, p.pace + p.se)).join("L") +
+        "Z",
+    )
     .join("");
+  const lone = line.filter((seg) => seg.length === 1).map((seg) => seg[0]);
 
   const pick = (e: PointerEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -129,9 +150,9 @@ function Chart({
 
   const hovered = hover != null ? points[hover] : null;
   const tipX = hovered ? Y_AXIS_W + xOf(hovered.ts) : 0;
-  const last = line[line.length - 1];
+  const last = line[line.length - 1]?.[line[line.length - 1].length - 1];
   const label =
-    `Flat-ground pace at ${REFERENCE_HR} bpm for ${points.length} ${points.length === 1 ? "run" : "runs"}, ` +
+    `Flat-ground pace at ${REFERENCE_HR} bpm, corrected for climbing, for ${points.length} ${points.length === 1 ? "run" : "runs"}, ` +
     `${formatMonthShort(monthIndex(from))} to ${formatMonthShort(monthIndex(to))}` +
     (last ? `; the rolling line ends at ${km(last.pace)}` : "");
 
@@ -163,7 +184,11 @@ function Chart({
           {points.map((p) => (
             <circle key={p.id} cx={xOf(p.ts)} cy={yOf(p.pace)} r={3} style={dot} />
           ))}
+          <path d={band} fill="var(--accent)" opacity={0.16} pointerEvents="none" />
           <path d={path} fill="none" stroke="var(--accent)" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+          {lone.map((p) => (
+            <circle key={p.ts} cx={xOf(p.ts)} cy={yOf(p.pace)} r={2.5} fill="var(--accent)" pointerEvents="none" />
+          ))}
           {hovered && (
             <circle
               cx={xOf(hovered.ts)}
@@ -192,6 +217,10 @@ function Chart({
           <div style={tipValue}>
             {km(hovered.pace)} <span style={tipNote}>at {REFERENCE_HR} bpm</span>
           </div>
+          <div style={tipNote}>{Math.round(hovered.climb)}&nbsp;m climbed per km</div>
+          {hovered.rawPace !== hovered.pace && (
+            <div style={tipNote}>{km(hovered.rawPace)} before the climb correction</div>
+          )}
         </div>
       )}
     </div>
@@ -200,6 +229,7 @@ function Chart({
 
 const status: CSSProperties = { margin: 0, fontSize: FS.sm, color: "var(--text-muted)" };
 const sentence: CSSProperties = { margin: "12px 0 0", fontSize: FS.sm, color: "var(--text-muted)", lineHeight: 1.4 };
+const note: CSSProperties = { margin: "6px 0 0", fontSize: FS.xs, color: "var(--text-muted)", lineHeight: 1.4 };
 const sentenceValue: CSSProperties = { fontFamily: MONO, fontSize: FS.md, fontWeight: 600, color: "var(--text-strong)" };
 
 const dot: CSSProperties = { fill: "var(--text-muted)", opacity: 0.5, pointerEvents: "none" };

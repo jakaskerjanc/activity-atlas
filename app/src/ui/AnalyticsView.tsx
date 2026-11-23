@@ -244,9 +244,9 @@ export function AnalyticsView({
                 <section id="fitness" style={card} className="span-2">
                   <SectionHeading
                     title="Running fitness"
-                    subtitle="Your runs as flat-ground pace at 150 bpm: speed for heart rate, adjusted for climbs and descents, after a 10-minute warm-up. The line is the median of the last 6 weeks; up is fitter."
+                    subtitle="Flat-ground pace at 150 bpm, corrected for climbing · estimate. Each dot is a run; the line is the mean of the last 3 months. Up is fitter."
                   />
-                  <RunningFitness activities={visible} compact={mobile} />
+                  <RunningFitness activities={visible} all={filter.activities} compact={mobile} />
                 </section>
                 <section id="climbing" style={card} className="span-2">
                   <SectionHeading
