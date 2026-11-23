@@ -196,3 +196,11 @@ the climb correction and the 91-day line are unchanged; only the presentation is
 On the real data (23 Nov 2026): **5:37 /km as of Oct 25**, **▲ 27 s/km faster**
 than a year ago (6:04 in Oct 2025), **best 5:16 in Mar 2026**; two breaks,
 Nov–Dec 2024 and Feb–Mar 2025.
+
+**Then (same day): no hero number.** In the page the large number didn't fit
+the other Analytics cards, so the owner dropped it. The latest value, the change
+and the best now sit in one lead line styled like Year against year's (value in
+strong mono, the rest muted): "5:37 /km as of Oct 25, 27 s/km faster than a
+year ago · best 5:16 /km in Mar 2026" ("now" when the value is this week's; no
+arrows or green). What the number is moved into the card's subtitle; the footer
+keeps "not VO2max" and the fitted correction.
