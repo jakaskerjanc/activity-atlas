@@ -485,6 +485,25 @@ input[type="range"].range-dual::-moz-range-thumb {
   padding: var(--sp-3) 2px;
   background: var(--bg);
 }
+.activities__toolbar[data-compact] {
+  flex-wrap: wrap;
+}
+.activities__toolbar[data-compact] select {
+  flex: 1;
+  min-width: 0;
+}
+/* The Group choice beside the search box (a menu on a phone, ActivitiesView). */
+.activities__grouping {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: var(--sp-2);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.activities__grouping > span {
+  margin-right: 2px;
+}
 .activities__search:focus-within {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-tint-weak);
@@ -630,6 +649,48 @@ input[type="range"].range-dual::-moz-range-thumb {
 .activities__row[aria-expanded="true"] .activities__chevron {
   color: var(--accent-text);
 }
+/* A group's header (activityGroups.ts): the week or month, its subtotals at the right,
+   and a rule under it. On a phone the subtotals wrap under the title. */
+.activities__group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px var(--sp-4);
+  padding: 16px var(--sp-5) 8px;
+  border-bottom: 1px solid var(--divider);
+}
+.activities__list[data-compact] .activities__group {
+  flex-direction: column;
+}
+.activities__group-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+.activities__group-totals {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+/* Weeks or months without activities between two groups: one thin line. */
+.activities__gap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px var(--sp-5);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.activities__gap::before,
+.activities__gap::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--divider);
+}
 .activities__mark {
   background: var(--accent-tint);
   color: var(--accent-text);
@@ -704,6 +765,8 @@ input[type="range"].range-dual::-moz-range-thumb {
   }
   .activities__head,
   .activities__row,
+  .activities__group,
+  .activities__gap,
   .activities__preview,
   .activities__preview[data-compact] {
     padding-left: var(--sp-4);

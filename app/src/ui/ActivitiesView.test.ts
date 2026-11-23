@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivitiesView } from "./ActivitiesView";
 import { createActivityFilter } from "../activityFilter";
-import { DEFAULT_SORT } from "../activitySearch";
+import { DEFAULT_SORT, type Sort } from "../activitySearch";
+import type { Grouping } from "../activityGroups";
 import { record } from "../testFixtures";
 import type { ActivityRecord } from "../types";
 
@@ -12,7 +13,14 @@ const swim = record({ id: "b", name: "Pool swim", type: "Swim" });
 const filter = createActivityFilter([run, swim]); // Swim is off by default
 
 const render = (
-  over: { query?: string; routed?: string[] | null; mobile?: boolean; visible?: ActivityRecord[] } = {},
+  over: {
+    query?: string;
+    routed?: string[] | null;
+    mobile?: boolean;
+    visible?: ActivityRecord[];
+    grouping?: Grouping;
+    sort?: Sort;
+  } = {},
 ) =>
   renderToStaticMarkup(
     createElement(ActivitiesView, {
@@ -25,8 +33,10 @@ const render = (
           : new Map((over.routed ?? ["a"]).map((id) => [id, [[14, 46], [14.1, 46.1]] as [number, number][]])),
       query: over.query ?? "",
       onQueryChange: () => {},
-      sort: DEFAULT_SORT,
+      sort: over.sort ?? DEFAULT_SORT,
       onSortChange: () => {},
+      grouping: over.grouping ?? "none",
+      onGroupingChange: () => {},
       onOpen: () => {},
       onReveal: () => {},
       sidePanelExpanded: true,
@@ -90,5 +100,56 @@ describe("ActivitiesView", () => {
     const html = render({ mobile: true });
     expect(html).toContain('aria-label="Sort activities"');
     expect(html).not.toContain('aria-label="Sort by"');
+  });
+
+  test("offers the Group choice: pills on a wide screen, a menu on a phone", () => {
+    const html = render();
+    expect(html).toMatch(/role="group" aria-label="Group activities"/);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>None</);
+    expect(render({ mobile: true })).toMatch(/<select aria-label="Group activities"/);
+  });
+
+  test("grouped by month: a header with the subtotals over its rows, a line for the empty months", () => {
+    const visible = [
+      record({ id: "n", name: "November run", type: "Run", ts: Date.parse("2026-11-21T08:00:00Z") / 1000, distance: 11_200 }),
+      record({ id: "j", name: "June run", type: "Run", ts: Date.parse("2026-06-10T08:00:00Z") / 1000, distance: 8_000 }),
+    ];
+    const html = render({ visible, grouping: "month", routed: [] });
+    expect(html).toContain("November 2026");
+    expect(html).toContain("1 activity · 11 km · 50m · 100 m");
+    expect(html).toContain("4 months without activities");
+    // The headers aren't counted as activities.
+    expect(html).toContain('aria-setsize="2"');
+    expect(html).toMatch(/aria-posinset="2"[^>]*>.*June run/);
+    expect(html.indexOf("November 2026")).toBeLessThan(html.indexOf("November run"));
+    expect(html.indexOf("November run")).toBeLessThan(html.indexOf("June 2026"));
+  });
+
+  test("grouped while searching, the empty stretch is one without matches", () => {
+    const visible = [
+      record({ id: "n", name: "Hill run", type: "Run", ts: Date.parse("2026-11-21T08:00:00Z") / 1000 }),
+      record({ id: "j", name: "Hill run", type: "Run", ts: Date.parse("2026-10-01T08:00:00Z") / 1000 }),
+      record({ id: "x", name: "Flat run", type: "Run", ts: Date.parse("2026-10-20T08:00:00Z") / 1000 }),
+    ];
+    const f = createActivityFilter(visible);
+    const html = renderToStaticMarkup(
+      createElement(ActivitiesView, {
+        filter: f,
+        visible,
+        names: { places: new Map(), routes: new Map() },
+        routes: new Map(),
+        query: "hill",
+        onQueryChange: () => {},
+        sort: DEFAULT_SORT,
+        onSortChange: () => {},
+        grouping: "week",
+        onGroupingChange: () => {},
+        onOpen: () => {},
+        onReveal: () => {},
+        sidePanelExpanded: true,
+      }),
+    );
+    expect(html).not.toContain("Flat run");
+    expect(html).toMatch(/\d+ weeks without matches/);
   });
 });

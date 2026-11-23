@@ -96,6 +96,22 @@ _Avoid_: search filter
 The quick look under a row of the Activities page, opened by clicking it: the route on a still map image, the activity's stat cards and elevation chart (the map panel's own), and "Show on map".
 _Avoid_: details, expanded row
 
+**Route thumbnail**:
+The Activities page's 36 px drawing of a row's route beside its name, in the type color, north up, without a basemap. A row without a route (or while the routes load) keeps the empty slot.
+_Avoid_: map preview (that is the activity preview's still map image)
+
+**Grouping**:
+The Activities page's Group choice: None, Week or Month. Grouped, the listed activities are split by the calendar week (from Monday) or month of the date their row shows (UTC), each under a group header; the sort applies inside each group, and the groups go newest first unless the sort is oldest first. Kept like the sort: for the visit, not in the deep link.
+_Avoid_: training log (that is what it reads like, not its name), sections
+
+**Group header**:
+A grouped list's line over each week or month: its name ("Week of Nov 17, 2026", "November 2026") and the subtotals of the activities listed under it (count, distance, moving time, climb), so a search narrows them too.
+_Avoid_: group title, summary row
+
+**Gap line**:
+The one thin line between two groups that stand apart, saying how many weeks or months between them have no activities (no matches, while searching).
+_Avoid_: rest period, empty group
+
 **Active day**:
 A calendar day (UTC, like the date range) with at least one visible activity.
 
