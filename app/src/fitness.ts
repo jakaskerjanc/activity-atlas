@@ -5,6 +5,7 @@
 // only scales the numbers: the line's shape doesn't depend on it. Pure module, no React.
 
 import type { ActivityRecord } from "./types";
+import { monthIndex, monthStart } from "./format";
 
 /** The heart rate the paces are read at, for readability only. */
 export const REFERENCE_HR = 150;
@@ -85,4 +86,49 @@ export function fitnessComparison(line: readonly LinePoint[]): { now: LinePoint;
   }
   if (!then || then.ts < target - ROLLING_DAYS * DAY_S) return null;
   return { now, then };
+}
+
+/** Pace axis steps, in seconds: each a whole step of a clock. */
+const PACE_STEPS = [5, 10, 15, 30, 60, 120, 300, 600];
+
+/**
+ * Pace axis ticks (s/km) covering [min, max]: multiples of the smallest clock step that
+ * needs at most maxTicks + 1 of them, from the one at or below min to the one at or above
+ * max (and at least two).
+ */
+export function paceTicks(min: number, max: number, maxTicks: number): number[] {
+  for (const step of PACE_STEPS) {
+    const lo = Math.floor(min / step) * step;
+    const hi = Math.max(Math.ceil(max / step) * step, lo + step);
+    if ((hi - lo) / step + 1 > maxTicks + 1 && step !== PACE_STEPS[PACE_STEPS.length - 1]) continue;
+    const ticks: number[] = [];
+    for (let t = lo; t <= hi; t += step) ticks.push(t);
+    return ticks;
+  }
+  return [];
+}
+
+/** Time axis month steps: every month, then every 2, 3 or 6, then years. */
+const MONTH_STEPS = [1, 2, 3, 6, 12];
+const MONTH_NAME = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" });
+
+/**
+ * Time axis ticks: the month starts inside [from, to] (epoch seconds) on the smallest
+ * month step that gives at most maxTicks of them (calendar-aligned: a 3-month step
+ * lands on Jan, Apr, Jul, Oct). A January is labelled with its year, other months
+ * with their short name.
+ */
+export function timeTicks(from: number, to: number, maxTicks: number): { ts: number; label: string }[] {
+  const first = monthIndex(from) + (monthStart(monthIndex(from)) < from ? 1 : 0);
+  const last = monthIndex(to);
+  for (const step of MONTH_STEPS) {
+    const months: number[] = [];
+    for (let m = first; m <= last; m++) if (m % step === 0) months.push(m);
+    if (months.length > maxTicks && step !== 12) continue;
+    return months.map((m) => ({
+      ts: monthStart(m),
+      label: m % 12 === 0 ? String(m / 12) : MONTH_NAME.format(monthStart(m) * 1000),
+    }));
+  }
+  return [];
 }

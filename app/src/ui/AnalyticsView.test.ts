@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AnalyticsView } from "./AnalyticsView";
+import { ANALYTICS_SECTIONS, AnalyticsView } from "./AnalyticsView";
 import { createActivityFilter, togglePlace, toggleType, visibleActivities } from "../activityFilter";
 import { record } from "../testFixtures";
 import { cityComparisons } from "../cityMatch";
@@ -202,5 +202,21 @@ describe("AnalyticsView", () => {
     expect(html).toContain("Active hours");
     expect(html).toContain("Weekdays");
     expect(html).toContain("Weekends");
+  });
+
+  test("shows running fitness after the heart-rate zones, for the visible runs", () => {
+    const runs = createActivityFilter([
+      record({ id: "a", ts: Date.UTC(2024, 7, 1) / 1000, efficiency: 1.2 }),
+      record({ id: "b", ts: Date.UTC(2024, 7, 5) / 1000, efficiency: 1.2 }),
+      record({ id: "c", ts: Date.UTC(2024, 7, 9) / 1000, efficiency: 1.2 }),
+    ]);
+    const html = render({ filter: runs, visible: visibleActivities(runs) });
+    expect(html).toContain('id="fitness"');
+    expect(html).toContain("Running fitness");
+    expect(html).toContain("the rolling line ends at 5:33\u00a0/km");
+    expect(html.indexOf('id="fitness"')).toBeGreaterThan(html.indexOf('id="zones"'));
+    const ids = ANALYTICS_SECTIONS.map((s) => s.id);
+    expect(ids.indexOf("fitness")).toBe(ids.indexOf("zones") + 1);
+    expect(ANALYTICS_SECTIONS).toContainEqual({ id: "fitness", label: "Running fitness" });
   });
 });

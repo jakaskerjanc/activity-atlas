@@ -1,5 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { fitnessComparison, fitnessPoints, paceAt, rollingLine, ROLLING_DAYS, type FitnessPoint } from "./fitness";
+import {
+  fitnessComparison,
+  fitnessPoints,
+  paceAt,
+  paceTicks,
+  rollingLine,
+  ROLLING_DAYS,
+  timeTicks,
+  type FitnessPoint,
+} from "./fitness";
 import { record } from "./testFixtures";
 
 const DAY = 86_400;
@@ -73,5 +82,48 @@ describe("fitnessComparison", () => {
   test("none when the line has a gap over the window around a year ago", () => {
     // Nothing between day 300 and day 700: day 300 is too far from day 365.
     expect(fitnessComparison(line([0, 300, 700, 730]))).toBeNull();
+  });
+});
+
+describe("paceTicks", () => {
+  test("whole steps of a clock, wide enough to cover the paces in a few ticks", () => {
+    expect(paceTicks(300, 400, 4)).toEqual([300, 330, 360, 390, 420]);
+    expect(paceTicks(318, 342, 4)).toEqual([310, 320, 330, 340, 350]);
+    expect(paceTicks(270, 510, 4)).toEqual([240, 360, 480, 600]);
+  });
+
+  test("a single pace still gets an axis around it", () => {
+    expect(paceTicks(333, 333, 4)).toEqual([330, 335]);
+  });
+});
+
+describe("timeTicks", () => {
+  const at = (iso: string) => Date.parse(iso) / 1000;
+
+  test("month starts every few months, January named by its year", () => {
+    expect(timeTicks(at("2025-01-15T00:00:00Z"), at("2026-12-01T00:00:00Z"), 6)).toEqual([
+      { ts: at("2025-07-01T00:00:00Z"), label: "Jul" },
+      { ts: at("2026-01-01T00:00:00Z"), label: "2026" },
+      { ts: at("2026-07-01T00:00:00Z"), label: "Jul" },
+    ]);
+  });
+
+  test("every month when they fit", () => {
+    expect(timeTicks(at("2025-11-20T00:00:00Z"), at("2026-02-10T00:00:00Z"), 6).map((t) => t.label)).toEqual([
+      "Dec",
+      "2026",
+      "Feb",
+    ]);
+  });
+
+  test("years only over a long span", () => {
+    expect(timeTicks(at("2020-03-01T00:00:00Z"), at("2026-11-01T00:00:00Z"), 8).map((t) => t.label)).toEqual([
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025",
+      "2026",
+    ]);
   });
 });

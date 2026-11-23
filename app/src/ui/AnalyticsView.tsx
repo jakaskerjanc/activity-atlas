@@ -12,6 +12,7 @@ import { CityComparisons } from "./CityComparisons";
 import { ActiveHoursClocks } from "./ActiveHoursClock";
 import { HeartRateZones } from "./HeartRateZones";
 import { YearAgainstYear } from "./YearAgainstYear";
+import { RunningFitness } from "./RunningFitness";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
@@ -77,6 +78,7 @@ export const ANALYTICS_SECTIONS: { id: string; label: string }[] = [
   { id: "calendar", label: "Activity calendar" },
   { id: "hours", label: "Active hours" },
   { id: "zones", label: "Heart-rate zones" },
+  { id: "fitness", label: "Running fitness" },
   { id: "climbing", label: "Climbing by month" },
   { id: "profiles", label: "Elevation profiles" },
 ];
@@ -238,6 +240,13 @@ export function AnalyticsView({
                   ) : (
                     <p style={statusText}>No visible activity has heart-rate zones.</p>
                   )}
+                </section>
+                <section id="fitness" style={card} className="span-2">
+                  <SectionHeading
+                    title="Running fitness"
+                    subtitle="Your runs as flat-ground pace at 150 bpm: speed for heart rate, adjusted for climbs and descents, after a 10-minute warm-up. The line is the median of the last 6 weeks; up is fitter."
+                  />
+                  <RunningFitness activities={visible} compact={mobile} />
                 </section>
                 <section id="climbing" style={card} className="span-2">
                   <SectionHeading

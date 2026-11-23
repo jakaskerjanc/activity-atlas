@@ -141,6 +141,10 @@ _Avoid_: intensity, training load
 The one set of heart-rate zone limits every activity's zones are measured against: those of the newest activity whose watch reported its zones. The zones are recomputed from each heart-rate stream at build time, so time in a zone compares across the whole history; the watch's own per-activity zones are not shown.
 _Avoid_: zone settings, thresholds
 
+**Running fitness** (card):
+The Analytics card of how much running the heart buys: each visible run with a value as a dot, its efficiency (grade-adjusted metres per heartbeat) shown as flat-ground pace at 150 bpm, faster up, with the median of the trailing six weeks (from three runs) as a line. Efficiency is computed at build time from the streams: the first 10 minutes are left out (warm-up), and so are pauses and anything slower than 1.5 m/s grade-adjusted; each metre is weighted by Minetti's energy cost of running at its grade (measured over 50 m, within ±30%). A run with under 10 minutes left, or a run without altitude that reports climbing (an inclined treadmill), has no value. The sentence under it reads the line now against the line a year before, and is left out when there is no line then. Run only.
+_Avoid_: VO2max, fitness score, training load
+
 **Ridgeline**:
 The Analytics chart with one ridge per month of the date range, oldest at the top: along each ridge, x is the day of the month (UTC) and the height is that day's elevation gain, on one height scale shared by every month. Each day's gain is a narrow peak inside that day, so a ridge never shows climbing on a day without any. Each row is labelled with the month's summed elevation gain.
 _Avoid_: joyplot
