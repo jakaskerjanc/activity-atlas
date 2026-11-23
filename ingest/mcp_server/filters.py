@@ -1,5 +1,6 @@
 """The activity filter shared by every activity tool, as SQL on alias ``a``."""
 import dataclasses
+import json
 import unicodedata
 from dataclasses import dataclass
 
@@ -14,6 +15,7 @@ class ActivityFilter:
     date_from: str | None = None  # inclusive local YYYY-MM-DD
     date_to: str | None = None    # inclusive local YYYY-MM-DD
     name_contains: str | None = None
+    text: str | None = None  # words to find; see textsearch
     min_distance_m: float | None = None
     max_distance_m: float | None = None
     min_moving_s: float | None = None
@@ -86,9 +88,15 @@ def where_sql(f: ActivityFilter) -> tuple[str, list, list[str]]:
             params.append(f.date_to)
         rules.append(f"local start date {f.date_from or '…'}..{f.date_to or '…'}")
     if f.name_contains:
-        conds.append("instr(lower(a.name), lower(?)) > 0")
-        params.append(f.name_contains)
+        conds.append("instr(fold(a.name), ?) > 0")
+        params.append(fold_name(f.name_contains))
         rules.append(f"name contains {f.name_contains!r}")
+    words = fold_name(f.text).split() if f.text else []
+    if words:
+        conds.append("a.id IN (SELECT id FROM temp.activity_text WHERE words_match(folded, ?))")
+        params.append(json.dumps(words))
+        rules.append(f'text: "{f.text}" (each word from the start of a word, case and accents ignored; '
+                     'name, type, place, route or description)')
     if f.min_distance_m is not None:
         conds.append("a.distance >= ?")
         params.append(f.min_distance_m)

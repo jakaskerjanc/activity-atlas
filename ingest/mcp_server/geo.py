@@ -62,13 +62,10 @@ def _clock(start_local: str | None, elapsed_s: float | None) -> str | None:
     return (datetime.fromisoformat(start_local) + timedelta(seconds=elapsed_s)).strftime("%H:%M")
 
 
-def activities_near(db: Database, lat: float, lon: float, radius_m: float = DEFAULT_RADIUS_M,
-                    mode: str = "route", f: ActivityFilter | None = None, limit: int = 50) -> dict:
-    if mode not in MODES:
-        raise ValueError(f"mode must be one of {', '.join(MODES)}")
-    if not 0 < radius_m <= MAX_RADIUS_M:
-        raise ValueError(f"radius_m must be between 1 and {MAX_RADIUS_M}")
-    where, params, rules = where_sql(f or ActivityFilter())
+def _hits(db: Database, lat: float, lon: float, radius_m: float, mode: str, where: str,
+          params: list) -> list[dict]:
+    """The activities matching where/params that came within radius_m of (lat, lon) by mode, nearest
+    first."""
     dlat = radius_m / M_PER_DEG_LAT
     dlon = radius_m / (M_PER_DEG_LAT * max(math.cos(math.radians(lat)), 1e-6))
     if mode == "start":
@@ -110,8 +107,27 @@ def activities_near(db: Database, lat: float, lon: float, radius_m: float = DEFA
                 "at_local_time": _clock(c["start_local"], at), "source": source,
             })
     hits.sort(key=lambda h: (h["closest_m"], h["date_local"] or ""))
+    return hits
+
+
+def activities_near(db: Database, lat: float, lon: float, radius_m: float = DEFAULT_RADIUS_M,
+                    mode: str = "route", f: ActivityFilter | None = None, limit: int = 50) -> dict:
+    """Activities within radius_m of a point. When none is, ``nearest`` is the closest one of the same
+    filter and mode within MAX_RADIUS_M (or None); it is None whenever something is inside."""
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {', '.join(MODES)}")
+    if not 0 < radius_m <= MAX_RADIUS_M:
+        raise ValueError(f"radius_m must be between 1 and {MAX_RADIUS_M}")
+    where, params, rules = where_sql(f or ActivityFilter())
+    hits = _hits(db, lat, lon, radius_m, mode, where, params)
     rules.append(f"within {radius_m:g} m of {lat:g}, {lon:g} ({MODES[mode]})")
+    nearest = None
+    if not hits and radius_m < MAX_RADIUS_M:  # at the maximum, a second pass would repeat the first
+        wider = _hits(db, lat, lon, MAX_RADIUS_M, mode, where, params)
+        if wider:
+            nearest = {k: wider[0][k] for k in ("id", "date_local", "type", "name", "closest_m")}
+            rules.append(f"nearest outside the radius: {nearest['closest_m'] / 1000:.1f} km")
     return {
-        "data": {"rows": hits[:limit], "total": len(hits), "truncated": len(hits) > limit},
+        "data": {"rows": hits[:limit], "total": len(hits), "truncated": len(hits) > limit, "nearest": nearest},
         "counted": counted(rules, len(hits)),
     }

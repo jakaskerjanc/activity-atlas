@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -55,6 +56,64 @@ def test_name_contains_case_insensitive(db):
     assert ids_of(list_activities(db, ActivityFilter(name_contains="triglav"))) == ["hike1"]
 
 
+def test_name_contains_ignores_accents(db):
+    assert ids_of(list_activities(db, ActivityFilter(name_contains="smarna"))) == ["smarna1"]
+    r = list_activities(db, ActivityFilter(name_contains="ŠMARNA"))
+    assert ids_of(r) == ["smarna1"] and "name contains 'ŠMARNA'" in r["counted"]["rules"]
+
+
+TEXT_RULE = ('(each word from the start of a word, case and accents ignored; '
+             'name, type, place, route or description)')
+
+
+def test_text_filter_from_word_starts(db):
+    assert ids_of(list_activities(db, ActivityFilter(text="cold rain"))) == ["walk1"]   # not wt1
+    r = list_activities(db, ActivityFilter(text="SMARNA"))
+    assert ids_of(r) == ["smarna1"]
+    assert f'text: "SMARNA" {TEXT_RULE}' in r["counted"]["rules"]
+    assert ids_of(list_activities(db, ActivityFilter(text="weight training"))) == ["wt1"]
+    assert ids_of(list_activities(db, ActivityFilter(text="gora šmarna"))) == ["smarna1"]
+    assert ids_of(list_activities(db, ActivityFilter(text="marna"))) == []
+
+
+def test_text_filter_and_hidden(db):
+    assert ids_of(list_activities(db, ActivityFilter(text="hidden1"))) == []
+    assert ids_of(list_activities(db, ActivityFilter(text="hidden1", include_hidden=True))) == ["hidden1"]
+
+
+def test_description_never_in_rows(db):
+    row = list_activities(db, ActivityFilter(text="rain"))["data"]["rows"][0]
+    assert "description" not in row and "Rain" not in json.dumps(row)
+    assert "Rain" not in json.dumps(get_activity(db, "walk1"))
+
+
+# "r_in", "ra%" and "rai." would find walk1's "Rain" as a LIKE pattern or a regex; as words they don't.
+@pytest.mark.parametrize("q", ["o'clock", "100%", "a_b", "'; DROP TABLE activities; --",
+                               "r_in", "ra%", "rai."])
+def test_text_is_never_a_pattern(db, q):
+    assert list_activities(db, ActivityFilter(text=q))["data"]["total"] == 0
+
+
+def test_blank_text_is_no_filter(db):
+    for q in ("", "   ", "\n"):
+        r = list_activities(db, ActivityFilter(text=q))
+        assert r["data"]["total"] == 12
+        assert not any(rule.startswith("text:") for rule in r["counted"]["rules"])
+
+
+def test_text_with_place_and_types(db):
+    assert ids_of(list_activities(db, ActivityFilter(types=["Hike"], text="out-and-back"))) == [
+        "slavnik2", "slavnik1"]
+    assert ids_of(list_activities(db, ActivityFilter(types=["Run"], text="out-and-back"))) == []
+    assert ids_of(list_activities(db, ActivityFilter(place="Slavnik", text="again"))) == ["slavnik2"]
+
+
+def test_summarize_takes_text(db):
+    r = summarize(db, ActivityFilter(text="slavnik"), period="all")
+    assert r["data"]["rows"][0]["count"] == 2
+    assert f'text: "slavnik" {TEXT_RULE}' in r["counted"]["rules"]
+
+
 def test_has_hr(db):
     assert set(ids_of(list_activities(db, ActivityFilter(has_hr=True)))) == {"run1", "run3"}
 
@@ -77,7 +136,7 @@ def test_sort_distance(db):
 
 def test_limit_and_total(db):
     r = list_activities(db, ActivityFilter(), limit=2)
-    assert len(r["data"]["rows"]) == 2 and r["data"]["total"] == 11
+    assert len(r["data"]["rows"]) == 2 and r["data"]["total"] == 12
 
 
 def test_bad_sort(db):
@@ -156,11 +215,10 @@ def test_bad_period(db):
         summarize(db, ActivityFilter(), period="decade")
 
 
-def test_place_filter_by_id_and_name(db):
-    for place in ("slavnik1", "Slavnik"):
-        r = list_activities(db, ActivityFilter(place=place))
-        assert ids_of(r) == ["slavnik2", "slavnik1"]
-        assert f"place: {place}" in r["counted"]["rules"]
+def test_place_filter_by_id(db):  # by name: test_mcp_queries.py
+    r = list_activities(db, ActivityFilter(place="slavnik1"))
+    assert ids_of(r) == ["slavnik2", "slavnik1"]
+    assert "place: slavnik1" in r["counted"]["rules"]
 
 
 def test_place_filter_ignores_case_and_accents(db):
@@ -252,6 +310,6 @@ def test_without_group_tables_says_no_places_yet(tmp_path):
                      lambda: summarize(d, ActivityFilter(place="Slavnik"))):
             with pytest.raises(ValueError, match=NO_PLACES_YET):
                 call()
-        assert list_activities(d, ActivityFilter())["data"]["total"] == 11
+        assert list_activities(d, ActivityFilter())["data"]["total"] == 12
     finally:
         d.close()

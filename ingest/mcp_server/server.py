@@ -36,10 +36,10 @@ class ServerContext:
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
-def _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
+def _filter(types, date_from, date_to, name_contains, text, min_distance_m, max_distance_m, min_moving_s,
             has_hr, has_gps, include_hidden, place) -> ActivityFilter:
     return ActivityFilter(types=types, date_from=date_from, date_to=date_to, name_contains=name_contains,
-                          min_distance_m=min_distance_m, max_distance_m=max_distance_m,
+                          text=text, min_distance_m=min_distance_m, max_distance_m=max_distance_m,
                           min_moving_s=min_moving_s, has_hr=has_hr, has_gps=has_gps,
                           include_hidden=include_hidden, place=place)
 
@@ -87,18 +87,19 @@ def build_server(ctx: ServerContext) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     def list_activities(types: list[str] | None = None, date_from: str | None = None,
-                        date_to: str | None = None, name_contains: str | None = None,
+                        date_to: str | None = None, name_contains: str | None = None, text: str | None = None,
                         min_distance_m: float | None = None, max_distance_m: float | None = None,
                         min_moving_s: float | None = None, has_hr: bool | None = None,
                         has_gps: bool | None = None, include_hidden: bool = False, place: str | None = None,
                         sort: str = "date_desc", limit: int = 200, offset: int = 0) -> dict:
         """List activities matching filters. Dates are inclusive local YYYY-MM-DD. types are exact
-        activity types (e.g. ["Run"]); no grouping. place: a place id or name from the places tool (case
-        and accents ignored). sort: date_desc, date_asc, distance_desc, moving_desc, gain_desc. Rows: id,
-        date, type, name, distance_km, moving_min, pace_min_km, speed_kmh, gain_m, avg_hr; unknown values
-        are null."""
-        f = _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
-                    has_hr, has_gps, include_hidden, place)
+        activity types (e.g. ["Run"]); no grouping. text: words to find, each from the start of a word
+        (case and accents ignored), in the name, type, place, route or description. place: a place id or
+        name from the places tool (case and accents ignored). sort: date_desc, date_asc, distance_desc,
+        moving_desc, gain_desc. Rows: id, date, type, name, distance_km, moving_min, pace_min_km, speed_kmh,
+        gain_m, avg_hr; unknown values are null."""
+        f = _filter(types, date_from, date_to, name_contains, text, min_distance_m, max_distance_m,
+                    min_moving_s, has_hr, has_gps, include_hidden, place)
         return run(lambda: activities.list_activities(ctx.db, f, sort, limit, offset))
 
     @server.tool(annotations=READ_ONLY)
@@ -108,16 +109,18 @@ def build_server(ctx: ServerContext) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     def summarize(types: list[str] | None = None, date_from: str | None = None, date_to: str | None = None,
-                  name_contains: str | None = None, min_distance_m: float | None = None,
-                  max_distance_m: float | None = None, min_moving_s: float | None = None,
-                  has_hr: bool | None = None, has_gps: bool | None = None, include_hidden: bool = False,
-                  place: str | None = None, period: str = "year", by_type: bool = True) -> dict:
+                  name_contains: str | None = None, text: str | None = None,
+                  min_distance_m: float | None = None, max_distance_m: float | None = None,
+                  min_moving_s: float | None = None, has_hr: bool | None = None, has_gps: bool | None = None,
+                  include_hidden: bool = False, place: str | None = None, period: str = "year",
+                  by_type: bool = True) -> dict:
         """Totals and averages per period (week, month, year, all) and per type: count, distance, moving
         and elapsed time, elevation gain, pace/speed (total moving time / total distance), avg HR (weighted
-        by moving time), with how many activities each figure is based on. Use this for trends. place: a
-        place id or name from the places tool (case and accents ignored)."""
-        f = _filter(types, date_from, date_to, name_contains, min_distance_m, max_distance_m, min_moving_s,
-                    has_hr, has_gps, include_hidden, place)
+        by moving time), with how many activities each figure is based on. Use this for trends. text: words
+        to find, each from the start of a word (case and accents ignored), in the name, type, place, route or
+        description. place: a place id or name from the places tool (case and accents ignored)."""
+        f = _filter(types, date_from, date_to, name_contains, text, min_distance_m, max_distance_m,
+                    min_moving_s, has_hr, has_gps, include_hidden, place)
         return run(lambda: activities.summarize(ctx.db, f, period, by_type))
 
     @server.tool(annotations=READ_ONLY)
@@ -170,7 +173,8 @@ def build_server(ctx: ServerContext) -> MCPServer:
                         types: list[str] | None = None, date_from: str | None = None,
                         date_to: str | None = None, include_hidden: bool = False, limit: int = 50) -> dict:
         """Activities that came within radius_m (default 200 m) of a point, nearest first, with the closest
-        distance and when it happened. mode: route (anywhere on the track), start, or end."""
+        distance and when it happened. mode: route (anywhere on the track), start, or end. When nothing is
+        inside radius_m, nearest is the closest matching activity within 50 km."""
         f = ActivityFilter(types=types, date_from=date_from, date_to=date_to, include_hidden=include_hidden)
         return run(lambda: geo.activities_near(ctx.db, lat, lon, radius_m, mode, f, limit))
 

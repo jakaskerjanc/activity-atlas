@@ -70,6 +70,8 @@ def build_fixture_db(path: str) -> str:
     _insert_activity(conn, "run_nomove", "Run", "2025-03-14T07:00:00+00:00", distance=3000)
     _insert_activity(conn, "hidden1", "Run", "2025-03-15T07:00:00+00:00", distance=4000, moving=1200, visible=0)
     _insert_activity(conn, "walk1", "Walk", "2025-03-11T07:00:00+00:00", moving=600)
+    # Its name says nothing of weight training: that comes from the split type alone.
+    _insert_activity(conn, "wt1", "WeightTraining", "2025-02-05T17:00:00+00:00", name="Gym", moving=3600)
     # Passes 11 m north of the Triglav summit (46.3783, 13.8369); sample 3 lost GPS.
     lons = [13.830, 13.832, 13.834, 13.835, 13.8369, 13.839, 13.841, 13.843, 13.845, 13.847]
     hike_track = {
@@ -110,6 +112,15 @@ def build_fixture_db(path: str) -> str:
         "VALUES ('strava', '111', 'run1', 'https://www.strava.com/activities/111', ?, ?)",
         (json.dumps({"description": "private"}), json.dumps({"x": 1})),
     )
+    # The text filter searches live Strava descriptions only: walk1's, not the Garmin row's (no
+    # summary) nor run2's deleted Strava record.
+    conn.executemany(
+        "INSERT INTO activity_sources (provider, provider_activity_id, activity_id, summary_json, deleted_at) "
+        "VALUES (?, ?, ?, ?, ?)", [
+            ("strava", "222", "walk1", json.dumps({"Activity Description": "Weather: 3°C, Rain, Cold"}), None),
+            ("garmin", "g222", "walk1", None, None),
+            ("strava", "333", "run2", json.dumps({"Activity Description": "Up Slavnik"}), "2025-03-13T00:00:00Z"),
+        ])
     conn.execute("INSERT INTO laps (file_sha256, lap_index, distance_m, elapsed_s) VALUES ('sha-run1', 0, 5000, 1500)")
     conn.execute("INSERT INTO laps (file_sha256, lap_index, distance_m, elapsed_s) VALUES ('sha-run1', 1, 5000, 1500)")
     conn.execute("INSERT INTO gear (provider, name, kind) VALUES ('strava', 'Shoe A', 'shoes')")

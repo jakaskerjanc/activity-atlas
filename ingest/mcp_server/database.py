@@ -2,7 +2,9 @@
 
 Two connections to the same file, both opened ``mode=ro``:
 
-- ``conn`` for the server's own tools, which may read every column;
+- ``conn`` for the server's own tools, which may read every column, with the
+  ``fold`` and ``words_match`` functions and the ``temp.activity_text`` table
+  behind the ``text`` filter (built from the file on every open);
 - ``query_conn`` for the raw ``query`` tool, locked down by an authorizer that
   allows only reads, and that returns the raw payload columns as NULL (they are
   large and can hold private notes).
@@ -10,6 +12,9 @@ Two connections to the same file, both opened ``mode=ro``:
 import os
 import sqlite3
 import time
+
+from .filters import fold_name
+from .textsearch import search_texts, words_match
 
 QUERY_TIME_LIMIT_S = 10.0
 DEFAULT_MAX_ROWS = 200
@@ -58,6 +63,22 @@ def _open_ro(path: str) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
 
 
+def _fold(s: str | None) -> str | None:
+    return None if s is None else fold_name(s)
+
+
+def _add_text_search(conn: sqlite3.Connection) -> None:
+    """The functions and TEMP table the text and name filters use. A TEMP table is the
+    connection's own, so it can be written on a read-only one and ``query_conn`` cannot see it. It is
+    kept in memory, so opening never needs a writable temp directory."""
+    conn.execute("PRAGMA temp_store = MEMORY")
+    conn.create_function("fold", 1, _fold, deterministic=True)
+    conn.create_function("words_match", 2, words_match, deterministic=True)
+    conn.execute("CREATE TEMP TABLE activity_text (id TEXT PRIMARY KEY, folded TEXT NOT NULL) WITHOUT ROWID")
+    conn.executemany("INSERT INTO temp.activity_text (id, folded) VALUES (?, ?)", search_texts(conn).items())
+    conn.commit()  # never leave a read transaction open on the file
+
+
 class Database:
     def __init__(self, path: str):
         self.path = path
@@ -83,6 +104,7 @@ class Database:
         self._opened_id = self._file_id()
         self.conn = _open_ro(self.path)
         self.conn.row_factory = sqlite3.Row
+        _add_text_search(self.conn)
         q = _open_ro(self.path)
         q.execute("PRAGMA query_only = ON")
         tables = {r[0] for r in self.conn.execute(
