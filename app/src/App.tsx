@@ -12,6 +12,7 @@ import { ReplayBar } from "./ui/ReplayBar";
 import { AnalyticsView, ANALYTICS_SECTIONS } from "./ui/AnalyticsView";
 import { ActivitiesView } from "./ui/ActivitiesView";
 import { DEFAULT_SORT, type SearchNames, type Sort } from "./activitySearch";
+import { DEFAULT_GROUPING, type Grouping } from "./activityGroups";
 import { useView } from "./ui/useView";
 import {
   createActivityFilter,
@@ -175,10 +176,11 @@ export default function App() {
     [placesFile],
   );
   const searchNames = useMemo<SearchNames>(() => ({ places: placeMap, routes: routeMap }), [placeMap, routeMap]);
-  // The Activities page's search and sort. Held here, so a trip to the map and back
-  // finds the list as it was left.
+  // The Activities page's search, sort and grouping. Held here, so a trip to the map
+  // and back finds the list as it was left.
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
+  const [grouping, setGrouping] = useState<Grouping>(DEFAULT_GROUPING);
   // A month isolated from the ridgeline and the range it replaced, for the second click.
   const [isolation, setIsolation] = useState<MonthIsolation | null>(null);
   const pickMonth = (month: number) => {
@@ -723,6 +725,8 @@ export default function App() {
           onQueryChange={setQuery}
           sort={sort}
           onSortChange={setSort}
+          grouping={grouping}
+          onGroupingChange={setGrouping}
           onOpen={openOnMap}
           onReveal={(list) => filter && changeFilter(revealActivities(filter, list))}
           sidePanelExpanded={!panels.sideCollapsed}
