@@ -211,7 +211,7 @@ describe("AnalyticsView", () => {
     const html = render({ filter: runs, visible: visibleActivities(runs) });
     expect(html).toContain('id="fitness"');
     expect(html).toContain("Running fitness");
-    expect(html).toContain("the rolling line ends at 5:33\u00a0/km");
+    expect(html).toContain("now 5:33\u00a0/km");
     expect(html.indexOf('id="fitness"')).toBeGreaterThan(html.indexOf('id="zones"'));
     const ids = ANALYTICS_SECTIONS.map((s) => s.id);
     expect(ids.indexOf("fitness")).toBe(ids.indexOf("zones") + 1);

@@ -2,8 +2,12 @@ import { describe, expect, test } from "vitest";
 import {
   climbCorrection,
   climbSlope,
+  bestPoint,
   fitnessComparison,
   fitnessPoints,
+  lineDates,
+  lineGaps,
+  noLineReason,
   paceAt,
   paceTicks,
   rollingLine,
@@ -173,6 +177,69 @@ describe("rollingLine", () => {
 
   test("no line without runs", () => {
     expect(rollingLine([])).toEqual([]);
+  });
+});
+
+describe("lineDates", () => {
+  test("weekly back from the newest run, as far as the oldest, oldest first", () => {
+    expect(lineDates([0, 3, 20].map((d) => point(d, 300))).map((t) => (t - T0) / DAY)).toEqual([6, 13, 20]);
+    expect(lineDates([])).toEqual([]);
+  });
+
+  test("the line's points sit on those dates", () => {
+    const pts = Array.from({ length: 30 }, (_, i) => point(3 * i, 330));
+    const dates = new Set(lineDates(pts));
+    expect(rollingLine(pts).flat().every((p) => dates.has(p.ts))).toBe(true);
+  });
+});
+
+describe("lineGaps", () => {
+  const seg = (...days: number[]): LinePoint[] => days.map((d) => ({ ts: T0 + d * DAY, pace: 300 + d, se: 1, runs: 5 }));
+  const days = (gaps: ReturnType<typeof lineGaps>) => gaps.map((g) => [g.from.ts, g.to.ts].map((t) => (t - T0) / DAY));
+
+  test("one connector between each piece of the line and the next", () => {
+    expect(days(lineGaps([seg(0, 7, 14), seg(42, 49), seg(98)]))).toEqual([
+      [14, 42],
+      [49, 98],
+    ]);
+  });
+
+  test("none for an unbroken line, or none at all: the stretches before and after aren't gaps", () => {
+    expect(lineGaps([seg(0, 7, 14)])).toEqual([]);
+    expect(lineGaps([])).toEqual([]);
+  });
+
+  test("on rollingLine's breaks", () => {
+    const every3 = (from: number, to: number) =>
+      Array.from({ length: (to - from) / 3 + 1 }, (_, i) => point(from + 3 * i, 330));
+    expect(days(lineGaps(rollingLine([...every3(0, 60), ...every3(200, 260)])))).toEqual([[85, 218]]);
+  });
+});
+
+describe("bestPoint", () => {
+  test("the fastest point across the pieces, the oldest of equals", () => {
+    const line: LinePoint[][] = [
+      [{ ts: 1, pace: 330, se: 1, runs: 5 }, { ts: 2, pace: 310, se: 1, runs: 5 }],
+      [{ ts: 3, pace: 320, se: 1, runs: 5 }, { ts: 4, pace: 310, se: 1, runs: 5 }],
+    ];
+    expect(bestPoint(line)?.ts).toBe(2);
+    expect(bestPoint([])).toBeNull();
+  });
+});
+
+describe("noLineReason", () => {
+  const pts = [0, 3, 6, 9, 12, 120, 123].map((d) => point(d, 330));
+  const at = (day: number) => noLineReason(pts, T0 + day * DAY);
+
+  test("no runs for over 28 days: the runs either side of the stretch", () => {
+    expect(at(60)).toEqual({ kind: "no-runs", lastRun: T0 + 12 * DAY, nextRun: T0 + 120 * DAY });
+    expect(noLineReason(pts, T0 - DAY)).toEqual({ kind: "no-runs", lastRun: null, nextRun: T0 });
+  });
+
+  test("a recent run, but too few in the 91 days", () => {
+    expect(at(3)).toEqual({ kind: "too-few", runs: 2 });
+    // Back after the break: the runs before it have left the window.
+    expect(at(123)).toEqual({ kind: "too-few", runs: 2 });
   });
 });
 

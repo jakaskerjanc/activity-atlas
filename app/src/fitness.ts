@@ -156,10 +156,7 @@ export interface LinePoint {
  */
 export function rollingLine(points: readonly FitnessPoint[]): LinePoint[][] {
   if (points.length === 0) return [];
-  const first = points[0].ts;
-  const ends: number[] = [];
-  for (let t = points[points.length - 1].ts; t >= first; t -= LINE_STEP_DAYS * DAY_S) ends.push(t);
-  ends.reverse();
+  const ends = lineDates(points);
 
   const segments: LinePoint[][] = [];
   let current: LinePoint[] | null = null;
@@ -186,6 +183,77 @@ export function rollingLine(points: readonly FitnessPoint[]): LinePoint[][] {
     current.push(point);
   }
   return segments;
+}
+
+/**
+ * The dates the rolling line is evaluated at, oldest first (points sorted by ts): every
+ * LINE_STEP_DAYS days back from the newest run, as far as the oldest. Each one has a
+ * point on the line or falls in a stretch without one.
+ */
+export function lineDates(points: readonly FitnessPoint[]): number[] {
+  if (points.length === 0) return [];
+  const first = points[0].ts;
+  const ends: number[] = [];
+  for (let t = points[points.length - 1].ts; t >= first; t -= LINE_STEP_DAYS * DAY_S) ends.push(t);
+  return ends.reverse();
+}
+
+/** A break inside the rolling line: its last point before the break and first after it. */
+export interface LineGap {
+  from: LinePoint;
+  to: LinePoint;
+}
+
+/**
+ * The breaks between the line's runs of points, oldest first: where the chart bridges
+ * the line with a weaker connector. The stretches before its first point or after its
+ * last aren't breaks.
+ */
+export function lineGaps(line: readonly LinePoint[][]): LineGap[] {
+  const gaps: LineGap[] = [];
+  for (let i = 1; i < line.length; i++) {
+    const before = line[i - 1];
+    if (before.length > 0 && line[i].length > 0) gaps.push({ from: before[before.length - 1], to: line[i][0] });
+  }
+  return gaps;
+}
+
+/** The line's fastest point (the oldest of equals), or null without a line. */
+export function bestPoint(line: readonly LinePoint[][]): LinePoint | null {
+  let best: LinePoint | null = null;
+  for (const seg of line) for (const p of seg) if (!best || p.pace < best.pace) best = p;
+  return best;
+}
+
+/** Why the line has no point at a date, the reverse of rollingLine's two tests. */
+export type NoLineReason =
+  /** the newest run by then is over LINE_GAP_DAYS old: no runs between it and the next */
+  | { kind: "no-runs"; lastRun: number | null; nextRun: number | null }
+  /** a recent run, but fewer than ROLLING_MIN_RUNS in the window */
+  | { kind: "too-few"; runs: number };
+
+/**
+ * Why there is no point on the line at `ts` (points sorted by ts): no run for over
+ * LINE_GAP_DAYS before it, naming the runs either side of that stretch (null where there
+ * is none), or too few runs in the ROLLING_DAYS to it.
+ */
+export function noLineReason(points: readonly FitnessPoint[], ts: number): NoLineReason {
+  let last: number | null = null;
+  let next: number | null = null;
+  let runs = 0;
+  for (const p of points) {
+    if (p.ts <= ts) {
+      last = p.ts;
+      if (p.ts > ts - ROLLING_DAYS * DAY_S) runs += 1;
+    } else {
+      next = p.ts;
+      break;
+    }
+  }
+  if (last == null || last < ts - LINE_GAP_DAYS * DAY_S) {
+    return { kind: "no-runs", lastRun: last, nextRun: next };
+  }
+  return { kind: "too-few", runs };
 }
 
 /**
