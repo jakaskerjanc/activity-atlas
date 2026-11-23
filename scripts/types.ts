@@ -46,6 +46,12 @@ export interface ActivityRecord {
    * pauses (sample gaps over 60 s) in none. Absent without a heart-rate stream or limits.
    */
   hr_zones?: number[];
+  /**
+   * Running fitness: grade-adjusted metres per heartbeat after a 10-minute warm-up, from
+   * the streams (scripts/fitness.ts). Run only; absent when the run has too little
+   * running with heart rate to measure.
+   */
+  efficiency?: number;
   channels: Channel[];
   /** Live provider sources only (deleted ones are dropped), Strava first. */
   sources: ActivitySource[];

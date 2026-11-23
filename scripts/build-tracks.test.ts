@@ -448,3 +448,24 @@ test("a database without group tables builds an empty places.json", () => {
     { withoutGroupTables: true },
   );
 });
+
+test("a run gets its efficiency from the streams; other types and runs too short for one don't", () => {
+  // 30 minutes at 3 m/s and 150 bpm: 1.2 m per beat.
+  const time = Array.from({ length: 1800 }, (_, i) => i);
+  const flat = { time, distance: time.map((t) => t * 3), altitude: time.map(() => 300), hr: time.map(() => 150) };
+  withDb(
+    (db) => {
+      addActivity(db, "run", { streams_sha256: "sha1" });
+      addActivity(db, "ride", { type: "Ride", streams_sha256: "sha1" });
+      addActivity(db, "short", { streams_sha256: "sha2" });
+      addStreams(db, "sha1", flat);
+      addStreams(db, "sha2", { time: [0, 10], distance: [0, 30], hr: [150, 150] });
+    },
+    (path) => {
+      const byId = Object.fromEntries(readDisplayFiles(path).activities.activities.map((a) => [a.id, a]));
+      assert.equal(byId.run.efficiency, 1.2);
+      assert.ok(!("efficiency" in byId.ride));
+      assert.ok(!("efficiency" in byId.short));
+    },
+  );
+});
