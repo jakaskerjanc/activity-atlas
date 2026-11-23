@@ -270,7 +270,10 @@ export function readDisplayFiles(
       const groups = { place: placeOf.get(row.id), route: routeOf.get(row.id) };
       const hrZones =
         zoneLimits && decoded?.hr && row.has_hr === 1 ? zoneSeconds(decoded.time, decoded.hr, zoneLimits) : undefined;
-      const efficiency = row.type === "Run" && decoded && row.has_hr === 1 ? runEfficiency(decoded) : undefined;
+      const efficiency =
+        row.type === "Run" && decoded && row.has_hr === 1
+          ? runEfficiency(decoded, row.elevation_gain ?? undefined)
+          : undefined;
       files.activities.activities.push(
         toRecord(row, sources.get(row.id) ?? [], detail != null, groups, hrZones, efficiency),
       );

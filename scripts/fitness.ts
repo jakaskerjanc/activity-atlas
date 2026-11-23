@@ -12,7 +12,10 @@ import { MAX_SAMPLE_GAP_S } from "./zones.ts";
 export const WARMUP_S = 600;
 /** A run with less kept time than this has no value. */
 export const MIN_KEPT_S = 600;
-/** Slower than this is stopping or walking, not running: left out. */
+/**
+ * Slower than this, grade-adjusted, is stopping or strolling: left out. Adjusted, so a
+ * steep climb taken at a walk still counts as the work it is.
+ */
 export const MIN_SPEED_MS = 1.5;
 /** Grade is rise over this much distance centred on the sample (altitude noise swamps shorter). */
 export const GRADE_WINDOW_M = 50;
@@ -28,74 +31,89 @@ const FLAT_COST = minettiCost(0);
 
 type Series = readonly (number | null)[];
 
+/** The present (x, y) pairs of two channels, in sample order, keeping x non-decreasing. */
+function pairs(xs: Series, ys: Series): { x: number[]; y: number[] } {
+  const x: number[] = [];
+  const y: number[] = [];
+  const n = Math.min(xs.length, ys.length);
+  for (let i = 0; i < n; i++) {
+    const a = xs[i];
+    const b = ys[i];
+    if (a == null || b == null) continue;
+    if (x.length > 0 && a < x[x.length - 1]) continue;
+    x.push(a);
+    y.push(b);
+  }
+  return { x, y };
+}
+
 /**
- * Altitude at a distance along the run, interpolated between the present samples around
- * it (which are sorted by distance), and held at the ends.
+ * y at x, interpolated linearly between the present samples around it (x sorted). Two
+ * samples further apart than `maxSpan` don't bridge the gap (null), nor does anything
+ * outside the samples, unless `hold` keeps the end values there.
  */
-function altitudeAlong(dist: number[], alt: number[]): (d: number) => number {
+function interpolator(x: number[], y: number[], maxSpan = Infinity, hold = false): (at: number) => number | null {
   let j = 0;
-  return (d) => {
-    // Calls come in roughly increasing distance; walk the cursor either way.
-    while (j > 0 && dist[j] > d) j -= 1;
-    while (j + 1 < dist.length && dist[j + 1] <= d) j += 1;
-    if (d <= dist[0]) return alt[0];
-    if (j + 1 >= dist.length) return alt[alt.length - 1];
-    const span = dist[j + 1] - dist[j];
-    return span > 0 ? alt[j] + ((alt[j + 1] - alt[j]) * (d - dist[j])) / span : alt[j];
+  return (at) => {
+    if (x.length === 0) return null;
+    // Calls come in roughly increasing order; walk the cursor either way.
+    while (j > 0 && x[j] > at) j -= 1;
+    while (j + 1 < x.length && x[j + 1] <= at) j += 1;
+    if (at < x[0]) return hold ? y[0] : null;
+    if (x[j] === at) return y[j];
+    if (j + 1 >= x.length) return hold ? y[y.length - 1] : null;
+    const span = x[j + 1] - x[j];
+    if (span > maxSpan) return null;
+    return y[j] + ((y[j + 1] - y[j]) * (at - x[j])) / span;
   };
 }
 
 /**
  * Grade-adjusted metres per heartbeat over the run after WARMUP_S, rounded to 4 decimals.
- * Interval i → i + 1 counts when both ends have time and distance, sample i has a heart
- * rate, the interval is no pause (over MAX_SAMPLE_GAP_S) and the speed over it is at least
- * MIN_SPEED_MS. Its grade is measured over GRADE_WINDOW_M around its middle and clamped to
- * ±MAX_GRADE; without altitude the run counts as flat (a treadmill). Undefined when less
- * than MIN_KEPT_S counts: unknown, never a guess.
+ * The run is read as consecutive samples with both time and distance; heart rate, which
+ * some watches write on rows of its own every few seconds, is interpolated in time
+ * between its samples (not across a gap over MAX_SAMPLE_GAP_S). Interval a → b counts
+ * when a has a heart rate, it is no pause (over MAX_SAMPLE_GAP_S) and its grade-adjusted
+ * speed is at least MIN_SPEED_MS. Its grade is measured over GRADE_WINDOW_M around its
+ * middle and clamped to ±MAX_GRADE. Without altitude samples the run counts as flat (a
+ * treadmill) when its reported elevation gain is 0 or unknown; one that reports climbing
+ * (an inclined treadmill) has no grade to adjust by, so no value. Undefined when less than
+ * MIN_KEPT_S counts: unknown, never a guess.
  */
-export function runEfficiency(s: Streams): number | undefined {
+export function runEfficiency(s: Streams, elevationGain?: number): number | undefined {
   const { time, distance, hr } = s;
   if (!distance || !hr) return undefined;
   const t0 = time.find((t) => t != null);
   if (t0 == null) return undefined;
 
-  const altDist: number[] = [];
-  const altValue: number[] = [];
-  const altitude: Series = s.altitude ?? [];
-  for (let i = 0; i < altitude.length; i++) {
-    const d = distance[i];
-    const a = altitude[i];
-    if (d == null || a == null) continue;
-    if (altDist.length > 0 && d < altDist[altDist.length - 1]) continue; // keep it sorted
-    altDist.push(d);
-    altValue.push(a);
-  }
-  const altAt = altDist.length >= 2 ? altitudeAlong(altDist, altValue) : null;
+  const run = pairs(time, distance);
+  const beat = pairs(time, hr);
+  const hrAt = interpolator(beat.x, beat.y, MAX_SAMPLE_GAP_S);
+  const ground = pairs(distance, s.altitude ?? []);
+  const altAt = ground.x.length >= 2 ? interpolator(ground.x, ground.y, Infinity, true) : null;
+  if (!altAt && elevationGain != null && elevationGain > 0) return undefined;
   const half = GRADE_WINDOW_M / 2;
 
   let metres = 0;
   let beats = 0;
   let kept = 0;
-  const n = Math.min(time.length, distance.length, hr.length);
-  for (let i = 0; i + 1 < n; i++) {
-    const ta = time[i];
-    const tb = time[i + 1];
-    const da = distance[i];
-    const db = distance[i + 1];
-    const h = hr[i];
-    if (ta == null || tb == null || da == null || db == null || h == null || !(h > 0)) continue;
-    if (ta - t0 < WARMUP_S) continue;
-    const dt = tb - ta;
-    if (!(dt > 0) || dt > MAX_SAMPLE_GAP_S) continue;
-    const ds = db - da;
-    if (ds / dt < MIN_SPEED_MS) continue;
+  for (let i = 0; i + 1 < run.x.length; i++) {
+    const ta = run.x[i];
+    const dt = run.x[i + 1] - ta;
+    if (ta - t0 < WARMUP_S || !(dt > 0) || dt > MAX_SAMPLE_GAP_S) continue;
+    const h = hrAt(ta);
+    if (h == null || !(h > 0)) continue;
+    const da = run.y[i];
+    const ds = run.y[i + 1] - da;
     let grade = 0;
     if (altAt) {
-      const mid = (da + db) / 2;
-      grade = (altAt(mid + half) - altAt(mid - half)) / GRADE_WINDOW_M;
+      const mid = da + ds / 2;
+      grade = (altAt(mid + half)! - altAt(mid - half)!) / GRADE_WINDOW_M;
       grade = Math.max(-MAX_GRADE, Math.min(MAX_GRADE, grade));
     }
-    metres += (ds * minettiCost(grade)) / FLAT_COST;
+    const adjusted = (ds * minettiCost(grade)) / FLAT_COST;
+    if (adjusted / dt < MIN_SPEED_MS) continue;
+    metres += adjusted;
     beats += (h * dt) / 60;
     kept += dt;
   }

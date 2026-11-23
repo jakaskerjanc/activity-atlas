@@ -52,8 +52,27 @@ test("a flat run: metres per beat", () => {
   close(runEfficiency(streams([FLAT])), 1.2);
 });
 
-test("a run without an altitude channel counts as flat", () => {
+test("a run without altitude counts as flat when it reports no climb, and has no value when it does", () => {
   close(runEfficiency(streams([FLAT], { altitude: false })), 1.2);
+  close(runEfficiency(streams([FLAT], { altitude: false }), 0), 1.2);
+  // An inclined treadmill: climbing, but no grade to adjust by.
+  assert.equal(runEfficiency(streams([FLAT], { altitude: false }), 500), undefined);
+  // With altitude samples the reported climb doesn't matter.
+  close(runEfficiency(streams([FLAT]), 500), 1.2);
+});
+
+test("a steep climb taken slowly still counts: the speed cut is on grade-adjusted speed", () => {
+  const value = runEfficiency(
+    streams([
+      { seconds: WARMUP_S, speed: 3, hr: 150 },
+      { seconds: 600, speed: 3, hr: 150 },
+      // 1.2 m/s up 20% is about 3 m/s on the flat.
+      { seconds: 600, speed: 1.2, hr: 120, grade: 0.2 },
+    ]),
+  );
+  const metres = 1800 + (720 * minettiCost(0.2)) / minettiCost(0);
+  const beats = 600 * 2.5 + 600 * 2;
+  close(value, metres / beats, 0.02);
 });
 
 test("climbing and descending at the same speed and heart rate counts as more work", () => {
@@ -96,4 +115,23 @@ test("too little kept running, or no heart rate or distance, is no value", () =>
   assert.equal(runEfficiency(streams([{ ...FLAT, hr: null }])), undefined);
   const { time, hr } = streams([FLAT]);
   assert.equal(runEfficiency({ time, hr }), undefined);
+});
+
+test("heart rate recorded on its own rows, every few seconds, still counts", () => {
+  // Some watches write heart rate on separate records from distance: interleave them, with
+  // a heart-rate row every 10 s at the same time as a distance row.
+  const time: number[] = [];
+  const distance: (number | null)[] = [];
+  const hr: (number | null)[] = [];
+  for (let t = 0; t < 1800; t++) {
+    time.push(t);
+    distance.push(t * 3);
+    hr.push(null);
+    if (t % 10 === 0) {
+      time.push(t);
+      distance.push(null);
+      hr.push(150);
+    }
+  }
+  close(runEfficiency({ time, distance, hr }), 1.2);
 });
