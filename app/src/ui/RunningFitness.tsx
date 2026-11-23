@@ -1,6 +1,6 @@
 // Running fitness: the rolling 3-month mean of each visible run's flat-ground pace at
-// 150 bpm, corrected for climbing (fitness.ts). The line's latest value leads as a big
-// number, with the change since a year earlier and the best value under it; the chart is
+// 150 bpm, corrected for climbing (fitness.ts). A lead line, like the other cards', gives
+// the line's latest value, the change since a year earlier and the best value; the chart is
 // the line alone, faster up, with its best and latest points labelled and its breaks
 // bridged by a faint dotted connector. Hovering or tapping snaps a crosshair to the
 // nearest week: its value and how many runs it averages, or why the line has none.
@@ -85,10 +85,7 @@ export function RunningFitness({
       )}
       {latest && <Chart points={points} line={line} best={best} latest={latest} compact={compact} />}
       <p style={note}>
-        Flat-ground pace at {REFERENCE_HR} bpm, corrected for climbing · <span style={{ whiteSpace: "nowrap" }}>3-month average</span> · an estimate from pace,
-        heart rate and climbing, not VO2max.
-      </p>
-      <p style={{ ...note, marginTop: 2 }}>
+        An estimate from pace, heart rate and climbing, not VO2max.{" "}
         {slope > 0
           ? `Hillier runs still read slower after the grade adjustment, so each run is credited ${slope.toFixed(1)}\u00a0s/km per metre climbed per km, fitted from your runs.`
           : "Too few runs yet to fit a climb correction, so the values aren't corrected for climbing."}
@@ -113,36 +110,21 @@ function Headline({
   const diff = comparison ? comparison.now.pace - comparison.then.pace : null;
   const secs = diff == null ? 0 : Math.round(Math.abs(diff));
   return (
-    <div style={headline}>
-      <div style={heroRow}>
-        <span style={hero}>
-          {formatPace(latest.pace)}
-          <span style={heroUnit}>/km</span>
-        </span>
-        {(diff != null || stale) && (
-          <span style={heroSide}>
-            {diff != null &&
-              (Math.abs(diff) < SAME_PACE_S ? (
-                <span style={{ ...delta, color: "var(--text-soft)" }}>About the same as a year ago</span>
-              ) : (
-                <span
-                  style={{ ...delta, color: diff < 0 ? "var(--success)" : "var(--text-soft)" }}
-                  title={`${km(comparison!.then.pace)} in ${formatMonthShort(monthIndex(comparison!.then.ts))}`}
-                >
-                  <span aria-hidden="true">{diff < 0 ? "▲" : "▼"} </span>
-                  {secs}&nbsp;s/km {diff < 0 ? "faster" : "slower"} than a year ago
-                </span>
-              ))}
-            {stale && <span style={asOf}>as of {shortDate(latest.ts, now)}</span>}
+    <p style={lead}>
+      <strong style={leadValue}>{km(latest.pace)}</strong>
+      {stale ? ` as of ${shortDate(latest.ts, now)}` : " now"}
+      {diff != null && (
+        <>
+          {", "}
+          <span title={`${km(comparison!.then.pace)} in ${formatMonthShort(monthIndex(comparison!.then.ts))}`}>
+            {Math.abs(diff) < SAME_PACE_S
+              ? "about the same as a year ago"
+              : `${secs}\u00a0s/km ${diff < 0 ? "faster" : "slower"} than a year ago`}
           </span>
-        )}
-      </div>
-      {best && (
-        <p style={bestLine}>
-          Best: {km(best.pace)} in {formatMonthShort(monthIndex(best.ts))}
-        </p>
+        </>
       )}
-    </div>
+      {best && ` · best ${km(best.pace)} in ${formatMonthShort(monthIndex(best.ts))}`}
+    </p>
   );
 }
 
@@ -398,34 +380,9 @@ function Chart({
 const status: CSSProperties = { margin: 0, fontSize: FS.sm, color: "var(--text-muted)" };
 const note: CSSProperties = { margin: "10px 0 0", fontSize: FS.xs, color: "var(--text-muted)", lineHeight: 1.45 };
 
-const headline: CSSProperties = { margin: "0 0 10px" };
-const heroRow: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "baseline",
-  columnGap: 16,
-  rowGap: 2,
-};
-const hero: CSSProperties = {
-  fontSize: 52,
-  fontWeight: 650,
-  lineHeight: 1,
-  letterSpacing: "-.025em",
-  color: "var(--text-strong)",
-  fontVariantNumeric: "tabular-nums",
-  whiteSpace: "nowrap",
-};
-const heroUnit: CSSProperties = {
-  marginLeft: 6,
-  fontSize: FS.lg + 2,
-  fontWeight: 500,
-  letterSpacing: 0,
-  color: "var(--text-muted)",
-};
-const heroSide: CSSProperties = { display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 10 };
-const delta: CSSProperties = { fontSize: FS.md, fontWeight: 600, fontVariantNumeric: "tabular-nums" };
-const asOf: CSSProperties = { fontSize: FS.sm, color: "var(--text-muted)" };
-const bestLine: CSSProperties = { margin: "8px 0 0", fontSize: FS.sm, color: "var(--text-muted)" };
+// As the other cards' lead line (Year against year): the value in strong mono, the rest muted.
+const lead: CSSProperties = { margin: "0 0 12px", fontSize: FS.sm, color: "var(--text-muted)", lineHeight: 1.4 };
+const leadValue: CSSProperties = { fontFamily: MONO, fontSize: FS.md, fontWeight: 600, color: "var(--text-strong)" };
 
 const gridLine: CSSProperties = { stroke: "var(--card-grid)", strokeWidth: 1 };
 const cursorLine: CSSProperties = { stroke: "var(--text-muted)", strokeWidth: 1, opacity: 0.6 };

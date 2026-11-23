@@ -13,6 +13,7 @@ import { ActiveHoursClocks } from "./ActiveHoursClock";
 import { HeartRateZones } from "./HeartRateZones";
 import { YearAgainstYear } from "./YearAgainstYear";
 import { RunningFitness } from "./RunningFitness";
+import { REFERENCE_HR } from "../fitness";
 import { useRouteProfiles, type ProfilesState } from "./useRouteProfiles";
 import { useSteps, type StepsState } from "./useSteps";
 import type { CitiesState } from "./useCities";
@@ -242,7 +243,10 @@ export function AnalyticsView({
                   )}
                 </section>
                 <section id="fitness" style={card} className="span-2">
-                  <SectionHeading title="Running fitness" />
+                  <SectionHeading
+                    title="Running fitness"
+                    subtitle={`Flat-ground pace at ${REFERENCE_HR} bpm, corrected for climbing, averaged over 3 months. Up is fitter.`}
+                  />
                   <RunningFitness activities={visible} all={filter.activities} compact={mobile} />
                 </section>
                 <section id="climbing" style={card} className="span-2">

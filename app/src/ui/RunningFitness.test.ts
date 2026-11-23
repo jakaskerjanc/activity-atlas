@@ -30,28 +30,24 @@ const yearOn = [...runs(0, 60, 1.1), ...runs(300, 420, 1.2)];
 describe("RunningFitness", () => {
   test("leads with the line's latest value and how much faster it is than a year earlier", () => {
     const html = render(yearOn);
-    expect(text(html)).toContain("5:33/km");
     // 333.3 against 363.6 s/km a year earlier.
-    expect(text(html)).toContain("▲ 30\u00a0s/km faster than a year ago");
-    expect(html).toContain("color:var(--success)");
+    expect(text(html)).toContain("5:33\u00a0/km now, 30\u00a0s/km faster than a year ago");
     expect(html).toContain('title="6:04\u00a0/km in Feb 2025"');
     expect(html).toContain(
       'aria-label="The 3-month average of flat-ground pace at 150 bpm, corrected for climbing, over 47 runs, Jan 2025 to Mar 2026; now 5:33\u00a0/km; 1 break with too few runs"',
     );
   });
 
-  test("slower than a year ago in a muted colour, never the alarm red; about the same without an arrow", () => {
+  test("slower than a year ago, or about the same", () => {
     const slower = render([...runs(0, 60, 1.2), ...runs(300, 420, 1.1)]);
-    expect(text(slower)).toContain("▼ 30\u00a0s/km slower than a year ago");
-    expect(slower).not.toContain("var(--success)");
+    expect(text(slower)).toContain("30\u00a0s/km slower than a year ago");
     const same = render([...runs(0, 60, 1.2), ...runs(300, 420, 1.201)]);
-    expect(text(same)).toContain("About the same as a year ago");
-    expect(same).not.toMatch(/[▲▼]/);
+    expect(text(same)).toContain("now, about the same as a year ago");
   });
 
   test("no comparison without a line a year earlier", () => {
     const html = render(runs(0, 120, 1.2));
-    expect(text(html)).toContain("5:33/km");
+    expect(text(html)).toContain("5:33\u00a0/km now");
     expect(html).not.toContain("a year ago");
   });
 
@@ -63,9 +59,9 @@ describe("RunningFitness", () => {
     expect(text(render(yearOn, { now: 800 }))).toContain("as of Mar 2, 2026");
   });
 
-  test("names the line's best value, under the headline and at its point on the chart", () => {
+  test("names the line's best value, in the lead line and at its point on the chart", () => {
     const html = render([...runs(0, 120, 1.1), ...runs(124, 240, 1.3), ...runs(244, 360, 1.1)]);
-    expect(text(html)).toContain("Best: 5:08\u00a0/km in");
+    expect(text(html)).toContain("· best 5:08\u00a0/km in");
     expect(html).toContain(">Best 5:08</text>");
     expect(html).toContain(">Now 6:04</text>");
   });
@@ -95,7 +91,7 @@ describe("RunningFitness", () => {
     // Every run climbs 10 m/km: nothing to fit a slope to.
     const html = text(render(runs(0, 120, 1.2)));
     expect(html).toContain(
-      "Flat-ground pace at 150 bpm, corrected for climbing · 3-month average · an estimate from pace, heart rate and climbing, not VO2max.",
+      "An estimate from pace, heart rate and climbing, not VO2max.",
     );
     expect(html).toContain("Too few runs yet to fit a climb correction");
   });

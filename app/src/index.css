@@ -54,8 +54,6 @@
   --accent-ink: #1a0f0a; /* text on a solid accent fill: charcoal holds 6:1, white only 2.9:1 */
   --pill-on-text: #ffffff;
   --focus: #ffb199;
-  /* A change for the better (running fitness, faster than a year ago): text, with an arrow. */
-  --success: #4cc46a;
 
   /* Panel material: a near-opaque charcoal so the map never muddies text. */
   --panel-bg: rgba(20, 22, 28, 0.86);
@@ -130,7 +128,6 @@
   --accent-ink: #1a0f0a;
   --pill-on-text: #b43d14;
   --focus: #d2491c;
-  --success: #1a7f37;
 
   /* A neutral frosted white, opaque enough that green terrain and orange routes never
      bleed through as blotches behind text. */
