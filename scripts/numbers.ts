@@ -64,6 +64,8 @@ export function toRecord(
   groups: Groups = {},
   /** Seconds per heart-rate band against the reference limits (zones.ts); absent when unknown. */
   hrZones?: number[],
+  /** Grade-adjusted metres per heartbeat (fitness.ts), runs only; absent when unknown. */
+  efficiency?: number,
 ): ActivityRecord {
   const hasAlt = row.has_altitude === 1;
   const optional: Partial<ActivityRecord> = {
@@ -76,6 +78,7 @@ export function toRecord(
     avg_hr: positive(row.avg_hr),
     max_hr: positive(row.max_hr),
     hr_zones: hrZones,
+    efficiency,
   };
   const rec: ActivityRecord = {
     id: row.id,

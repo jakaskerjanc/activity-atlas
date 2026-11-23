@@ -5,7 +5,8 @@
 //
 //   routes.json         v4  route polylines keyed by activity id (10 m Douglas–Peucker)
 //   activities.json     v1  every visible activity's numbers; unknown values left out;
-//                           heart-rate zones recomputed against one set of limits (zones.ts)
+//                           heart-rate zones recomputed against one set of limits (zones.ts);
+//                           each run's grade-adjusted efficiency (fitness.ts)
 //   activity/<id>.json  v1  downsampled samples, loaded when an activity is opened
 //   profiles.json       v1  every activity's elevation every 100 m, for the analytics profiles chart
 //   steps.json          v1  Garmin's daily step totals, for the analytics steps calendar
@@ -26,6 +27,7 @@ import { isUsable, toRecord, type ActivityRow } from "./numbers.ts";
 import { decodeChannel, type StreamChannel } from "./codec.ts";
 import { buildDetail, type Streams } from "./detail.ts";
 import { referenceZoneLimits, zoneSeconds } from "./zones.ts";
+import { runEfficiency } from "./fitness.ts";
 import { PROFILE_STEP_M, PROFILES_VERSION, routeProfile } from "./routeProfile.ts";
 import type {
   ActivitiesFile,
@@ -268,7 +270,13 @@ export function readDisplayFiles(
       const groups = { place: placeOf.get(row.id), route: routeOf.get(row.id) };
       const hrZones =
         zoneLimits && decoded?.hr && row.has_hr === 1 ? zoneSeconds(decoded.time, decoded.hr, zoneLimits) : undefined;
-      files.activities.activities.push(toRecord(row, sources.get(row.id) ?? [], detail != null, groups, hrZones));
+      const efficiency =
+        row.type === "Run" && decoded && row.has_hr === 1
+          ? runEfficiency(decoded, row.elevation_gain ?? undefined)
+          : undefined;
+      files.activities.activities.push(
+        toRecord(row, sources.get(row.id) ?? [], detail != null, groups, hrZones, efficiency),
+      );
     }
     files.steps = readSteps(db);
     return files;
