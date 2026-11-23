@@ -553,7 +553,26 @@ input[type="range"].range-dual::-moz-range-thumb {
   color: var(--text-muted);
   white-space: nowrap;
 }
+/* The activity: its route's thumbnail (ActivitiesView: thumbnailPath, 36px), then the
+   name over the meta line. */
 .activities__what {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.activities__thumb {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  fill: none;
+  stroke: var(--type);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.activities__text {
+  flex: 1;
   min-width: 0;
 }
 .activities__name {
@@ -579,6 +598,7 @@ input[type="range"].range-dual::-moz-range-thumb {
   height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
+  background: var(--type);
   margin-right: 7px;
 }
 .activities__meta-item {
@@ -617,7 +637,7 @@ input[type="range"].range-dual::-moz-range-thumb {
   padding: 0 1px;
 }
 /* A row's preview, opened under it and hung under the activity's name: past the row's
-   padding, its 96px date column and the column gap. The track sits beside the stats
+   padding, its 96px date column, the column gap and the 36px thumbnail with its gap. The track sits beside the stats
    (shrinking before they drop under 300px) and the elevation profile spans both. In
    the compact list (data-compact, the rows' own breakpoint) the name leads the row, so
    the preview starts at its padding. The track drops above the stats when the list
@@ -629,7 +649,7 @@ input[type="range"].range-dual::-moz-range-thumb {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-5) var(--sp-6);
-  padding: var(--sp-1) var(--sp-5) var(--sp-5) calc(var(--sp-5) + 96px + var(--sp-4));
+  padding: var(--sp-1) var(--sp-5) var(--sp-5) calc(var(--sp-5) + 96px + var(--sp-4) + 36px + 10px);
   background: var(--accent-tint-weak);
   scroll-margin-top: 140px; /* clear of the header and the sticky search bar */
   scroll-margin-bottom: var(--sp-4);

@@ -1,5 +1,5 @@
 // A route drawn small: the Activities page's preview of one activity's track, fitted
-// into a box. Pure module. Framed with the map's own camera math (homeCamera.ts) and
+// into a box, and the list rows' thumbnails (thumbnailPath). Pure module. Framed with the map's own camera math (homeCamera.ts) and
 // drawn with the same routePath as the map's stand-in picture, so the route lands
 // exactly on a still map image taken with that camera (mapStyle.ts: staticMapUrl), and
 // matches what "Show on map" then shows.
@@ -42,4 +42,26 @@ export function trackSketch(
   if (!camera) return null;
   const path = routePath(coords, projector(camera, width, height), minStep);
   return path && { ...path, camera };
+}
+
+/** A list row's thumbnail: a square this many px a side. */
+export const THUMB_SIZE = 36;
+
+// Thumbnails by route array. The arrays come once per data load (App's routeCoords), so
+// a row scrolled away and back, or re-rendered, never projects its route again; a new
+// load brings new arrays and the old entries go with them.
+const thumbnails = new WeakMap<readonly (readonly number[])[], string | null>();
+
+/**
+ * `coords` ([lng, lat]) as SVG path data fitted into a THUMB_SIZE square, 3 px clear of
+ * each edge, north up, one point per px at most. Null for fewer than two points.
+ * Worked out once per array (see above).
+ */
+export function thumbnailPath(coords: readonly (readonly number[])[]): string | null {
+  let d = thumbnails.get(coords);
+  if (d === undefined) {
+    d = trackSketch(coords, THUMB_SIZE, THUMB_SIZE, 3, 1)?.d ?? null;
+    thumbnails.set(coords, d);
+  }
+  return d;
 }

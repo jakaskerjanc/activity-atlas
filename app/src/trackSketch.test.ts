@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SKETCH_MAX_ZOOM, trackSketch } from "./trackSketch";
+import { SKETCH_MAX_ZOOM, THUMB_SIZE, thumbnailPath, trackSketch } from "./trackSketch";
 import { projector } from "./homeCamera";
 
 const close = (a: [number, number], b: [number, number]) => {
@@ -39,5 +39,34 @@ describe("trackSketch", () => {
     const still = trackSketch([[14, 46], [14, 46]], 100, 80)!;
     close(still.start, [50, 40]);
     expect(still.camera.zoom).toBe(SKETCH_MAX_ZOOM);
+  });
+});
+
+describe("thumbnailPath", () => {
+  const points = (d: string) => [...d.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+
+  test("fits the route inside the 36 px box, clear of its edges", () => {
+    expect(THUMB_SIZE).toBe(36);
+    const d = thumbnailPath([[14.5, 46.05], [14.52, 46.07], [14.55, 46.06], [14.5, 46.05]])!;
+    const xy = points(d);
+    expect(xy.length).toBeGreaterThan(2);
+    for (const [x, y] of xy) {
+      expect(x).toBeGreaterThanOrEqual(3);
+      expect(x).toBeLessThanOrEqual(33);
+      expect(y).toBeGreaterThanOrEqual(3);
+      expect(y).toBeLessThanOrEqual(33);
+    }
+  });
+
+  test("nothing to draw for fewer than two points", () => {
+    expect(thumbnailPath([[14, 46]])).toBeNull();
+  });
+
+  test("works a route out once: the same array gives the kept path", () => {
+    const coords: [number, number][] = [[0, 0], [1, 0]];
+    const first = thumbnailPath(coords);
+    coords.push([1, 1]);
+    expect(thumbnailPath(coords)).toBe(first);
+    expect(thumbnailPath([...coords])).not.toBe(first);
   });
 });

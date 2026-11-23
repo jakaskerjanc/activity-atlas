@@ -50,6 +50,11 @@ describe("ActivitiesView", () => {
     expect(html).toContain("No route");
   });
 
+  test("a row draws its route small beside the name; one without keeps the empty slot", () => {
+    expect(render()).toMatch(/<svg[^>]*class="activities__thumb"[^>]*><path d="M/);
+    expect(render({ routed: [] })).toMatch(/<svg[^>]*class="activities__thumb"[^>]*><\/svg>/);
+  });
+
   test("while the routes load, a row with GPS doesn't claim to have no route", () => {
     const html = render({ routed: null, visible: [record({ id: "a", type: "Run", channels: ["gps"] })] });
     expect(html).toMatch(/<button[^>]*data-row="a"/);

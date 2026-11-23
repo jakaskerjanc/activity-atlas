@@ -3,6 +3,7 @@
 // search narrows the visible activities further (activitySearch.ts); it never changes
 // the Activity filter itself, so the map and analytics stay as they were. A row opens a
 // quick preview under it (ActivityPreview), and from there the activity on the map.
+// Each row shows its route small beside the name (trackSketch.ts: thumbnailPath).
 // Only the rows near the screen are drawn (TanStack Virtual): at ten times today's
 // activities, drawing every row was ~120,000 elements and a five-second task.
 
@@ -41,6 +42,7 @@ import {
 import { formatDate, formatDuration, formatKm, formatMeters, formatMonthShort, typeLabel } from "../format";
 import { emptyNotice } from "../places";
 import { typeColor } from "../colors";
+import { THUMB_SIZE, thumbnailPath } from "../trackSketch";
 import type { ActivityRecord, Theme } from "../types";
 
 interface Props {
@@ -433,6 +435,7 @@ export function ActivitiesView({
                               activity={a}
                               query={shownQuery}
                               names={names}
+                              route={coords}
                               onMap={coords !== undefined || (routes === null && a.channels.includes("gps"))}
                               open={open}
                               onToggle={toggle}
@@ -504,6 +507,7 @@ const ActivityRow = memo(function ActivityRow({
   activity: a,
   query,
   names,
+  route: coords,
   onMap,
   open,
   onToggle,
@@ -514,13 +518,15 @@ const ActivityRow = memo(function ActivityRow({
   activity: ActivityRecord;
   query: string;
   names: SearchNames;
+  /** The route, for the thumbnail; undefined while the routes load or when it has none. */
+  route?: readonly (readonly [number, number])[];
   /** Has a route, or, while the routes load, a GPS track that will make one. */
   onMap: boolean;
   open: boolean;
   onToggle: (id: string) => void;
   mobile: boolean;
   theme: Theme;
-  /** The filter's type rows: the dot wears the row's color, as on the map. */
+  /** The filter's type rows: the dot and the thumbnail wear the row's color, as on the map. */
   rowOf?: Readonly<Record<string, string>>;
 }) {
   const place = a.place !== undefined ? names.places.get(a.place)?.name : undefined;
@@ -531,23 +537,29 @@ const ActivityRow = memo(function ActivityRow({
   if (place) meta.push(<Highlight key="place" text={place} query={query} />);
   else if (route) meta.push(<Highlight key="route" text={route} query={query} />);
   if (!onMap) meta.push(<span key="noroute" className="activities__faint">No route</span>);
+  const thumb = coords ? thumbnailPath(coords) : null;
 
   const body = (
     <>
       {!mobile && <span className="activities__date">{date}</span>}
       <span className="activities__what">
-        <span className="activities__name">
-          <Highlight text={a.name || "Untitled"} query={query} />
-        </span>
-        <span className="activities__meta">
-          {/* The one style that differs per row: the type's color. */}
-          <span aria-hidden="true" className="activities__dot" style={{ background: typeColor(a.type, theme, rowOf) }} />
-          {meta.map((m, i) => (
-            <span key={i} className="activities__meta-item">
-              {i > 0 && <span className="activities__sep">·</span>}
-              {m}
-            </span>
-          ))}
+        {/* Empty without a route (or while the routes load), so the names line up. */}
+        <svg className="activities__thumb" viewBox={`0 0 ${THUMB_SIZE} ${THUMB_SIZE}`} aria-hidden="true">
+          {thumb && <path d={thumb} />}
+        </svg>
+        <span className="activities__text">
+          <span className="activities__name">
+            <Highlight text={a.name || "Untitled"} query={query} />
+          </span>
+          <span className="activities__meta">
+            <span aria-hidden="true" className="activities__dot" />
+            {meta.map((m, i) => (
+              <span key={i} className="activities__meta-item">
+                {i > 0 && <span className="activities__sep">·</span>}
+                {m}
+              </span>
+            ))}
+          </span>
         </span>
       </span>
       <Num value={formatKm(a.distance)} unit={a.distance !== undefined ? "km" : undefined} />
@@ -559,12 +571,14 @@ const ActivityRow = memo(function ActivityRow({
     </>
   );
 
-  // An open row's tint and accent chevron key off aria-expanded (index.css).
+  // An open row's tint and accent chevron key off aria-expanded (index.css). The one
+  // style that differs per row is the type's color, read by the dot and the thumbnail.
   return (
     <button
       type="button"
       data-row={a.id}
       className={open ? "activities__row" : "ctl activities__row"}
+      style={{ ["--type" as string]: typeColor(a.type, theme, rowOf) }}
       onClick={() => onToggle(a.id)}
       aria-expanded={open}
       aria-controls={open ? previewId(a.id) : undefined}
